@@ -37,7 +37,6 @@ crates/
   agent tool dispatching over `tools/call`
 - **CLI** — interactive reedline REPL (`/help /tools /clear /quit`), `--once`
   one-shot mode for scripting and smoke tests, repeatable `--mcp-command`
->>>>>>> ddf6c9a (Expand README: repo link, env-var config table, features, status)
 
 ## Run
 
