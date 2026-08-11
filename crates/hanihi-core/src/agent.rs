@@ -68,6 +68,11 @@ impl<M: CompletionModel> Agent<M> {
         }
     }
 
+    /// The system prompt.
+    pub fn system_prompt(&self) -> &str {
+        &self.system_prompt
+    }
+
     /// Register a tool. The agent exposes it to the model on the next turn.
     pub fn add_tool(&mut self, tool: PortableDynamicTool) {
         self.tools.push(tool);
@@ -101,6 +106,28 @@ impl<M: CompletionModel> Agent<M> {
     /// Clear the persistent message history.
     pub fn clear_history(&mut self) {
         self.history.clear();
+    }
+
+    /// Run a single completion call against the model.
+    ///
+    /// Assembles the request from `user_input` + persistent history +
+    /// in-progress turn messages + tool definitions, sends it to the
+    /// model, and returns the response. `Session` uses this to interpose
+    /// logging between calls.
+    pub(crate) async fn single_completion(
+        &self,
+        user_input: &str,
+        turn_messages: &[Message],
+    ) -> Result<rig::completion::CompletionResponse<M::Response>, AgentError> {
+        let request = self
+            .model
+            .completion_request(Message::user(user_input))
+            .preamble(self.system_prompt.clone())
+            .messages(self.history.iter().chain(turn_messages.iter()).cloned())
+            .tools(self.tool_definitions())
+            .build();
+        let response = self.model.completion(request).await?;
+        Ok(response)
     }
 
     /// Run one user request to completion: model calls, tool execution, and
@@ -180,7 +207,7 @@ impl<M: CompletionModel> Agent<M> {
     }
 
     /// Dispatch a single tool call by name and render its output as text.
-    async fn execute_tool(&self, call: &ToolCall) -> Result<String, AgentError> {
+    pub(crate) async fn execute_tool(&self, call: &ToolCall) -> Result<String, AgentError> {
         let name = &call.function.name;
         let tool = self
             .tools
@@ -201,7 +228,7 @@ impl<M: CompletionModel> Agent<M> {
     }
 
     /// Append the completed turn to the persistent history.
-    fn commit_turn(&mut self, user_input: &str, turn_messages: Vec<Message>) {
+    pub(crate) fn commit_turn(&mut self, user_input: &str, turn_messages: Vec<Message>) {
         self.history.push(Message::user(user_input));
         self.history.extend(turn_messages);
     }
