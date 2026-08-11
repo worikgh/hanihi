@@ -1,4 +1,4 @@
-//! # agent-core
+//! # kākahu-core
 //!
 //! A minimal tool-calling agent harness built on:
 //!

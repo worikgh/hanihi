@@ -1114,11 +1114,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "kakahu-cli"
+name = "kākahu-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
- "kakahu-core",
+ "kākahu-core",
  "reedline",
  "rig-core",
  "serde",
@@ -1129,7 +1129,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "kakahu-core"
+name = "kākahu-core"
 version = "0.1.0"
 dependencies = [
  "chrono",

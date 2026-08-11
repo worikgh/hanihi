@@ -1,7 +1,7 @@
-//! # agent-cli
+//! # kākahu-cli
 //!
 //! REPL front-end for the agent harness: reedline line editor on top of
-//! [`agent_core::Agent`]. Also supports one-shot turns (`--once`) for
+//! [`kakahu_core::Agent`]. Also supports one-shot turns (`--once`) for
 //! scripting and smoke tests, and attaching MCP stdio servers.
 
 use clap::Parser;
@@ -14,7 +14,7 @@ use tracing_subscriber::EnvFilter;
 
 #[derive(Parser, Debug)]
 #[command(
-    name = "kakahu",
+    name = "kākahu",
     version,
     about = "Rust agent harness: rig + rmcp + reedline"
 )]
