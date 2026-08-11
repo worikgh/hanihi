@@ -1,6 +1,7 @@
 # hānihi
 
-A minimal tool-calling agent harness in Rust, built on:
+A minimal tool-calling agent harness in Rust — the core of a future coding
+agent. Built on:
 
 - **rig** (`rig-core` 0.41) — OpenAI-compatible chat completions client, tool
   definitions, completion loop
@@ -8,13 +9,15 @@ A minimal tool-calling agent harness in Rust, built on:
   servers
 - **reedline** (0.49) — readline-style REPL
 
+Repository: <https://github.com/worikgh/hanihi>
+
 ## Layout
 
 ```
 crates/
 ├── hānihi-core/        # library: Agent (loop, history, dispatch), built-in tools, MCP client
 ├── hānihi-cli/         # binary: clap CLI + reedline REPL + --once mode
-└── mcp-echo-server/    # binary: minimal MCP stdio server exposing one tool (demo)
+└── mcp-echo-server/    # binary: minimal MCP stdio server (demo, one `mcp_echo` tool)
 ```
 
 > Crate package names keep the macron (`hānihi-core`, `hānihi-cli`). The lib
@@ -25,21 +28,38 @@ crates/
 
 **`hānihi`** is a loan word from English into Māori and means ["harness"](https://maori_en_new.en-academic.com/2763/h%C4%81nihi)
 
+## Features
+
+- **Agent loop** — system preamble + persistent history + tool definitions,
+  tool-call dispatch, `max_turns` guard (default 10), per-turn usage tracking
+- **Built-in tools** — `get_time` (local RFC 3339 timestamp), `echo`
+- **MCP client** — spawn an MCP stdio server, wrap each of its tools as an
+  agent tool dispatching over `tools/call`
+- **CLI** — interactive reedline REPL (`/help /tools /clear /quit`), `--once`
+  one-shot mode for scripting and smoke tests, repeatable `--mcp-command`
+>>>>>>> ddf6c9a (Expand README: repo link, env-var config table, features, status)
+
 ## Run
 
 ```bash
 # One-shot turn (also used for smoke tests)
-./target/debug/hānihi-cli --once "What time is it? Use the get_time tool." \
-    --api-key "$DEEPSEEK_API_KEY"
+cargo run -p hānihi-cli -- --once "What time is it? Use the get_time tool."
 
 # Attach an MCP server and talk interactively
-./target/debug/hānihi-cli --mcp-command "./target/debug/mcp-echo-server"
+cargo run -p hānihi-cli -- --mcp-command "./target/debug/mcp-echo-server"
 
-# REPL commands: /help /tools /clear /quit
+# REPL commands: /help /tools /clear /quit (or /exit)
 ```
 
-Configuration: `--base-url` (default `https://api.deepseek.com/v1`), `--api-key`
-(or `LLM_API_KEY`), `--model` (default `deepseek-chat`), `--mcp-command` (repeatable).
+Configuration — every flag has an environment variable:
+
+| Flag | Env | Default |
+|---|---|---|
+| `--base-url` | `LLM_BASE_URL` | `https://api.deepseek.com/v1` |
+| `--api-key` | `LLM_API_KEY` | — (required) |
+| `--model` | `LLM_MODEL` | `deepseek-chat` |
+| `--mcp-command CMD` | — | none (repeatable) |
+| `--once PROMPT` | — | none |
 
 ## How it works
 
@@ -58,10 +78,25 @@ Tools are rig `PortableDynamicTool`s: name + description + JSON schema + an
 async callback over raw `serde_json::Value`. MCP tools get wrapped into this
 shape, dispatching over `tools/call` on the connected service.
 
+The library is model-agnostic: `Agent<M: CompletionModel>` works with rig's
+`MockCompletionModel` in tests and any OpenAI-compatible chat-completions
+endpoint in production (see `connect_chat_model`).
+
+## Status
+
+- 7 unit tests (rig `MockCompletionModel`, scripted turns — no network),
+  `cargo clippy --workspace --all-targets -- -D warnings` clean
+- Smoke-tested against DeepSeek (`deepseek-chat`): `get_time` round trip ✔,
+  MCP `mcp_echo` round trip ✔
+- History is in-memory only; no streaming, no durable execution, no evals yet
+  (see TODOs)
+
 ## Testing
 
-- Unit tests use rig's `MockCompletionModel` (scripted turns) — no network.
-- `cargo test --workspace` / `cargo clippy --workspace --all-targets -- -D warnings`
+```bash
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+```
 
 ## Known TODOs
 
