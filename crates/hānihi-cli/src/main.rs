@@ -1,20 +1,20 @@
-//! # kākahu-cli
+//! # hānihi-cli
 //!
 //! REPL front-end for the agent harness: reedline line editor on top of
-//! [`kakahu_core::Agent`]. Also supports one-shot turns (`--once`) for
+//! [`hanihi_core::Agent`]. Also supports one-shot turns (`--once`) for
 //! scripting and smoke tests, and attaching MCP stdio servers.
 
 use clap::Parser;
-use kakahu_core::Agent;
-use kakahu_core::error::AgentError;
-use kakahu_core::{McpClient, builtin_echo, builtin_get_time, connect_chat_model};
+use hanihi_core::Agent;
+use hanihi_core::error::AgentError;
+use hanihi_core::{McpClient, builtin_echo, builtin_get_time, connect_chat_model};
 use reedline::{DefaultPrompt, Reedline, Signal};
 use rig::completion::CompletionModel;
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser, Debug)]
 #[command(
-    name = "kākahu",
+    name = "hānihi",
     version,
     about = "Rust agent harness: rig + rmcp + reedline"
 )]

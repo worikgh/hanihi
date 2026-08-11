@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/kākahu-core", "crates/kākahu-cli", "crates/mcp-echo-server"]
+members = ["crates/hānihi-core", "crates/hānihi-cli", "crates/mcp-echo-server"]
 
 [workspace.package]
 version = "0.1.0"

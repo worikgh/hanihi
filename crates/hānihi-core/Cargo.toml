@@ -1,10 +1,10 @@
 [package]
-name = "kākahu-core"
+name = "hānihi-core"
 version = "0.1.0"
 edition = "2024"
 
 [lib]
-name = "kakahu_core"
+name = "hanihi_core"
 
 [dependencies]
 chrono = { version = "0.4", default-features = false, features = ["clock"] }

@@ -1,10 +1,10 @@
 [package]
-name = "kākahu-cli"
+name = "hānihi-cli"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-kakahu-core = { package = "kākahu-core", version = "0.1.0", path = "../kākahu-core" }
+hanihi-core = { package = "hānihi-core", version = "0.1.0", path = "../hānihi-core" }
 clap = { version = "4.6.6", features = ["derive", "env"] }
 reedline = "0.49.0"
 rig = { package = "rig-core", version = "0.41.0" }

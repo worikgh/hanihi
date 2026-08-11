@@ -874,6 +874,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "hānihi-cli"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "hānihi-core",
+ "reedline",
+ "rig-core",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "hānihi-core"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "rig-core",
+ "rmcp",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "iana-time-zone"
 version = "0.1.65"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1111,34 +1139,6 @@ dependencies = [
  "cfg-if",
  "futures-util",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "kākahu-cli"
-version = "0.1.0"
-dependencies = [
- "clap",
- "kākahu-core",
- "reedline",
- "rig-core",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "kākahu-core"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "rig-core",
- "rmcp",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
 ]
 
 [[package]]
