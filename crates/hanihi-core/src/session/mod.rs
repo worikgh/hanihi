@@ -94,7 +94,7 @@ impl From<serde_json::Error> for SessionError {
 
 impl From<AgentError> for SessionError {
     fn from(e: AgentError) -> Self {
-        SessionError::Io(io::Error::new(io::ErrorKind::Other, e.to_string()))
+        SessionError::Io(io::Error::other(e.to_string()))
     }
 }
 
@@ -134,10 +134,10 @@ impl SessionManager {
         let mut names = Vec::new();
         for entry in fs::read_dir(&dir)? {
             let entry = entry?;
-            if entry.file_type()?.is_dir() {
-                if let Some(name) = entry.file_name().to_str() {
-                    names.push(name.to_string());
-                }
+            if entry.file_type()?.is_dir()
+                && let Some(name) = entry.file_name().to_str()
+            {
+                names.push(name.to_string());
             }
         }
         names.sort();
