@@ -1,4 +1,4 @@
-//! # hānihi-core
+//! # hanihi-core
 //!
 //! A minimal tool-calling agent harness built on:
 //!

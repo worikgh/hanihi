@@ -1,7 +1,13 @@
 [package]
-name = "hānihi-core"
-version = "0.1.0"
-edition = "2024"
+name = "hanihi-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+readme.workspace = true
+description = "A minimal tool-calling agent harness in Rust: agent loop, built-in tools, and MCP client support."
+keywords = ["agent", "llm", "mcp", "rig", "tools"]
+categories = ["development-tools"]
 
 [lib]
 name = "hanihi_core"

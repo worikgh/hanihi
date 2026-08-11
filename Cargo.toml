@@ -1,11 +1,13 @@
 [workspace]
 resolver = "2"
-members = ["crates/hānihi-core", "crates/hānihi-cli", "crates/mcp-echo-server"]
+members = ["crates/hanihi-core", "crates/hanihi-cli", "crates/mcp-echo-server"]
 
 [workspace.package]
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/worikgh/hanihi"
+readme = "README.md"
 
 [workspace.dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "io-util", "sync", "time", "signal"] }

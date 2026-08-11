@@ -762,6 +762,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "hanihi-cli"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "hanihi-core",
+ "reedline",
+ "rig-core",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "hanihi-core"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "rig-core",
+ "rmcp",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "hashbrown"
 version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -871,34 +899,6 @@ dependencies = [
  "tower-service",
  "tracing",
  "windows-registry",
-]
-
-[[package]]
-name = "hānihi-cli"
-version = "0.1.0"
-dependencies = [
- "clap",
- "hānihi-core",
- "reedline",
- "rig-core",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "hānihi-core"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "rig-core",
- "rmcp",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
 ]
 
 [[package]]

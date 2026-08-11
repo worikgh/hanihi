@@ -11,22 +11,23 @@ agent. Built on:
 
 Repository: <https://github.com/worikgh/hanihi>
 
+## Name
+
+**`hānihi`** is a loan word from English into Māori and means ["harness"](https://maori_en_new.en-academic.com/2763/h%C4%81nihi)
+
 ## Layout
 
 ```
 crates/
-├── hānihi-core/        # library: Agent (loop, history, dispatch), built-in tools, MCP client
-├── hānihi-cli/         # binary: clap CLI + reedline REPL + --once mode
-└── mcp-echo-server/    # binary: minimal MCP stdio server (demo, one `mcp_echo` tool)
+├── hanihi-core/        # library: Agent (loop, history, dispatch), built-in tools, MCP client
+├── hanihi-cli/         # binary: clap CLI + reedline REPL + --once mode
+└── mcp-echo-server/    # binary: minimal MCP stdio server (demo, one `mcp_echo` tool; not published)
 ```
 
-> Crate package names keep the macron (`hānihi-core`, `hānihi-cli`). The lib
-> target and dependency key are ASCII (`hanihi_core`) because `rustc` requires
-> ASCII identifiers for `--extern`.
-
-## Name 
-
-**`hānihi`** is a loan word from English into Māori and means ["harness"](https://maori_en_new.en-academic.com/2763/h%C4%81nihi)
+> Crate *package* names are ASCII (`hanihi-core`, `hanihi-cli`) because
+> crates.io only accepts ASCII names. The project name keeps the macron
+> (`hānihi`), as does the CLI's display name. The lib target is
+> `hanihi_core` (rustc requires ASCII identifiers for `--extern`).
 
 ## Features
 
@@ -42,10 +43,10 @@ crates/
 
 ```bash
 # One-shot turn (also used for smoke tests)
-cargo run -p hānihi-cli -- --once "What time is it? Use the get_time tool."
+cargo run -p hanihi-cli -- --once "What time is it? Use the get_time tool."
 
 # Attach an MCP server and talk interactively
-cargo run -p hānihi-cli -- --mcp-command "./target/debug/mcp-echo-server"
+cargo run -p hanihi-cli -- --mcp-command "./target/debug/mcp-echo-server"
 
 # REPL commands: /help /tools /clear /quit (or /exit)
 ```
@@ -95,6 +96,28 @@ endpoint in production (see `connect_chat_model`).
 ```bash
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
+```
+
+## Publishing (crates.io)
+
+`hanihi-core` and `hanihi-cli` are publishable (both inherit version,
+license, repository, and readme from the workspace). `mcp-echo-server` is
+demo-only and marked `publish = false`.
+
+Publish order matters: **`hanihi-core` first**, then `hanihi-cli` (it depends
+on the published `hanihi-core`):
+
+```bash
+cargo login                      # once: paste token from https://crates.io/settings/tokens
+cargo publish -p hanihi-core
+cargo publish -p hanihi-cli
+```
+
+Sanity-check locally before publishing:
+
+```bash
+cargo package -p hanihi-core --list     # inspect tarball contents
+cargo publish -p hanihi-core --dry-run  # full verification, no upload
 ```
 
 ## Known TODOs

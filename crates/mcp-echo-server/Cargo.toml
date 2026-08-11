@@ -1,7 +1,9 @@
 [package]
 name = "mcp-echo-server"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
 
 [dependencies]
 rmcp = { version = "3.1.2", features = ["transport-io"] }

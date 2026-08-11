@@ -1,4 +1,4 @@
-//! # hānihi-cli
+//! # hanihi-cli
 //!
 //! REPL front-end for the agent harness: reedline line editor on top of
 //! [`hanihi_core::Agent`]. Also supports one-shot turns (`--once`) for
