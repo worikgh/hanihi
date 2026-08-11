@@ -1,4 +1,4 @@
-# agent-harness
+# kākahu
 
 A minimal tool-calling agent harness in Rust, built on:
 
@@ -12,8 +12,8 @@ A minimal tool-calling agent harness in Rust, built on:
 
 ```
 crates/
-├── agent-core/         # library: Agent (loop, history, dispatch), built-in tools, MCP client
-├── agent-cli/          # binary: clap CLI + reedline REPL + --once mode
+├── kakahu-core/        # library: Agent (loop, history, dispatch), built-in tools, MCP client
+├── kakahu-cli/         # binary: clap CLI + reedline REPL + --once mode
 └── mcp-echo-server/    # binary: minimal MCP stdio server exposing one tool (demo)
 ```
 
@@ -21,11 +21,11 @@ crates/
 
 ```bash
 # One-shot turn (also used for smoke tests)
-./target/debug/agent-cli --once "What time is it? Use the get_time tool." \
+./target/debug/kakahu-cli --once "What time is it? Use the get_time tool." \
     --api-key "$DEEPSEEK_API_KEY"
 
 # Attach an MCP server and talk interactively
-./target/debug/agent-cli --mcp-command "./target/debug/mcp-echo-server"
+./target/debug/kakahu-cli --mcp-command "./target/debug/mcp-echo-server"
 
 # REPL commands: /help /tools /clear /quit
 ```

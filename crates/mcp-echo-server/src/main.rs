@@ -1,7 +1,7 @@
 //! Minimal MCP stdio server exposing one `echo` tool.
 //!
 //! Used to exercise the harness end-to-end:
-//! `agent-cli --mcp-command ./target/debug/mcp-echo-server`
+//! `kakahu-cli --mcp-command ./target/debug/mcp-echo-server`
 
 use std::future::Future;
 

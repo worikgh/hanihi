@@ -4,17 +4,17 @@
 //! [`agent_core::Agent`]. Also supports one-shot turns (`--once`) for
 //! scripting and smoke tests, and attaching MCP stdio servers.
 
-use agent_core::Agent;
-use agent_core::error::AgentError;
-use agent_core::{McpClient, builtin_echo, builtin_get_time, connect_chat_model};
 use clap::Parser;
+use kakahu_core::Agent;
+use kakahu_core::error::AgentError;
+use kakahu_core::{McpClient, builtin_echo, builtin_get_time, connect_chat_model};
 use reedline::{DefaultPrompt, Reedline, Signal};
 use rig::completion::CompletionModel;
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser, Debug)]
 #[command(
-    name = "agent",
+    name = "kakahu",
     version,
     about = "Rust agent harness: rig + rmcp + reedline"
 )]
