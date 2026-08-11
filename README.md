@@ -21,6 +21,10 @@ crates/
 > target and dependency key are ASCII (`hanihi_core`) because `rustc` requires
 > ASCII identifiers for `--extern`.
 
+## Name 
+
+**`hānihi`** is a loan word from English into Māori and means ["harness"](https://maori_en_new.en-academic.com/2763/h%C4%81nihi)
+
 ## Run
 
 ```bash
