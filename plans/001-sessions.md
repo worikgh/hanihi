@@ -28,12 +28,13 @@ Owns the set of active sessions. Creates, opens, closes.
 
 ```rust
 pub struct SessionManager {
-    root: PathBuf,               // ~/.local/share/hanihi/sessions/
+    working_dir: PathBuf,        // ./working (or --working-dir override)
     sessions: HashMap<String, Session>,
 }
 
 impl SessionManager {
-    pub fn new(root: impl Into<PathBuf>) -> Self;
+    /// `working_dir` is resolved relative to the process cwd at startup.
+    pub fn new(working_dir: impl Into<PathBuf>) -> Self;
     pub fn create(&mut self, name: &str, model: &str, system_prompt: &str) -> Result<&mut Session>;
     pub fn open(&mut self, name: &str) -> Result<&mut Session>;
     pub fn close(&mut self, name: &str) -> Result<()>;
@@ -76,15 +77,20 @@ each event. The `Agent` does not know about logging; all logging lives in
 
 ## Session storage layout
 
+Sessions live inside a **working directory**. The default working directory
+is `./working` (relative to the directory `hanihi-cli` is started from).
+Sessions are stored under `working/sessions/`.
+
 ```
-~/.local/share/hanihi/sessions/
-├── default-session/
-│   ├── session.json          # { id, name, created_at, model, system_prompt }
-│   └── events.jsonl          # append-only structured log
-├── my-project/
-│   ├── session.json
-│   └── events.jsonl
-└── …
+./working/
+└── sessions/
+    ├── default-session/
+    │   ├── session.json          # { id, name, created_at, model, system_prompt }
+    │   └── events.jsonl          # append-only structured log
+    ├── my-project/
+    │   ├── session.json
+    │   └── events.jsonl
+    └── …
 ```
 
 - `session.json` — written at creation, read at open. Contains only the
@@ -124,7 +130,7 @@ session (monotonically increasing, starts at 1).
 | `session_opened` | `session_id`, `name` | on `SessionManager::open` |
 | `session_closed` | `session_id`, `name` | on `SessionManager::close` |
 | `user_input` | `text` | start of each `Session::run` |
-| `llm_prompt` | `messages` (the full `Vec<Message>` sent to the model), `tool_definitions` (the tool schemas exposed) | before each model API call |
+| `llm_prompt` | `provider` (e.g. `"deepseek"`), `model` (e.g. `"deepseek-chat"`), `messages` (the full `Vec<Message>` sent to the model), `tool_definitions` (the tool schemas exposed) | before each model API call |
 | `llm_response` | `message_id`, `text`, `reasoning`, `tool_calls: [{id, name, arguments}]`, `usage: {input_tokens, output_tokens}` | after each model API call |
 | `tool_execution` | `tool_call_id`, `name`, `arguments`, `result` | after each tool executes |
 | `turn_complete` | `text` (final answer), `tool_calls` (count) | end of a successful `Session::run` |
@@ -239,24 +245,26 @@ metadata lives in the event log or is computed from it.
 ### New args
 
 ```
+--working-dir <DIR>    Working directory (default: ./working, relative to cwd)
 --session <NAME>       Use an existing session (default: "default-session")
 --new-session <NAME>   Create a new session with this name and use it
 ```
 
 ### Rules
 
-1. `--session` defaults to `"default-session"`.
-2. `--session` requires the session to exist. If it doesn't, error out with a
-   helpful message.
-3. `--new-session <NAME>`:
+1. `--working-dir` resolves relative to the process cwd at startup. Defaults
+   to `./working`. Sessions are stored under `<working-dir>/sessions/`.
+2. `--session` defaults to `"default-session"`.
+3. `--session` requires the session to exist under `<working-dir>/sessions/`.
+   If it doesn't, error out with a helpful message.
+4. `--new-session <NAME>`:
    - `NAME` must not be `"default-session"` (reserved — created automatically
      on first run with no `--new-session`).
    - `NAME` must not already exist.
-   - Creates the session, writes `session.json`, then proceeds.
-4. `--session` and `--new-session` are mutually exclusive.
-5. On first-ever run with no args, `default-session` is auto-created.
-6. Session root: `$XDG_DATA_HOME/hanihi/sessions/` (falls back to
-   `~/.local/share/hanihi/sessions/`).
+   - Creates the session directory, writes `session.json`, then proceeds.
+5. `--session` and `--new-session` are mutually exclusive.
+6. On first-ever run with no args, `default-session` is auto-created under
+   `./working/sessions/`.
 
 ### REPL integration
 
@@ -326,6 +334,6 @@ The `hanihi-cli` REPL holds a `Session` instead of a bare `Agent`. Commands:
 |-------|---------|
 | `uuid` (with `v4` + `serde` features) | unique session IDs |
 | `fs2` | cross-platform filesystem lock (or raw `libc::flock` since Linux is primary target) |
-| `dirs` | XDG data directory |
 
-`chrono` is already a dep of `hanihi-core`.
+`chrono` is already a dep of `hanihi-core`. No `dirs` — paths are relative to
+cwd, not XDG.
