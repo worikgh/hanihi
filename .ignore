@@ -1,0 +1,4 @@
+# hānihi-managed ignore file (agent read policy)
+target/
+**/*.rs.bk
+

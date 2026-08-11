@@ -162,6 +162,31 @@ impl SessionManager {
         Ok(self.sessions.get_mut(name).expect("just inserted"))
     }
 
+    /// Create the reserved auto session (`default-session`).
+    ///
+    /// Only the CLI's implicit auto-create path may call this; `create`
+    /// rejects reserved names so users cannot claim them explicitly.
+    pub fn create_default(
+        &mut self,
+        model: &str,
+        system_prompt: &str,
+    ) -> Result<&mut Session, SessionError> {
+        if self.exists("default-session") {
+            return Err(SessionError::AlreadyExists("default-session".into()));
+        }
+        let session = Session::create(
+            &self.sessions_dir(),
+            "default-session",
+            model,
+            system_prompt,
+        )?;
+        self.sessions.insert("default-session".to_string(), session);
+        Ok(self
+            .sessions
+            .get_mut("default-session")
+            .expect("just inserted"))
+    }
+
     /// Open an existing session. Fails if it doesn't exist or is locked.
     pub fn open(&mut self, name: &str) -> Result<&mut Session, SessionError> {
         if self.sessions.contains_key(name) {
@@ -715,6 +740,20 @@ mod tests {
             .create("default-session", "deepseek-chat", "prompt")
             .expect_err("should fail");
         assert!(matches!(err, SessionError::ReservedName(_)));
+        std::fs::remove_dir_all(&dir).unwrap_or(());
+    }
+
+    #[test]
+    fn create_default_allowed_once() {
+        let dir = tmp_working_dir();
+        let mut mgr = SessionManager::new(&dir);
+        mgr.create_default("deepseek-chat", "prompt")
+            .expect("first auto-create");
+        mgr.close("default-session").expect("close");
+        let err = mgr
+            .create_default("deepseek-chat", "prompt")
+            .expect_err("second auto-create");
+        assert!(matches!(err, SessionError::AlreadyExists(_)));
         std::fs::remove_dir_all(&dir).unwrap_or(());
     }
 

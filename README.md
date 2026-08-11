@@ -19,7 +19,7 @@ Repository: <https://github.com/worikgh/hanihi>
 
 ```
 crates/
-├── hanihi-core/        # library: Agent (loop, history, dispatch), built-in tools, MCP client
+├── hanihi-core/        # library: Agent (loop, history, dispatch), built-in tools, source-tree access, MCP client
 ├── hanihi-cli/         # binary: clap CLI + reedline REPL + --once mode
 └── mcp-echo-server/    # binary: minimal MCP stdio server (demo, one `mcp_echo` tool; not published)
 ```
@@ -33,7 +33,17 @@ crates/
 
 - **Agent loop** — system preamble + persistent history + tool definitions,
   tool-call dispatch, `max_turns` guard (default 10), per-turn usage tracking
-- **Built-in tools** — `get_time` (local RFC 3339 timestamp), `echo`
+- **Built-in tools** — `get_time` (local RFC 3339 timestamp), `echo`,
+  `read_file` + `list_dir` (source-tree access, see below)
+- **Source tree access** — the agent can read and list the enclosing git
+  repository (found by walking up from the cwd). Everything is filtered by
+  the repo's ignore rules via the `ignore` crate: `.gitignore` and
+  `.git/info/exclude` are respected and never written; hānihi maintains its
+  own `.ignore` file (same syntax, git-agnostic) at the repo root with
+  generated-artifact templates for the languages it detects (`Cargo.toml` →
+  Rust; CMake/Makefile/C-family sources → C/C++). Reads are capped at
+  64 KiB, escapes outside the repo are refused, and `target/`-style noise
+  never reaches the model.
 - **MCP client** — spawn an MCP stdio server, wrap each of its tools as an
   agent tool dispatching over `tools/call`
 - **CLI** — interactive reedline REPL (`/help /tools /clear /quit`), `--once`
@@ -84,8 +94,8 @@ endpoint in production (see `connect_chat_model`).
 
 ## Status
 
-- 7 unit tests (rig `MockCompletionModel`, scripted turns — no network),
-  `cargo clippy --workspace --all-targets -- -D warnings` clean
+- 33 unit tests (rig `MockCompletionModel`, scripted turns, temp-repo
+  fixtures — no network), `cargo clippy --workspace --all-targets -- -D warnings` clean
 - Smoke-tested against DeepSeek (`deepseek-chat`): `get_time` round trip ✔,
   MCP `mcp_echo` round trip ✔
 - History is in-memory only; no streaming, no durable execution, no evals yet

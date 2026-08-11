@@ -5,12 +5,16 @@
 //! one-shot turns (`--once`), and MCP stdio servers.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use clap::Parser;
 use hanihi_core::agent::Agent;
 use hanihi_core::error::AgentError;
 use hanihi_core::session::SessionManager;
-use hanihi_core::{McpClient, builtin_echo, builtin_get_time, connect_chat_model};
+use hanihi_core::{
+    McpClient, SourceTree, builtin_echo, builtin_get_time, builtin_list_dir, builtin_read_file,
+    connect_chat_model,
+};
 use reedline::{DefaultPrompt, Reedline, Signal};
 use rig::completion::CompletionModel;
 use tracing_subscriber::EnvFilter;
@@ -116,12 +120,8 @@ async fn main() -> Result<(), AgentError> {
     // Create or open the session.
     if is_new {
         if session_name == "default-session" {
-            mgr.create(
-                &session_name,
-                &args.model,
-                hanihi_core::agent::DEFAULT_SYSTEM_PROMPT,
-            )
-            .map_err(|e| AgentError::Rig(e.to_string()))?;
+            mgr.create_default(&args.model, hanihi_core::agent::DEFAULT_SYSTEM_PROMPT)
+                .map_err(|e| AgentError::Rig(e.to_string()))?;
             println!("auto-created session 'default-session'");
         } else {
             mgr.create(
@@ -141,6 +141,17 @@ async fn main() -> Result<(), AgentError> {
     let mut agent = connect_chat_model(&args.base_url, &api_key, &args.model)?;
     agent.add_tool(builtin_get_time());
     agent.add_tool(builtin_echo());
+
+    // Source-tree tools: read/list the enclosing git repository. Ignore
+    // rules (.gitignore, .ignore) filter what the agent can see.
+    match SourceTree::open() {
+        Ok(tree) => {
+            let tree = Arc::new(tree);
+            agent.add_tool(builtin_read_file(tree.clone()));
+            agent.add_tool(builtin_list_dir(tree));
+        }
+        Err(e) => println!("source tools disabled (no git repository): {e}"),
+    }
 
     for command in &args.mcp_commands {
         let parts: Vec<String> = command.split_whitespace().map(String::from).collect();
