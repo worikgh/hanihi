@@ -15,7 +15,7 @@ use hanihi_core::{
     McpClient, SourceTree, StreamEvent, builtin_echo, builtin_get_time, builtin_list_dir,
     builtin_read_file, connect_chat_model,
 };
-use reedline::{DefaultPrompt, Reedline, Signal};
+use reedline::{DefaultPrompt, FileBackedHistory, Reedline, Signal};
 use rig::completion::CompletionModel;
 use tracing_subscriber::EnvFilter;
 
@@ -241,7 +241,16 @@ async fn repl<M: CompletionModel + 'static>(
     provider: &str,
     model_name: &str,
 ) -> Result<(), AgentError> {
-    let mut editor = Reedline::create();
+    let history_path = session.root().join("history.txt");
+    let history: Box<dyn reedline::History> =
+        match FileBackedHistory::with_file(10_000, history_path) {
+            Ok(h) => Box::new(h),
+            Err(e) => {
+                eprintln!("history file disabled: {e}");
+                Box::new(FileBackedHistory::new(10_000).expect("in-memory history"))
+            }
+        };
+    let mut editor = Reedline::create().with_history(history);
     let prompt = DefaultPrompt::default();
 
     loop {
@@ -323,6 +332,9 @@ async fn repl<M: CompletionModel + 'static>(
         }
     }
 
-    // Clean shutdown — session closed by caller.
+    // Sync history to disk before shutting down.
+    if let Err(e) = editor.sync_history() {
+        eprintln!("warning: failed to sync history: {e}");
+    }
     Ok(())
 }
