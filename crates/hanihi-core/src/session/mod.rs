@@ -19,14 +19,15 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use chrono::Utc;
-use rig::completion::message::ToolCall;
+use rig::completion::message::{ToolCall, ToolFunction};
 use rig::completion::{AssistantContent, CompletionModel, Message};
 use serde::Serialize;
+use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use self::lock::SessionGuard;
 use self::log::{ErrorStage, LogEntry, LogWriter, ToolCallData, UsageData};
-use crate::agent::{Agent, TurnSummary};
+use crate::agent::{Agent, StreamEvent, TurnSummary};
 use crate::error::AgentError;
 
 /// Errors produced by session operations.
@@ -253,6 +254,11 @@ pub struct Session {
 }
 
 impl Session {
+    /// Path to the session directory on disk.
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
     /// Create a new session on disk. Internal — use `SessionManager::create`.
     fn create(
         sessions_dir: &Path,
@@ -490,6 +496,7 @@ impl Session {
                     text,
                     tool_calls: tool_calls_total,
                     usage: usage_total,
+                    final_history: agent.history().to_vec(),
                 });
             }
 
@@ -512,6 +519,7 @@ impl Session {
                             Utc::now(),
                             self.turn,
                             call.id.clone(),
+                            call.call_id.clone().unwrap_or_else(|| call.id.clone()),
                             call.function.name.clone(),
                             tool_args,
                             output.clone(),
@@ -551,6 +559,100 @@ impl Session {
         Err(AgentError::MaxTurns {
             turns: agent.max_turns(),
         })
+    }
+
+    /// Run one user turn with streaming output and full logging.
+    ///
+    /// Like [`run`], but model output arrives token-by-token through a
+    /// channel. The caller reads [`StreamEvent`]s while the agent loop
+    /// runs concurrently. Session lifecycle and tool execution events
+    /// are logged from the stream.
+    ///
+    /// [`StreamEvent`]: crate::agent::StreamEvent
+    pub async fn run_streaming<M: CompletionModel + 'static>(
+        &mut self,
+        agent: &mut Agent<M>,
+        _provider: &str,
+        _model_name: &str,
+        user_input: &str,
+    ) -> Result<mpsc::Receiver<StreamEvent>, AgentError>
+    where
+        M::StreamingResponse: Send,
+    {
+        self.turn += 1;
+
+        // Log user input.
+        self.log_entry(&LogEntry::user_input(
+            Utc::now(),
+            self.turn,
+            user_input.to_string(),
+        ))
+        .map_err(|e| AgentError::Rig(e.to_string()))?;
+
+        let mut agent_rx = agent
+            .run_streaming(user_input)
+            .await
+            .map_err(|e| AgentError::Rig(e.to_string()))?;
+
+        let (tx, rx) = mpsc::channel(32);
+
+        // Spawn a task that reads from the agent stream, logs tool
+        // executions and turn completion, and forwards events to the
+        // session's own channel.
+        let turn = self.turn;
+        let log_path = self.events_path();
+
+        tokio::spawn(async move {
+            // Re-open the log for appending from this task.
+            let mut log_writer =
+                LogWriter::open(&log_path).expect("re-open session log for streaming");
+
+            let mut tool_calls_total: usize = 0;
+
+            while let Some(event) = agent_rx.recv().await {
+                match &event {
+                    StreamEvent::ToolResult {
+                        id,
+                        name,
+                        result_preview: _,
+                    } => {
+                        tool_calls_total += 1;
+                        // Log a minimal tool_execution entry.
+                        let _ = log_writer.write_entry(&LogEntry::tool_execution(
+                            Utc::now(),
+                            turn,
+                            id.clone(),
+                            id.clone(), // call_id same as tool_call_id (simplified)
+                            name.clone(),
+                            serde_json::Value::Null, // arguments not available
+                            "(streamed)".into(),     // result not captured in detail
+                        ));
+                    }
+                    StreamEvent::TurnComplete { summary } => {
+                        let _ = log_writer.write_entry(&LogEntry::turn_complete(
+                            Utc::now(),
+                            turn,
+                            summary.text.clone(),
+                            tool_calls_total,
+                        ));
+                        // Note: caller must call agent.set_history(summary.final_history)
+                        // after reading TurnComplete.
+                    }
+                    StreamEvent::Error { message } => {
+                        let _ = log_writer.write_entry(&LogEntry::error(
+                            Utc::now(),
+                            turn,
+                            ErrorStage::LlmCall,
+                            message.clone(),
+                        ));
+                    }
+                    _ => {}
+                }
+                let _ = tx.send(event).await;
+            }
+        });
+
+        Ok(rx)
     }
 
     /// Build a JSON representation of the messages sent to the model,
@@ -620,6 +722,106 @@ impl Session {
     /// Path to the session metadata file.
     pub fn meta_path(&self) -> PathBuf {
         self.root.join("session.json")
+    }
+
+    /// Reconstruct agent message history from the event log.
+    ///
+    /// Walks the log, builds `Message` values for each completed turn, and
+    /// stops at the last `turn_complete` or `error` boundary. Partial turns
+    /// (events after the last complete turn without a close) are dropped.
+    ///
+    /// Lifecycle events (`session_created`, `session_opened`, etc.) and
+    /// `llm_prompt` entries are skipped — they're not needed for history
+    /// reconstruction.
+    pub fn replay_history(&self) -> Result<Vec<Message>, SessionError> {
+        let entries = self.events()?;
+        let mut messages: Vec<Message> = Vec::new();
+        let mut safe_len: usize = 0;
+        // Track whether the last assistant message had tool calls.
+        let mut last_had_tool_calls = false;
+
+        for entry in &entries {
+            match entry {
+                LogEntry::UserInput { data, .. } => {
+                    messages.push(Message::user(data.text.clone()));
+                    last_had_tool_calls = false;
+                }
+                LogEntry::LlmResponse { data, .. } => {
+                    if let Some(ref tcs) = data.tool_calls {
+                        let contents: Vec<AssistantContent> = tcs
+                            .iter()
+                            .map(|tc| {
+                                AssistantContent::ToolCall(ToolCall::new(
+                                    tc.id.clone(),
+                                    ToolFunction {
+                                        name: tc.name.clone(),
+                                        arguments: tc.arguments.clone(),
+                                    },
+                                ))
+                            })
+                            .collect();
+                        messages.push(Message::Assistant {
+                            id: data.message_id.clone(),
+                            content: rig::OneOrMany::from_iter_optional(contents)
+                                .expect("assistant message has at least one tool call"),
+                        });
+                        last_had_tool_calls = true;
+                    } else if let Some(ref text) = data.text {
+                        messages.push(Message::assistant(text.clone()));
+                        last_had_tool_calls = false;
+                    }
+                }
+                LogEntry::ToolExecution { data, .. } => {
+                    // Streaming sessions may lack llm_response entries. If
+                    // the last assistant had no tool calls, synthesize one
+                    // for this specific tool execution.
+                    let was_synthetic = !last_had_tool_calls;
+                    if was_synthetic {
+                        let tc = ToolCall::new(
+                            data.tool_call_id.clone(),
+                            ToolFunction {
+                                name: data.name.clone(),
+                                arguments: data.arguments.clone(),
+                            },
+                        );
+                        messages.push(Message::Assistant {
+                            id: None,
+                            content: rig::OneOrMany::one(AssistantContent::ToolCall(tc)),
+                        });
+                        last_had_tool_calls = true;
+                    }
+                    let call_id = if data.call_id.is_empty() {
+                        data.tool_call_id.clone()
+                    } else {
+                        data.call_id.clone()
+                    };
+                    messages.push(Message::tool_result_with_call_id(
+                        data.tool_call_id.clone(),
+                        Some(call_id),
+                        data.result.clone(),
+                    ));
+                    // If we synthesized the assistant, reset so the
+                    // next tool_exec gets its own assistant too.
+                    if was_synthetic {
+                        last_had_tool_calls = false;
+                    }
+                }
+                LogEntry::TurnComplete { .. } | LogEntry::Error { .. } => {
+                    // End of a completed turn — mark all accumulated
+                    // messages as safe.
+                    safe_len = messages.len();
+                }
+                // Skip lifecycle and prompt entries.
+                LogEntry::SessionCreated { .. }
+                | LogEntry::SessionOpened { .. }
+                | LogEntry::SessionClosed { .. }
+                | LogEntry::LlmPrompt { .. } => {}
+            }
+        }
+
+        // Truncate to the last complete turn boundary.
+        messages.truncate(safe_len);
+        Ok(messages)
     }
 
     // --- Derived property accessors (Step 4) ---
@@ -814,6 +1016,382 @@ mod tests {
         assert!(latencies.is_empty());
 
         mgr.close("derive-test").expect("close");
+        std::fs::remove_dir_all(&dir).unwrap_or(());
+    }
+
+    // ── replay_history tests ──
+
+    /// Write entries to a session's event log directly.
+    fn write_log(session: &Session, entries: &[LogEntry]) {
+        let path = session.root().join("events.jsonl");
+        let mut writer = LogWriter::open(&path).expect("open log");
+        for entry in entries {
+            writer.write_entry(entry).expect("write entry");
+        }
+    }
+
+    #[test]
+    fn replay_empty_session_returns_empty() {
+        let dir = tmp_working_dir();
+        let mut mgr = SessionManager::new(&dir);
+        let session = mgr
+            .create("replay-empty", "deepseek-chat", "p")
+            .expect("create");
+        let history = session.replay_history().expect("replay");
+        assert!(history.is_empty());
+        mgr.close("replay-empty").expect("close");
+        std::fs::remove_dir_all(&dir).unwrap_or(());
+    }
+
+    #[test]
+    fn replay_simple_text_turn() {
+        let dir = tmp_working_dir();
+        let mut mgr = SessionManager::new(&dir);
+        let session = mgr
+            .create("replay-text", "deepseek-chat", "p")
+            .expect("create");
+        let now = Utc::now();
+        write_log(
+            session,
+            &[
+                LogEntry::user_input(now, 1, "hello".into()),
+                LogEntry::llm_prompt(
+                    now,
+                    1,
+                    "d".into(),
+                    "m".into(),
+                    serde_json::json!([]),
+                    serde_json::json!([]),
+                ),
+                LogEntry::llm_response(
+                    now,
+                    1,
+                    Some("msg_1".into()),
+                    Some("hi there".into()),
+                    None,
+                    None,
+                    UsageData {
+                        input_tokens: 10,
+                        output_tokens: 5,
+                    },
+                ),
+                LogEntry::turn_complete(now, 1, "hi there".into(), 0),
+            ],
+        );
+
+        let history = session.replay_history().expect("replay");
+        assert_eq!(history.len(), 2);
+        assert!(matches!(history[0], Message::User { .. }));
+        assert!(matches!(history[1], Message::Assistant { .. }));
+
+        mgr.close("replay-text").expect("close");
+        std::fs::remove_dir_all(&dir).unwrap_or(());
+    }
+
+    #[test]
+    fn replay_multi_turn() {
+        let dir = tmp_working_dir();
+        let mut mgr = SessionManager::new(&dir);
+        let session = mgr
+            .create("replay-multi", "deepseek-chat", "p")
+            .expect("create");
+        let now = Utc::now();
+
+        // Turn 1: simple text
+        write_log(
+            session,
+            &[
+                LogEntry::user_input(now, 1, "hi".into()),
+                LogEntry::llm_prompt(
+                    now,
+                    1,
+                    "d".into(),
+                    "m".into(),
+                    serde_json::json!([]),
+                    serde_json::json!([]),
+                ),
+                LogEntry::llm_response(
+                    now,
+                    1,
+                    Some("m1".into()),
+                    Some("hello".into()),
+                    None,
+                    None,
+                    UsageData {
+                        input_tokens: 5,
+                        output_tokens: 3,
+                    },
+                ),
+                LogEntry::turn_complete(now, 1, "hello".into(), 0),
+                // Turn 2: another text
+                LogEntry::user_input(now, 2, "how are you?".into()),
+                LogEntry::llm_prompt(
+                    now,
+                    2,
+                    "d".into(),
+                    "m".into(),
+                    serde_json::json!([]),
+                    serde_json::json!([]),
+                ),
+                LogEntry::llm_response(
+                    now,
+                    2,
+                    Some("m2".into()),
+                    Some("I'm fine".into()),
+                    None,
+                    None,
+                    UsageData {
+                        input_tokens: 8,
+                        output_tokens: 4,
+                    },
+                ),
+                LogEntry::turn_complete(now, 2, "I'm fine".into(), 0),
+            ],
+        );
+
+        let history = session.replay_history().expect("replay");
+        // 2 turns × 2 messages = 4
+        assert_eq!(history.len(), 4);
+
+        mgr.close("replay-multi").expect("close");
+        std::fs::remove_dir_all(&dir).unwrap_or(());
+    }
+
+    #[test]
+    fn replay_with_tool_calls() {
+        let dir = tmp_working_dir();
+        let mut mgr = SessionManager::new(&dir);
+        let session = mgr
+            .create("replay-tools", "deepseek-chat", "p")
+            .expect("create");
+        let now = Utc::now();
+
+        write_log(
+            session,
+            &[
+                LogEntry::user_input(now, 1, "echo hello".into()),
+                LogEntry::llm_prompt(
+                    now,
+                    1,
+                    "d".into(),
+                    "m".into(),
+                    serde_json::json!([]),
+                    serde_json::json!([]),
+                ),
+                LogEntry::llm_response(
+                    now,
+                    1,
+                    Some("msg_1".into()),
+                    None,
+                    None,
+                    Some(vec![ToolCallData {
+                        id: "call_abc".into(),
+                        name: "echo".into(),
+                        arguments: serde_json::json!({"text": "hello"}),
+                    }]),
+                    UsageData {
+                        input_tokens: 10,
+                        output_tokens: 5,
+                    },
+                ),
+                LogEntry::tool_execution(
+                    now,
+                    1,
+                    "call_abc".into(),
+                    "call_abc".into(),
+                    "echo".into(),
+                    serde_json::json!({"text": "hello"}),
+                    "hello".into(),
+                ),
+                LogEntry::llm_prompt(
+                    now,
+                    1,
+                    "d".into(),
+                    "m".into(),
+                    serde_json::json!([]),
+                    serde_json::json!([]),
+                ),
+                LogEntry::llm_response(
+                    now,
+                    1,
+                    Some("msg_2".into()),
+                    Some("echoed: hello".into()),
+                    None,
+                    None,
+                    UsageData {
+                        input_tokens: 10,
+                        output_tokens: 5,
+                    },
+                ),
+                LogEntry::turn_complete(now, 1, "echoed: hello".into(), 1),
+            ],
+        );
+
+        let history = session.replay_history().expect("replay");
+        // user + assistant(tool call) + tool result + assistant(text) = 4
+        assert_eq!(history.len(), 4);
+        // First is user
+        assert!(matches!(history[0], Message::User { .. }));
+        // Second is assistant with tool call
+        assert!(matches!(history[1], Message::Assistant { .. }));
+        // Third is tool result (User variant with ToolResult content)
+        assert!(matches!(history[2], Message::User { .. }));
+        // Fourth is assistant text
+        assert!(matches!(history[3], Message::Assistant { .. }));
+
+        mgr.close("replay-tools").expect("close");
+        std::fs::remove_dir_all(&dir).unwrap_or(());
+    }
+
+    #[test]
+    fn replay_truncates_partial_turn() {
+        let dir = tmp_working_dir();
+        let mut mgr = SessionManager::new(&dir);
+        let session = mgr
+            .create("replay-partial", "deepseek-chat", "p")
+            .expect("create");
+        let now = Utc::now();
+
+        write_log(
+            session,
+            &[
+                // Turn 1: complete
+                LogEntry::user_input(now, 1, "hi".into()),
+                LogEntry::llm_prompt(
+                    now,
+                    1,
+                    "d".into(),
+                    "m".into(),
+                    serde_json::json!([]),
+                    serde_json::json!([]),
+                ),
+                LogEntry::llm_response(
+                    now,
+                    1,
+                    Some("m1".into()),
+                    Some("hello".into()),
+                    None,
+                    None,
+                    UsageData {
+                        input_tokens: 5,
+                        output_tokens: 3,
+                    },
+                ),
+                LogEntry::turn_complete(now, 1, "hello".into(), 0),
+                // Turn 2: incomplete (crash after user input, no turn_complete)
+                LogEntry::user_input(now, 2, "unfinished".into()),
+                LogEntry::llm_prompt(
+                    now,
+                    2,
+                    "d".into(),
+                    "m".into(),
+                    serde_json::json!([]),
+                    serde_json::json!([]),
+                ),
+                LogEntry::llm_response(
+                    now,
+                    2,
+                    Some("m2".into()),
+                    Some("partial".into()),
+                    None,
+                    None,
+                    UsageData {
+                        input_tokens: 3,
+                        output_tokens: 1,
+                    },
+                ),
+                // No turn_complete — simulates crash
+            ],
+        );
+
+        let history = session.replay_history().expect("replay");
+        // Only turn 1's messages should be replayed (2 msgs), turn 2 truncated.
+        assert_eq!(history.len(), 2);
+
+        mgr.close("replay-partial").expect("close");
+        std::fs::remove_dir_all(&dir).unwrap_or(());
+    }
+
+    #[test]
+    fn replay_old_log_missing_call_id() {
+        let dir = tmp_working_dir();
+        let mut mgr = SessionManager::new(&dir);
+        let session = mgr
+            .create("replay-old", "deepseek-chat", "p")
+            .expect("create");
+        let now = Utc::now();
+
+        write_log(
+            session,
+            &[
+                LogEntry::user_input(now, 1, "echo test".into()),
+                LogEntry::llm_response(
+                    now,
+                    1,
+                    Some("m1".into()),
+                    None,
+                    None,
+                    Some(vec![ToolCallData {
+                        id: "call_123".into(),
+                        name: "echo".into(),
+                        arguments: serde_json::json!({"text": "test"}),
+                    }]),
+                    UsageData {
+                        input_tokens: 10,
+                        output_tokens: 5,
+                    },
+                ),
+            ],
+        );
+
+        // Append an old-format tool_execution (no call_id field).
+        let old_exec = serde_json::json!({
+            "kind": "tool_execution",
+            "ts": now.to_rfc3339(),
+            "turn": 1,
+            "data": {
+                "tool_call_id": "call_123",
+                "name": "echo",
+                "arguments": {"text": "test"},
+                "result": "test"
+            }
+        });
+        let log_path = session.root().join("events.jsonl");
+        {
+            use std::io::Write as _;
+            let mut file = std::fs::OpenOptions::new()
+                .append(true)
+                .open(&log_path)
+                .expect("open log");
+            writeln!(file, "{}", serde_json::to_string(&old_exec).unwrap())
+                .expect("write old entry");
+        }
+
+        // Then the follow-up response and turn_complete.
+        write_log(
+            session,
+            &[
+                LogEntry::llm_response(
+                    now,
+                    1,
+                    Some("m2".into()),
+                    Some("echoed: test".into()),
+                    None,
+                    None,
+                    UsageData {
+                        input_tokens: 5,
+                        output_tokens: 3,
+                    },
+                ),
+                LogEntry::turn_complete(now, 1, "echoed: test".into(), 1),
+            ],
+        );
+
+        let history = session.replay_history().expect("replay");
+        // user + assistant(tool call) + tool result(old log) + assistant(text) = 4
+        assert_eq!(history.len(), 4);
+
+        mgr.close("replay-old").expect("close");
         std::fs::remove_dir_all(&dir).unwrap_or(());
     }
 }

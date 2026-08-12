@@ -142,6 +142,8 @@ pub struct UsageData {
 #[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct ToolExecutionData {
     pub tool_call_id: String,
+    #[serde(default)]
+    pub call_id: String,
     pub name: String,
     pub arguments: serde_json::Value,
     pub result: String,
@@ -259,6 +261,7 @@ impl LogEntry {
         ts: DateTime<Utc>,
         turn: u64,
         tool_call_id: String,
+        call_id: String,
         name: String,
         arguments: serde_json::Value,
         result: String,
@@ -268,6 +271,7 @@ impl LogEntry {
             turn,
             data: ToolExecutionData {
                 tool_call_id,
+                call_id,
                 name,
                 arguments,
                 result,

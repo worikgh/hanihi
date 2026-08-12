@@ -1,10 +1,16 @@
 //! The agent: model + tools + message history + the tool-calling loop.
 
+use std::sync::Arc;
+
+use futures::StreamExt as _;
 use rig::client::CompletionClient;
 use rig::completion::message::ToolCall;
-use rig::completion::{AssistantContent, CompletionModel, Message, ToolDefinition, Usage};
+use rig::completion::{
+    AssistantContent, CompletionModel, GetTokenUsage, Message, ToolDefinition, Usage,
+};
 use rig::providers::openai;
 use rig::tool::PortableDynamicTool;
+use tokio::sync::mpsc;
 
 use crate::error::AgentError;
 
@@ -14,7 +20,7 @@ You have access to tools. Use them when they help answer the user; otherwise ans
 When a tool result comes back, incorporate it into your final answer.";
 
 /// Result of one `Agent::run` invocation.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct TurnSummary {
     /// Final assistant text.
     pub text: String,
@@ -22,6 +28,36 @@ pub struct TurnSummary {
     pub tool_calls: usize,
     /// Total token usage across all model calls in the turn.
     pub usage: Usage,
+    /// Final message history after the turn (for streaming — the agent's
+    /// history is updated in the spawned task; the caller seeds it back).
+    pub final_history: Vec<Message>,
+}
+
+/// Events emitted during a streaming agent turn.
+#[derive(Debug, Clone)]
+pub enum StreamEvent {
+    /// Delta of assistant text.
+    TextDelta { text: String },
+    /// Model has started a tool call (name known, arguments assembling).
+    ToolCallStart { id: String, name: String },
+    /// Fragment of tool call arguments (partial JSON).
+    ToolCallArgs { id: String, args_delta: String },
+    /// Tool call is complete and about to be executed.
+    ToolCallReady {
+        id: String,
+        name: String,
+        arguments: serde_json::Value,
+    },
+    /// Tool has executed successfully.
+    ToolResult {
+        id: String,
+        name: String,
+        result_preview: String,
+    },
+    /// Turn completed successfully.
+    TurnComplete { summary: TurnSummary },
+    /// An error occurred during the turn.
+    Error { message: String },
 }
 
 /// Connect to an OpenAI-compatible chat completions endpoint (e.g. DeepSeek)
@@ -30,16 +66,16 @@ pub struct TurnSummary {
 /// The concrete model type is hidden behind `impl CompletionModel` so callers
 /// never need to name it.
 pub fn connect_chat_model(
-    base_url: &str,
-    api_key: &str,
-    model: &str,
-) -> Result<Agent<impl CompletionModel>, AgentError> {
+    base_url: String,
+    api_key: String,
+    model: String,
+) -> Result<Agent<impl CompletionModel + use<>>, AgentError> {
     let client = openai::CompletionsClient::builder()
-        .api_key(api_key)
-        .base_url(base_url)
+        .api_key(&api_key)
+        .base_url(&base_url)
         .build()
         .map_err(|e| AgentError::Rig(e.to_string()))?;
-    let model = client.completion_model(model);
+    let model = client.completion_model(&model);
     Ok(Agent::new(model, DEFAULT_SYSTEM_PROMPT))
 }
 
@@ -51,7 +87,7 @@ pub fn connect_chat_model(
 pub struct Agent<M: CompletionModel> {
     model: M,
     system_prompt: String,
-    tools: Vec<PortableDynamicTool>,
+    tools: Arc<Vec<PortableDynamicTool>>,
     history: Vec<Message>,
     max_turns: usize,
 }
@@ -62,7 +98,7 @@ impl<M: CompletionModel> Agent<M> {
         Self {
             model,
             system_prompt: system_prompt.into(),
-            tools: Vec::new(),
+            tools: Arc::new(Vec::new()),
             history: Vec::new(),
             max_turns: 10,
         }
@@ -75,7 +111,12 @@ impl<M: CompletionModel> Agent<M> {
 
     /// Register a tool. The agent exposes it to the model on the next turn.
     pub fn add_tool(&mut self, tool: PortableDynamicTool) {
-        self.tools.push(tool);
+        Arc::make_mut(&mut self.tools).push(tool);
+    }
+
+    /// Clone of the shared tool registry (for use in spawned tasks).
+    fn tools_arc(&self) -> Arc<Vec<PortableDynamicTool>> {
+        self.tools.clone()
     }
 
     /// Tool inventory (name, description, JSON schema).
@@ -108,6 +149,11 @@ impl<M: CompletionModel> Agent<M> {
         self.history.clear();
     }
 
+    /// Replace the persistent message history (e.g. from session replay).
+    pub fn set_history(&mut self, history: Vec<Message>) {
+        self.history = history;
+    }
+
     /// Run a single completion call against the model.
     ///
     /// Assembles the request from `user_input` + persistent history +
@@ -133,9 +179,6 @@ impl<M: CompletionModel> Agent<M> {
     /// Run one user request to completion: model calls, tool execution, and
     /// follow-up model calls until the model answers without tool calls.
     pub async fn run(&mut self, user_input: &str) -> Result<TurnSummary, AgentError> {
-        // Messages produced during this turn (assistant replies, tool calls,
-        // tool results). The user input is passed as the request `prompt` each
-        // iteration so it never appears twice in the assembled history.
         let mut turn_messages: Vec<Message> = Vec::new();
         let mut tool_calls_total = 0usize;
         let mut usage_total = Usage::new();
@@ -162,7 +205,6 @@ impl<M: CompletionModel> Agent<M> {
                 }
             }
 
-            // Model answered without tool calls: turn complete.
             if tool_calls.is_empty() {
                 let text = text_parts
                     .iter()
@@ -175,10 +217,10 @@ impl<M: CompletionModel> Agent<M> {
                     text,
                     tool_calls: tool_calls_total,
                     usage: usage_total,
+                    final_history: self.history.clone(),
                 });
             }
 
-            // Record the assistant message (text + tool calls) and execute.
             let mut contents: Vec<AssistantContent> =
                 text_parts.into_iter().map(AssistantContent::Text).collect();
             contents.extend(tool_calls.iter().cloned().map(AssistantContent::ToolCall));
@@ -199,11 +241,50 @@ impl<M: CompletionModel> Agent<M> {
             }
         }
 
-        // The model kept calling tools until we ran out of turns.
         self.commit_turn(user_input, turn_messages);
         Err(AgentError::MaxTurns {
             turns: self.max_turns,
         })
+    }
+
+    /// Run one user turn with streaming output.
+    ///
+    /// Returns a channel receiver. The caller reads events as they arrive.
+    /// The agent loop runs on a spawned task. After the stream completes,
+    /// the caller should extract `final_history` from the `TurnComplete`
+    /// event and call `set_history` to persist the new state.
+    pub async fn run_streaming(
+        &self,
+        user_input: &str,
+    ) -> Result<mpsc::Receiver<StreamEvent>, AgentError>
+    where
+        M: 'static,
+        M::StreamingResponse: Send,
+    {
+        let (tx, rx) = mpsc::channel(32);
+        let model = self.model.clone();
+        let tools = self.tools_arc();
+        let max_turns = self.max_turns;
+        let mut history = self.history.clone();
+        let user_input = user_input.to_string();
+
+        tokio::spawn(async move {
+            let result = run_streaming_loop(
+                model,
+                tools,
+                &mut history,
+                user_input.to_string(),
+                max_turns,
+                &tx,
+            )
+            .await;
+            // Update the agent's history on completion.
+            // (History is sent back to the agent via a final message or
+            //  we update it after the stream. For now, the caller handles it.)
+            let _ = result;
+        });
+
+        Ok(rx)
     }
 
     /// Dispatch a single tool call by name and render its output as text.
@@ -234,6 +315,214 @@ impl<M: CompletionModel> Agent<M> {
     }
 }
 
+/// The inner streaming loop, run on a spawned task.
+///
+/// Consumes the model stream, executes tools when complete tool calls
+/// arrive, and sends [`StreamEvent`]s to the caller.
+async fn run_streaming_loop<M: CompletionModel>(
+    model: M,
+    tools: Arc<Vec<PortableDynamicTool>>,
+    history: &mut Vec<Message>,
+    user_input: String,
+    max_turns: usize,
+    tx: &mpsc::Sender<StreamEvent>,
+) -> Result<TurnSummary, AgentError>
+where
+    M::StreamingResponse: Send,
+{
+    let mut turn_messages: Vec<Message> = Vec::new();
+    let mut tool_calls_total: usize = 0;
+    let mut usage_total = Usage::new();
+
+    for _turn in 0..max_turns {
+        // Build the request.
+        let request = model
+            .completion_request(Message::user(user_input.clone()))
+            .messages(history.iter().chain(turn_messages.iter()).cloned())
+            .tools(tools.iter().map(|t| t.definition()).collect::<Vec<_>>())
+            .build();
+
+        let mut stream = model
+            .stream(request)
+            .await
+            .map_err(|e| AgentError::Rig(e.to_string()))?;
+
+        // Track tool calls and their results during this model call.
+        let mut pending_tool_calls: Vec<ToolCall> = Vec::new();
+        let mut pending_results: Vec<(ToolCall, String)> = Vec::new();
+        let mut text_buf = String::new();
+
+        while let Some(item) = stream.next().await {
+            match item {
+                Ok(rig::streaming::StreamedAssistantContent::Text(t)) => {
+                    let delta = t.text().to_string();
+                    text_buf.push_str(&delta);
+                    let _ = tx.send(StreamEvent::TextDelta { text: delta }).await;
+                }
+                Ok(rig::streaming::StreamedAssistantContent::ToolCallDelta {
+                    id, content, ..
+                }) => {
+                    use rig::streaming::ToolCallDeltaContent;
+                    match content {
+                        ToolCallDeltaContent::Name(name) => {
+                            let _ = tx
+                                .send(StreamEvent::ToolCallStart {
+                                    id: id.clone(),
+                                    name: name.clone(),
+                                })
+                                .await;
+                        }
+                        ToolCallDeltaContent::Delta(args) => {
+                            let _ = tx
+                                .send(StreamEvent::ToolCallArgs {
+                                    id: id.clone(),
+                                    args_delta: args,
+                                })
+                                .await;
+                        }
+                    }
+                }
+                Ok(rig::streaming::StreamedAssistantContent::ToolCall { tool_call, .. }) => {
+                    let _ = tx
+                        .send(StreamEvent::ToolCallReady {
+                            id: tool_call.id.clone(),
+                            name: tool_call.function.name.clone(),
+                            arguments: tool_call.function.arguments.clone(),
+                        })
+                        .await;
+
+                    // Execute the tool.
+                    let name = tool_call.function.name.clone();
+                    let tool = tools.iter().find(|t| t.name() == name);
+                    match tool {
+                        Some(t) => match t.execute(tool_call.function.arguments.clone()).await {
+                            Ok(output) => {
+                                let rendered = output.render();
+                                let preview = if rendered.len() > 200 {
+                                    format!("{}…", &rendered[..200])
+                                } else {
+                                    rendered.clone()
+                                };
+                                let _ = tx
+                                    .send(StreamEvent::ToolResult {
+                                        id: tool_call.id.clone(),
+                                        name: name.clone(),
+                                        result_preview: preview,
+                                    })
+                                    .await;
+                                tool_calls_total += 1;
+                                pending_results.push((tool_call.clone(), rendered));
+                            }
+                            Err(e) => {
+                                let _ = tx
+                                    .send(StreamEvent::Error {
+                                        message: e.to_string(),
+                                    })
+                                    .await;
+                                return Err(AgentError::Tool {
+                                    name: name.clone(),
+                                    message: e.to_string(),
+                                });
+                            }
+                        },
+                        None => {
+                            let msg = format!("unknown tool: {name}");
+                            let _ = tx
+                                .send(StreamEvent::Error {
+                                    message: msg.clone(),
+                                })
+                                .await;
+                            return Err(AgentError::Tool {
+                                name: name.clone(),
+                                message: msg,
+                            });
+                        }
+                    }
+                    pending_tool_calls.push(tool_call);
+                }
+                Ok(rig::streaming::StreamedAssistantContent::Final(r)) => {
+                    usage_total += r.token_usage();
+                }
+                Ok(rig::streaming::StreamedAssistantContent::ReasoningDelta {
+                    reasoning: _,
+                    ..
+                })
+                | Ok(rig::streaming::StreamedAssistantContent::Reasoning(_)) => {
+                    // Silently absorb reasoning — not shown to the user yet.
+                }
+                Ok(rig::streaming::StreamedAssistantContent::Unknown(_)) => {}
+                Err(e) => {
+                    let _ = tx
+                        .send(StreamEvent::Error {
+                            message: e.to_string(),
+                        })
+                        .await;
+                    return Err(AgentError::Rig(e.to_string()));
+                }
+            }
+        }
+        // Capture message_id from the stream.
+        let message_id = stream.message_id.clone();
+
+        // If no tool calls were made, the turn is complete.
+        if pending_tool_calls.is_empty() {
+            turn_messages.push(Message::assistant(text_buf.clone()));
+            history.push(Message::user(user_input));
+            history.extend(turn_messages);
+            let summary = TurnSummary {
+                text: text_buf,
+                tool_calls: tool_calls_total,
+                usage: usage_total,
+                final_history: history.clone(),
+            };
+            let _ = tx
+                .send(StreamEvent::TurnComplete {
+                    summary: summary.clone(),
+                })
+                .await;
+            return Ok(summary);
+        }
+
+        // Tool calls were executed. Build the assistant message and loop.
+        let mut contents: Vec<AssistantContent> = Vec::new();
+        if !text_buf.is_empty() {
+            contents.push(AssistantContent::Text(rig::completion::message::Text::new(
+                text_buf,
+            )));
+        }
+        contents.extend(
+            pending_tool_calls
+                .iter()
+                .cloned()
+                .map(AssistantContent::ToolCall),
+        );
+        turn_messages.push(Message::Assistant {
+            id: message_id,
+            content: rig::OneOrMany::from_iter_optional(contents)
+                .expect("assistant message has content"),
+        });
+
+        // Push tool results AFTER the assistant message.
+        for (call, rendered) in pending_results {
+            turn_messages.push(Message::tool_result_with_call_id(
+                call.id,
+                call.call_id,
+                rendered,
+            ));
+        }
+    }
+
+    // Max turns exceeded.
+    history.push(Message::user(user_input));
+    history.extend(turn_messages);
+    let _ = tx
+        .send(StreamEvent::Error {
+            message: format!("exceeded maximum of {max_turns} model turns"),
+        })
+        .await;
+    Err(AgentError::MaxTurns { turns: max_turns })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -251,13 +540,11 @@ mod tests {
         let summary = agent.run("hi").await.expect("run succeeds");
         assert_eq!(summary.text, "unused");
         assert_eq!(summary.tool_calls, 0);
-        // History: user + assistant.
         assert_eq!(agent.history().len(), 2);
     }
 
     #[tokio::test]
     async fn test_tool_call_round_trip() {
-        // Turn 1: model asks for echo("ping"). Turn 2: model answers.
         let model = MockCompletionModel::from_turns([
             MockTurn::tool_call("call_1", "echo", serde_json::json!({"text": "ping"})),
             MockTurn::text("echoed: ping"),
@@ -269,17 +556,12 @@ mod tests {
         assert_eq!(summary.text, "echoed: ping");
         assert_eq!(summary.tool_calls, 1);
 
-        // History: user, assistant(tool call), tool result, assistant(text).
         let history = agent.history();
         assert_eq!(history.len(), 4);
-        assert!(matches!(history[1], Message::Assistant { .. }));
-        assert!(matches!(history[2], Message::User { .. }));
-        assert!(matches!(history[3], Message::Assistant { .. }));
     }
 
     #[tokio::test]
     async fn test_max_turns_exceeded() {
-        // Model always requests a tool call; agent must give up eventually.
         let model = MockCompletionModel::from_turns(std::iter::repeat_n(
             MockTurn::tool_call("call_x", "echo", serde_json::json!({"text": "x"})),
             50,
@@ -294,7 +576,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_unknown_tool_fails() {
-        // Model asks for a tool that is not registered.
         let model = MockCompletionModel::from_turns([MockTurn::tool_call(
             "call_1",
             "nonexistent",

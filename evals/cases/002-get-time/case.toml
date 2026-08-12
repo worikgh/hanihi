@@ -1,0 +1,12 @@
+user_input = "What time is it right now? Use the get_time tool to find out, then tell me."
+
+[[assertions]]
+type = "tool_called"
+name = "get_time"
+
+[[assertions]]
+type = "text_regex"
+pattern = "20\\d{2}"
+
+[[assertions]]
+type = "no_error"

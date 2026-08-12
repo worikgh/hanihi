@@ -16,7 +16,7 @@ pub mod session;
 pub mod source;
 pub mod tool;
 
-pub use agent::{Agent, TurnSummary, connect_chat_model};
+pub use agent::{Agent, StreamEvent, TurnSummary, connect_chat_model};
 pub use error::AgentError;
 pub use mcp::McpClient;
 pub use session::{Session, SessionError, SessionManager};

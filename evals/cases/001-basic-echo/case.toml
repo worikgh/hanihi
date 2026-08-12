@@ -1,0 +1,12 @@
+user_input = "Use the echo tool to repeat back: hello world"
+
+[[assertions]]
+type = "tool_called"
+name = "echo"
+
+[[assertions]]
+type = "text_contains"
+value = "hello world"
+
+[[assertions]]
+type = "no_error"

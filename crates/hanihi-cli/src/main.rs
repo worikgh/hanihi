@@ -12,8 +12,8 @@ use hanihi_core::agent::Agent;
 use hanihi_core::error::AgentError;
 use hanihi_core::session::SessionManager;
 use hanihi_core::{
-    McpClient, SourceTree, builtin_echo, builtin_get_time, builtin_list_dir, builtin_read_file,
-    connect_chat_model,
+    McpClient, SourceTree, StreamEvent, builtin_echo, builtin_get_time, builtin_list_dir,
+    builtin_read_file, connect_chat_model,
 };
 use reedline::{DefaultPrompt, Reedline, Signal};
 use rig::completion::CompletionModel;
@@ -138,7 +138,7 @@ async fn main() -> Result<(), AgentError> {
     }
 
     // Build the agent.
-    let mut agent = connect_chat_model(&args.base_url, &api_key, &args.model)?;
+    let mut agent = connect_chat_model(args.base_url.clone(), api_key.clone(), args.model.clone())?;
     agent.add_tool(builtin_get_time());
     agent.add_tool(builtin_echo());
 
@@ -179,15 +179,49 @@ async fn main() -> Result<(), AgentError> {
         .open(&session_name)
         .map_err(|_e| AgentError::Rig("failed to re-open session".into()))?;
 
+    // Replay prior turns from the event log so the agent remembers
+    // previous conversations in this session.
+    match session.replay_history() {
+        Ok(history) if !history.is_empty() => {
+            let msg_count = history.len();
+            agent.set_history(history);
+            println!("replayed {msg_count} messages from prior session");
+        }
+        Ok(_) => {} // empty history, nothing to replay
+        Err(e) => {
+            tracing::warn!("failed to replay session history: {e}");
+        }
+    }
+
     if let Some(prompt) = args.once {
-        let summary = session
-            .run(&mut agent, provider, &args.model, &prompt)
-            .await?;
-        println!("{}", summary.text);
-        println!(
-            "[tool calls: {} | tokens: {} in / {} out]",
-            summary.tool_calls, summary.usage.input_tokens, summary.usage.output_tokens
-        );
+        let mut rx = session
+            .run_streaming(&mut agent, provider, &args.model, &prompt)
+            .await
+            .map_err(|e| AgentError::Rig(e.to_string()))?;
+
+        while let Some(event) = rx.recv().await {
+            match event {
+                StreamEvent::TextDelta { text } => print!("{text}"),
+                StreamEvent::ToolCallStart { name, .. } => print!("\n[🔧 {name}"),
+                StreamEvent::ToolCallArgs { .. } => {}
+                StreamEvent::ToolCallReady { .. } => {}
+                StreamEvent::ToolResult { .. } => println!(" ✅]"),
+                StreamEvent::TurnComplete { summary } => {
+                    println!();
+                    println!(
+                        "[tool calls: {} | tokens: {} in / {} out]",
+                        summary.tool_calls, summary.usage.input_tokens, summary.usage.output_tokens
+                    );
+                    agent.set_history(summary.final_history);
+                    break;
+                }
+                StreamEvent::Error { message } => {
+                    eprintln!();
+                    eprintln!("error: {message}");
+                    break;
+                }
+            }
+        }
         mgr.close(&session_name)
             .map_err(|e| AgentError::Rig(e.to_string()))?;
         return Ok(());
@@ -201,7 +235,7 @@ async fn main() -> Result<(), AgentError> {
 }
 
 /// Interactive readline loop.
-async fn repl<M: CompletionModel>(
+async fn repl<M: CompletionModel + 'static>(
     session: &mut hanihi_core::session::Session,
     mut agent: Agent<M>,
     provider: &str,
@@ -243,15 +277,38 @@ async fn repl<M: CompletionModel>(
                     }
                     _ => {}
                 }
-                match session.run(&mut agent, provider, model_name, &line).await {
-                    Ok(summary) => {
-                        println!("{}", summary.text);
-                        println!(
-                            "[tool calls: {} | tokens: {} in / {} out]",
-                            summary.tool_calls,
-                            summary.usage.input_tokens,
-                            summary.usage.output_tokens
-                        );
+                match session
+                    .run_streaming(&mut agent, provider, model_name, &line)
+                    .await
+                {
+                    Ok(mut rx) => {
+                        while let Some(event) = rx.recv().await {
+                            match event {
+                                StreamEvent::TextDelta { text } => print!("{text}"),
+                                StreamEvent::ToolCallStart { name, .. } => {
+                                    print!("\n[🔧 {name}")
+                                }
+                                StreamEvent::ToolCallArgs { .. } => {}
+                                StreamEvent::ToolCallReady { .. } => {}
+                                StreamEvent::ToolResult { .. } => println!(" ✅]"),
+                                StreamEvent::TurnComplete { summary } => {
+                                    println!();
+                                    println!(
+                                        "[tool calls: {} | tokens: {} in / {} out]",
+                                        summary.tool_calls,
+                                        summary.usage.input_tokens,
+                                        summary.usage.output_tokens
+                                    );
+                                    agent.set_history(summary.final_history);
+                                    break;
+                                }
+                                StreamEvent::Error { message } => {
+                                    eprintln!();
+                                    eprintln!("error: {message}");
+                                    break;
+                                }
+                            }
+                        }
                     }
                     Err(e) => eprintln!("error: {e}"),
                 }
