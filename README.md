@@ -60,6 +60,22 @@ evals/
   Rust; CMake/Makefile/C-family sources → C/C++). Reads are capped at
   64 KiB, escapes outside the repo are refused, and `target/`-style noise
   never reaches the model.
+- **Code tools** — `grep` (regex content search, ripgrep syntax, capped at
+  200 matches), `run_command` (allowlisted `cargo`/`git` commands inside the
+  repo root: no shell, scrubbed env, timeout, full output persisted to a
+  trace file under `working/traces/`), and `read_session_log` (a window
+  into the session's own `events.jsonl` — the agent can study its own
+  traces). All always registered.
+- **Write tools (opt-in, `--write`)** — `apply_patch` (unified diff,
+  validated with `git apply --check`) and `write_file`. Scoped to the
+  enclosing repo (escapes, ignored paths, `.ignore`, `.git*` refused);
+  changes land as local git commits — never pushed. Off by default: without
+  `--write` the tools are not even registered.
+- **Task mode (`--task`)** — one long-horizon turn with a system prompt
+  encoding the workflow gates (`cargo fmt` → `cargo test` → `cargo build`
+  → `cargo clippy -- -D warnings` → commit). `--max-turns N` (default 50 in
+  task mode). `scripts/self-improve.sh` drives the full loop: task mode →
+  rebuild → eval gate.
 - **MCP client** — spawn an MCP stdio server, wrap each of its tools as an
   agent tool dispatching over `tools/call`
 - **CLI** — interactive reedline REPL (`/help /tools /clear /session /quit`),
@@ -102,6 +118,9 @@ Configuration — every flag has an environment variable:
 | `--working-dir DIR` | `HANIHI_WORKING_DIR` | `./working` |
 | `--mcp-command CMD` | — | none (repeatable) |
 | `--once PROMPT` | — | none |
+| `--write` | — | write tools NOT registered |
+| `--task PROMPT` | — | none (takes precedence over `--once`) |
+| `--max-turns N` | — | 10 (50 in task mode) |
 
 ## How it works
 
@@ -219,11 +238,8 @@ cargo publish -p hanihi-core --dry-run  # full verification, no upload
 
 - Tool name collisions: first registration wins (builtin `echo` shadows an MCP
   `echo`). Namespacing MCP tools is a future concern.
-- `run_command` tool — let the agent run `cargo build` / `cargo test` inside
-  the enclosing repo. (Specified in plan 005.)
-- **Write tools** (plan 005) — `apply_patch` / `write_file`, registered only
-  with `--write`; repo-scoped via `SourceTree` guards; changes land as
-  commits, never pushed.
+- `add_ignore` tool / `--regenerate-ignore` — grow `.ignore` from within the
+  agent.
 - **LSP via MCP** — bridge an LSP server (goto-definition, references,
   hover) through the existing MCP client. Cheaper first step than
   tree-sitter for symbol-level code intelligence.
@@ -232,10 +248,12 @@ cargo publish -p hanihi-core --dry-run  # full verification, no upload
   `symbols(path)` tool or startup index under `working/`; reference-finding
   to support multi-file refactoring.
 - **Multi-file refactoring** — agent emits a plan applied as one multi-file
-  unified diff via `apply_patch` (plan 005), verified by workflow gates +
-  before/after evals.
+  unified diff via `apply_patch`, verified by workflow gates + before/after
+  evals.
 - **Background workers** — in-process task layer (durable task state in the
-  event log, `read_task` tool, file-change watcher). The plan-005 driver
-  script is the minimal external version; do that first.
+  event log, `read_task` tool, file-change watcher). The `self-improve.sh`
+  driver script is the minimal external version; do that first.
+- **Eval compare mode** — `--baseline`/`--compare` in `hanihi-eval` to diff
+  pass/fail + token usage between runs (stretch goal from plan 005).
 - `add_ignore` tool / `--regenerate-ignore` — grow `.ignore` from within the
   agent.

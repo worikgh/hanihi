@@ -637,15 +637,15 @@ pub fn builtin_read_session_log(log_path: PathBuf) -> PortableDynamicTool {
                     let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
                         continue;
                     };
-                    if let Some(k) = &kind {
-                        if v.get("kind").and_then(|x| x.as_str()) != Some(k.as_str()) {
-                            continue;
-                        }
+                    if let Some(k) = &kind
+                        && v.get("kind").and_then(|x| x.as_str()) != Some(k.as_str())
+                    {
+                        continue;
                     }
-                    if let Some(t) = turn {
-                        if v.get("turn").and_then(|x| x.as_u64()) != Some(t) {
-                            continue;
-                        }
+                    if let Some(t) = turn
+                        && v.get("turn").and_then(|x| x.as_u64()) != Some(t)
+                    {
+                        continue;
                     }
                     entries.push(v);
                 }
@@ -746,6 +746,93 @@ mod tests {
         let summary = agent.run("read src/main.rs").await.expect("run succeeds");
         assert_eq!(summary.tool_calls, 1);
         assert_eq!(summary.text, "read the file");
+    }
+
+    // ── grep ──
+
+    #[tokio::test]
+    async fn grep_finds_matches_and_honours_ignores() {
+        let fx = Fixture::new();
+        let tool = builtin_grep(fx.tree());
+
+        let out = tool
+            .execute(serde_json::json!({ "pattern": "fn main" }))
+            .await
+            .expect("grep succeeds");
+        let rendered = out.render();
+        assert!(rendered.contains("src/main.rs:1"), "got: {rendered}");
+
+        // The only file containing "junk" is git-ignored (target/) — the
+        // search must never see it.
+        let out = tool
+            .execute(serde_json::json!({ "pattern": "junk" }))
+            .await
+            .expect("grep succeeds");
+        assert!(out.render().contains("no matches"), "got: {}", out.render());
+    }
+
+    #[tokio::test]
+    async fn grep_rejects_invalid_regex() {
+        let fx = Fixture::new();
+        let tool = builtin_grep(fx.tree());
+        let err = tool
+            .execute(serde_json::json!({ "pattern": "(unclosed" }))
+            .await
+            .expect_err("invalid regex must fail");
+        assert!(err.to_string().contains("regex"), "got: {err}");
+    }
+
+    // ── read_session_log ──
+
+    #[tokio::test]
+    async fn read_session_log_filters_kind_turn_tail() {
+        use crate::session::log::LogEntry;
+
+        let path =
+            std::env::temp_dir().join(format!("hanihi-logtool-{}.jsonl", uuid::Uuid::new_v4()));
+        let mut writer = crate::session::log::LogWriter::open(&path).expect("open log");
+        let now = chrono::Utc::now();
+        writer
+            .write_entry(&LogEntry::user_input(now, 1, "hello".into()))
+            .expect("write");
+        writer
+            .write_entry(&LogEntry::turn_complete(now, 1, "hi there".into(), 0))
+            .expect("write");
+        writer
+            .write_entry(&LogEntry::user_input(now, 2, "bye".into()))
+            .expect("write");
+        drop(writer);
+
+        let tool = builtin_read_session_log(path.clone());
+
+        let out = tool
+            .execute(serde_json::json!({ "kind": "user_input" }))
+            .await
+            .expect("log read");
+        let rendered = out.render();
+        assert!(
+            rendered.contains("hello") && rendered.contains("bye"),
+            "got: {rendered}"
+        );
+        assert!(!rendered.contains("turn_complete"), "got: {rendered}");
+
+        let out = tool
+            .execute(serde_json::json!({ "turn": 2 }))
+            .await
+            .expect("log read");
+        let rendered = out.render();
+        assert!(rendered.contains("bye"), "got: {rendered}");
+        assert!(!rendered.contains("hello"), "got: {rendered}");
+
+        let out = tool
+            .execute(serde_json::json!({ "tail": 1 }))
+            .await
+            .expect("log read");
+        let rendered = out.render();
+        assert!(rendered.contains("bye"), "got: {rendered}");
+        assert!(!rendered.contains("hi there"), "got: {rendered}");
+
+        std::fs::remove_file(&path).unwrap_or(());
     }
 
     // ── run_command ──

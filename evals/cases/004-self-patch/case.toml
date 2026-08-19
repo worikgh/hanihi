@@ -1,0 +1,19 @@
+# The agent edits a throwaway fixture repo and commits its change; the build
+# must still pass and the tree must be left clean.
+fixture = true
+write_tools = true
+
+user_input = "Make a small improvement to this repository: add a doc comment to the main function in src/main.rs. Commit your change with the message 'add doc comment'. Then verify the build still passes with `cargo check`."
+
+[[assertions]]
+type = "tool_called"
+name = "apply_patch"
+
+[[assertions]]
+type = "build_succeeds"
+
+[[assertions]]
+type = "no_diff"
+
+[[assertions]]
+type = "no_error"

@@ -1,6 +1,6 @@
 # Plan 005 — Self-Improvement
 
-**Status:** draft | **Created:** 2026-08-19 | **Scope:** core + CLI + eval
+**Status:** implemented | **Created:** 2026-08-19 | **Scope:** core + CLI + eval
 
 ## Overview
 

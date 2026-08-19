@@ -5,6 +5,7 @@
 //! against the session event log.
 
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -14,7 +15,9 @@ use hanihi_core::connect_chat_model;
 use hanihi_core::session::SessionManager;
 use hanihi_core::session::log::LogEntry;
 use hanihi_core::{
-    SourceTree, builtin_echo, builtin_get_time, builtin_list_dir, builtin_read_file,
+    SourceTree, builtin_apply_patch, builtin_echo, builtin_get_time, builtin_grep,
+    builtin_list_dir, builtin_read_file, builtin_read_session_log, builtin_run_command,
+    builtin_write_file,
 };
 use serde::Deserialize;
 use tracing_subscriber::EnvFilter;
@@ -78,6 +81,10 @@ struct Case {
     #[serde(skip)]
     dir_name: String,
 
+    /// Case directory path (populated after discovery, not from TOML).
+    #[serde(skip)]
+    case_dir: PathBuf,
+
     /// Optional model override for this case.
     #[serde(default)]
     model: Option<String>,
@@ -92,6 +99,20 @@ struct Case {
     /// Enable source-tree tools (read_file, list_dir).
     #[serde(default)]
     source_tree: bool,
+
+    /// Git repo for this case, resolved relative to the case directory.
+    /// When set, source tools and run_command are bound to that repo.
+    #[serde(default)]
+    repo: Option<PathBuf>,
+
+    /// Register write tools (apply_patch, write_file) for this case.
+    #[serde(default)]
+    write_tools: bool,
+
+    /// Create a throwaway trivial Rust git repo for this case (used as
+    /// `repo`). Keeps the hānihi checkout itself out of the write path.
+    #[serde(default)]
+    fixture: bool,
 
     /// Assertions that must all pass.
     assertions: Vec<Assertion>,
@@ -136,6 +157,18 @@ enum Assertion {
         max_input: Option<u32>,
         max_output: Option<u32>,
     },
+    /// `cargo check` exits 0 in the case's repo.
+    #[serde(rename = "build_succeeds")]
+    BuildSucceeds,
+    /// `cargo test` exits 0 in the case's repo.
+    #[serde(rename = "tests_pass")]
+    TestsPass,
+    /// `cargo clippy -- -D warnings` exits 0 in the case's repo.
+    #[serde(rename = "clippy_clean")]
+    ClippyClean,
+    /// Working tree matches HEAD in the case's repo (no uncommitted junk).
+    #[serde(rename = "no_diff")]
+    NoDiff,
 }
 
 fn default_min() -> usize {
@@ -193,6 +226,7 @@ fn discover_cases(cases_dir: &Path) -> Result<Vec<Case>, String> {
         let mut case: Case =
             toml::from_str(&raw).map_err(|e| format!("parse {}: {e}", case_toml.display()))?;
         case.dir_name = dir_name;
+        case.case_dir = entry.path();
         cases.push(case);
     }
     cases.sort_by(|a, b| a.dir_name.cmp(&b.dir_name));
@@ -218,13 +252,20 @@ fn parse_event_log(path: &Path) -> Result<Vec<LogEntry>, String> {
 
 // ── Assertion engine ──────────────────────────────────────────────
 
-/// Evaluate all assertions against the parsed event log.
-fn evaluate(case: &Case, log: &[LogEntry], start: std::time::Instant) -> Vec<AssertionResult> {
-    case.assertions
-        .iter()
-        .map(|a| evaluate_one(a, log))
-        .chain(std::iter::once(duration_result(start)))
-        .collect()
+/// Evaluate all assertions against the parsed event log. Repo-backed
+/// assertions (build/tests/clippy/no_diff) run against `repo_dir`.
+async fn evaluate(
+    case: &Case,
+    log: &[LogEntry],
+    repo_dir: Option<&Path>,
+    start: std::time::Instant,
+) -> Vec<AssertionResult> {
+    let mut results = Vec::with_capacity(case.assertions.len() + 1);
+    for assertion in &case.assertions {
+        results.push(evaluate_one(assertion, log, repo_dir).await);
+    }
+    results.push(duration_result(start));
+    results
 }
 
 /// Duration is always reported (not an assertion, informational).
@@ -237,7 +278,11 @@ fn duration_result(start: std::time::Instant) -> AssertionResult {
     }
 }
 
-fn evaluate_one(assertion: &Assertion, log: &[LogEntry]) -> AssertionResult {
+async fn evaluate_one(
+    assertion: &Assertion,
+    log: &[LogEntry],
+    repo_dir: Option<&Path>,
+) -> AssertionResult {
     match assertion {
         Assertion::ToolCalled { name, min, max } => {
             let count = log
@@ -419,6 +464,109 @@ fn evaluate_one(assertion: &Assertion, log: &[LogEntry]) -> AssertionResult {
                 detail: parts.join(", "),
             }
         }
+        Assertion::BuildSucceeds => {
+            cargo_gate(repo_dir, "build_succeeds", &["check"], "cargo check").await
+        }
+        Assertion::TestsPass => cargo_gate(repo_dir, "tests_pass", &["test"], "cargo test").await,
+        Assertion::ClippyClean => {
+            cargo_gate(
+                repo_dir,
+                "clippy_clean",
+                &["clippy", "--", "-D", "warnings"],
+                "cargo clippy -- -D warnings",
+            )
+            .await
+        }
+        Assertion::NoDiff => {
+            let label = "no_diff".into();
+            match repo_dir {
+                Some(dir) => {
+                    let output = tokio::process::Command::new("git")
+                        .args(["status", "--porcelain"])
+                        .current_dir(dir)
+                        .stdin(Stdio::null())
+                        .stdout(Stdio::piped())
+                        .stderr(Stdio::piped())
+                        .output()
+                        .await;
+                    match output {
+                        Ok(o) => {
+                            let out = String::from_utf8_lossy(&o.stdout);
+                            let dirty = out.trim();
+                            AssertionResult {
+                                label,
+                                passed: dirty.is_empty(),
+                                detail: if dirty.is_empty() {
+                                    "working tree clean".into()
+                                } else {
+                                    format!("dirty: {}", truncate(dirty, 300))
+                                },
+                            }
+                        }
+                        Err(e) => AssertionResult {
+                            label,
+                            passed: false,
+                            detail: format!("git status: {e}"),
+                        },
+                    }
+                }
+                None => AssertionResult {
+                    label,
+                    passed: false,
+                    detail: "no repo configured for this case".into(),
+                },
+            }
+        }
+    }
+}
+
+/// Run a cargo subcommand in the case's repo and report pass/fail.
+async fn cargo_gate(
+    repo_dir: Option<&Path>,
+    label: &str,
+    args: &[&str],
+    command_desc: &str,
+) -> AssertionResult {
+    let Some(dir) = repo_dir else {
+        return AssertionResult {
+            label: label.into(),
+            passed: false,
+            detail: "no repo configured for this case".into(),
+        };
+    };
+    let output = tokio::process::Command::new("cargo")
+        .args(args)
+        .current_dir(dir)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .await;
+    match output {
+        Ok(o) if o.status.success() => AssertionResult {
+            label: label.into(),
+            passed: true,
+            detail: format!("{command_desc} exited 0"),
+        },
+        Ok(o) => {
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            let msg = if stderr.trim().is_empty() {
+                stdout.trim()
+            } else {
+                stderr.trim()
+            };
+            AssertionResult {
+                label: label.into(),
+                passed: false,
+                detail: format!("{command_desc} failed: {}", truncate(msg, 300)),
+            }
+        }
+        Err(e) => AssertionResult {
+            label: label.into(),
+            passed: false,
+            detail: format!("spawn {command_desc}: {e}"),
+        },
     }
 }
 
@@ -485,6 +633,30 @@ async fn run_case(
     mgr.create(&session_name, model, system_prompt)
         .map_err(|e| format!("create session: {e}"))?;
 
+    // Repo for this case: throwaway fixture, explicit `repo` path (relative
+    // to the case directory), or the cwd repo when source tools are wanted.
+    let mut fixture_dir: Option<PathBuf> = None;
+    let repo_dir: Option<PathBuf> = if case.fixture {
+        let fx = create_fixture_repo().await?;
+        fixture_dir = Some(fx.clone());
+        Some(fx)
+    } else if let Some(repo) = &case.repo {
+        let resolved = if repo.is_absolute() {
+            repo.clone()
+        } else {
+            case.case_dir.join(repo)
+        };
+        let canon = resolved
+            .canonicalize()
+            .map_err(|e| format!("repo path {}: {e}", resolved.display()))?;
+        if !canon.join(".git").exists() {
+            return Err(format!("repo {} is not a git repository", canon.display()));
+        }
+        Some(canon)
+    } else {
+        None
+    };
+
     // Build agent.
     let mut agent =
         connect_chat_model(base_url.to_string(), api_key.to_string(), model.to_string())
@@ -492,14 +664,32 @@ async fn run_case(
     agent.add_tool(builtin_get_time());
     agent.add_tool(builtin_echo());
 
-    if case.source_tree {
-        match SourceTree::open() {
-            Ok(tree) => {
-                let tree = Arc::new(tree);
-                agent.add_tool(builtin_read_file(tree.clone()));
-                agent.add_tool(builtin_list_dir(tree));
-            }
+    // Source-tree tools bound to the case repo (or cwd when none given).
+    let tree = match &repo_dir {
+        Some(dir) => Some(Arc::new(
+            SourceTree::open_at(dir).map_err(|e| format!("open repo {}: {e}", dir.display()))?,
+        )),
+        None if case.source_tree || case.write_tools => match SourceTree::open() {
+            Ok(t) => Some(Arc::new(t)),
             Err(e) => return Err(format!("source-tree requested but unavailable: {e}")),
+        },
+        None => None,
+    };
+
+    if let Some(tree) = &tree {
+        let traces_dir = temp_root.join("traces").join(&session_name);
+        let log_path = temp_root
+            .join("sessions")
+            .join(&session_name)
+            .join("events.jsonl");
+        agent.add_tool(builtin_read_file(tree.clone()));
+        agent.add_tool(builtin_list_dir(tree.clone()));
+        agent.add_tool(builtin_grep(tree.clone()));
+        agent.add_tool(builtin_run_command(tree.clone(), traces_dir));
+        agent.add_tool(builtin_read_session_log(log_path));
+        if case.write_tools {
+            agent.add_tool(builtin_apply_patch(tree.clone()));
+            agent.add_tool(builtin_write_file(tree.clone()));
         }
     }
 
@@ -532,13 +722,11 @@ async fn run_case(
             let log_path = session.root().join("events.jsonl");
             let log = parse_event_log(&log_path)?;
 
-            let assertions = evaluate(case, &log, start);
+            let assertions = evaluate(case, &log, repo_dir.as_deref(), start).await;
 
             // Clean up.
             let _ = mgr.close(&session_name);
-            if !keep {
-                let _ = std::fs::remove_dir_all(&temp_root);
-            }
+            cleanup(&temp_root, fixture_dir.as_deref(), keep);
 
             Ok(CaseResult {
                 dir_name: case.dir_name.clone(),
@@ -552,18 +740,64 @@ async fn run_case(
         }
         Ok(Err(e)) => {
             let _ = mgr.close(&session_name);
-            if !keep {
-                let _ = std::fs::remove_dir_all(&temp_root);
-            }
+            cleanup(&temp_root, fixture_dir.as_deref(), keep);
             Err(format!("agent error: {e}"))
         }
         Err(_elapsed) => {
             let _ = mgr.close(&session_name);
-            if !keep {
-                let _ = std::fs::remove_dir_all(&temp_root);
-            }
+            cleanup(&temp_root, fixture_dir.as_deref(), keep);
             Err(format!("timed out after {timeout_secs}s"))
         }
+    }
+}
+
+/// Create a throwaway git repo with a trivial Rust project (for `fixture`
+/// cases). Configured with a local git identity so commits work.
+async fn create_fixture_repo() -> Result<PathBuf, String> {
+    let dir = std::env::temp_dir().join(format!("hanihi-fixture-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(dir.join("src")).map_err(|e| format!("fixture mkdir: {e}"))?;
+    std::fs::write(
+        dir.join("Cargo.toml"),
+        "[package]\nname = \"fixture\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .map_err(|e| format!("fixture Cargo.toml: {e}"))?;
+    std::fs::write(
+        dir.join("src/main.rs"),
+        "fn main() {\n    println!(\"hello\");\n}\n",
+    )
+    .map_err(|e| format!("fixture main.rs: {e}"))?;
+    for args in [
+        &["init", "-q"][..],
+        &["config", "user.email", "eval@hanihi.local"][..],
+        &["config", "user.name", "hanihi-eval"][..],
+        &["add", "."][..],
+        &["commit", "-q", "-m", "fixture init"][..],
+    ] {
+        let output = tokio::process::Command::new("git")
+            .args(args)
+            .current_dir(&dir)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .output()
+            .await
+            .map_err(|e| format!("spawn git {}: {e}", args[0]))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("git {} failed: {}", args.join(" "), stderr.trim()));
+        }
+    }
+    Ok(dir)
+}
+
+/// Remove the temp session root and any fixture repo unless `keep` is set.
+fn cleanup(temp_root: &Path, fixture_dir: Option<&Path>, keep: bool) {
+    if keep {
+        return;
+    }
+    let _ = std::fs::remove_dir_all(temp_root);
+    if let Some(fx) = fixture_dir {
+        let _ = std::fs::remove_dir_all(fx);
     }
 }
 

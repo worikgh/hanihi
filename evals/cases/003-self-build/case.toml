@@ -1,0 +1,20 @@
+# Run `cargo check` on this repository (the workspace root) and report the
+# exit code and whether the build passes.
+repo = "../.."
+source_tree = true
+
+user_input = "Run `cargo check` on this repository and report the exit code and whether the build passes."
+
+[[assertions]]
+type = "tool_called"
+name = "run_command"
+
+[[assertions]]
+type = "text_contains"
+value = "exit code: 0"
+
+[[assertions]]
+type = "build_succeeds"
+
+[[assertions]]
+type = "no_error"
