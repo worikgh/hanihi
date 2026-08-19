@@ -10,6 +10,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use chrono::Utc;
+use grep_regex::{RegexMatcher, RegexMatcherBuilder};
+use grep_searcher::{Searcher, Sink, SinkMatch};
 use rig::tool::{PortableDynamicTool, ToolExecutionError, ToolOutput};
 use serde_json::json;
 use tokio::io::AsyncReadExt as _;
@@ -17,7 +19,7 @@ use tokio::io::AsyncReadExt as _;
 use crate::source::{SourceError, SourceTree};
 
 /// Map a [`SourceError`] onto a rig tool error with the right kind.
-fn map_source_err(e: SourceError) -> ToolExecutionError {
+pub(crate) fn map_source_err(e: SourceError) -> ToolExecutionError {
     match e {
         SourceError::NotFound(p) => {
             ToolExecutionError::not_found(format!("no such path: {}", p.display()))
@@ -251,7 +253,7 @@ fn check_command_argv(argv: &[String]) -> Result<(), String> {
 /// Build the minimal environment passed to child processes: PATH, HOME, and
 /// CARGO_* / RUSTUP_* (needed for cargo/rustup to resolve the toolchain).
 /// Everything else (API keys, etc.) is dropped.
-fn scrubbed_env() -> Vec<(String, String)> {
+pub(crate) fn scrubbed_env() -> Vec<(String, String)> {
     std::env::vars()
         .filter(|(k, _)| {
             k == "PATH" || k == "HOME" || k.starts_with("CARGO_") || k.starts_with("RUSTUP_")
@@ -456,6 +458,207 @@ pub fn builtin_run_command(tree: Arc<SourceTree>, traces_dir: PathBuf) -> Portab
                     &outcome,
                     &trace_path,
                 )))
+            })
+        },
+    )
+}
+
+/// Maximum number of matches `grep` returns before truncating.
+const MAX_GREP_MATCHES: usize = 200;
+/// Maximum total bytes of `grep` output before truncating.
+const MAX_GREP_BYTES: usize = 64 * 1024;
+
+/// Collects `path:line: text` matches for [`builtin_grep`], capped at
+/// [`MAX_GREP_MATCHES`] matches / [`MAX_GREP_BYTES`] bytes.
+///
+/// `grep-searcher`'s `SinkMatch` carries no path, so the caller sets
+/// [`MatchSink::current_path`] before each single-file search.
+struct MatchSink {
+    current_path: PathBuf,
+    lines: Vec<String>,
+    bytes: usize,
+    capped: bool,
+}
+
+impl Sink for MatchSink {
+    type Error = Box<dyn std::error::Error>;
+
+    fn matched(
+        &mut self,
+        _searcher: &Searcher,
+        lines: &SinkMatch<'_>,
+    ) -> Result<bool, Self::Error> {
+        let path = self.current_path.display();
+        let line_no = lines.line_number().unwrap_or(0);
+        let text = String::from_utf8_lossy(lines.bytes());
+        let entry = format!("{path}:{line_no}: {}", text.trim_end());
+        self.bytes += entry.len();
+        self.lines.push(entry);
+        if self.lines.len() >= MAX_GREP_MATCHES || self.bytes >= MAX_GREP_BYTES {
+            self.capped = true;
+            return Ok(false);
+        }
+        Ok(true)
+    }
+}
+
+/// Tool: regex-search file contents inside the git repository.
+///
+/// Walks the repo honouring ignore rules (via [`SourceTree::walk`]) and
+/// searches each file with ripgrep's searcher. Results are
+/// `path:line: text` entries capped at [`MAX_GREP_MATCHES`] matches /
+/// [`MAX_GREP_BYTES`] bytes. Binary files are skipped.
+pub fn builtin_grep(tree: Arc<SourceTree>) -> PortableDynamicTool {
+    PortableDynamicTool::new(
+        "grep",
+        "Search file contents in the git repository with a regular expression. `pattern` is a \
+         regex (ripgrep syntax). `path` is a directory relative to the repo root (default: the \
+         root). `ignore_case` makes the match case-insensitive. Git-ignored paths are never \
+         searched. Results are `path:line: text` entries, capped at 200 matches.",
+        json!({
+            "type": "object",
+            "properties": {
+                "pattern": { "type": "string", "description": "Regular expression to search for" },
+                "path": { "type": "string", "description": "Directory relative to repo root (default: root)" },
+                "ignore_case": { "type": "boolean", "description": "Case-insensitive match" }
+            },
+            "required": ["pattern"]
+        }),
+        move |args: serde_json::Value| {
+            let tree = tree.clone();
+            Box::pin(async move {
+                let pattern = args
+                    .get("pattern")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| {
+                        ToolExecutionError::invalid_args("missing string field 'pattern'")
+                    })?;
+                let rel = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+                let ignore_case = args
+                    .get("ignore_case")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+
+                let matcher = if ignore_case {
+                    RegexMatcherBuilder::new()
+                        .case_insensitive(true)
+                        .build(pattern)
+                } else {
+                    RegexMatcher::new(pattern)
+                }
+                .map_err(|e| ToolExecutionError::invalid_args(format!("invalid regex: {e}")))?;
+
+                let mut sink = MatchSink {
+                    current_path: PathBuf::new(),
+                    lines: Vec::new(),
+                    bytes: 0,
+                    capped: false,
+                };
+                let mut searcher = Searcher::new();
+                searcher.set_binary_detection(grep_searcher::BinaryDetection::quit(b'\x00'));
+
+                let walk = tree
+                    .walk(Path::new(rel), usize::MAX)
+                    .map_err(map_source_err)?;
+                for entry in walk {
+                    let entry = entry.map_err(|e| ToolExecutionError::provider(e.to_string()))?;
+                    if !entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
+                        continue;
+                    }
+                    let path = entry.path();
+                    sink.current_path = path.to_path_buf();
+                    searcher
+                        .search_path(matcher.clone(), path, &mut sink)
+                        .map_err(|e| {
+                            ToolExecutionError::provider(format!(
+                                "searching {}: {e}",
+                                path.display()
+                            ))
+                        })?;
+                    if sink.capped {
+                        break;
+                    }
+                }
+
+                let mut out = if sink.lines.is_empty() {
+                    "no matches".to_string()
+                } else {
+                    sink.lines.join("\n")
+                };
+                if sink.capped {
+                    out.push_str("\n…[truncated: too many matches]");
+                }
+                Ok(ToolOutput::text(out))
+            })
+        },
+    )
+}
+
+/// Tool: read entries from this session's event log (the agent's own trace).
+///
+/// The log lives outside the repo (under the working dir), so the source-tree
+/// tools cannot see it. This tool gives the agent a window into its own past
+/// executions — the raw material for studying traces of execution.
+pub fn builtin_read_session_log(log_path: PathBuf) -> PortableDynamicTool {
+    PortableDynamicTool::new(
+        "read_session_log",
+        "Read entries from this session's event log. `kind` filters by event kind \
+         (user_input, llm_prompt, llm_response, tool_execution, turn_complete, error, \
+         session_created, ...). `turn` filters by turn number. `tail` returns only the last N \
+         entries (default 50, max 1000). Entries are rendered as compact JSON, one per line.",
+        json!({
+            "type": "object",
+            "properties": {
+                "kind": { "type": "string", "description": "Event kind filter" },
+                "turn": { "type": "integer", "description": "Turn number filter" },
+                "tail": { "type": "integer", "description": "Last N entries (default 50, max 1000)" }
+            }
+        }),
+        move |args: serde_json::Value| {
+            let log_path = log_path.clone();
+            Box::pin(async move {
+                let kind = args.get("kind").and_then(|v| v.as_str()).map(String::from);
+                let turn = args.get("turn").and_then(|v| v.as_u64());
+                let tail = args
+                    .get("tail")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(50)
+                    .clamp(1, 1000) as usize;
+
+                let content = std::fs::read_to_string(&log_path).map_err(|e| {
+                    ToolExecutionError::provider(format!("reading {}: {e}", log_path.display()))
+                })?;
+                let mut entries: Vec<serde_json::Value> = Vec::new();
+                for line in content.lines() {
+                    let line = line.trim();
+                    if line.is_empty() {
+                        continue;
+                    }
+                    let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+                        continue;
+                    };
+                    if let Some(k) = &kind {
+                        if v.get("kind").and_then(|x| x.as_str()) != Some(k.as_str()) {
+                            continue;
+                        }
+                    }
+                    if let Some(t) = turn {
+                        if v.get("turn").and_then(|x| x.as_u64()) != Some(t) {
+                            continue;
+                        }
+                    }
+                    entries.push(v);
+                }
+                let start = entries.len().saturating_sub(tail);
+                let mut rendered = entries[start..]
+                    .iter()
+                    .map(|v| v.to_string())
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                if rendered.is_empty() {
+                    rendered = "no log entries match".to_string();
+                }
+                Ok(ToolOutput::text(cap_output(&rendered)))
             })
         },
     )

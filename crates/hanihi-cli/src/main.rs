@@ -12,8 +12,9 @@ use hanihi_core::agent::Agent;
 use hanihi_core::error::AgentError;
 use hanihi_core::session::SessionManager;
 use hanihi_core::{
-    McpClient, SourceTree, StreamEvent, builtin_echo, builtin_get_time, builtin_list_dir,
-    builtin_read_file, connect_chat_model,
+    McpClient, SourceTree, StreamEvent, builtin_apply_patch, builtin_echo, builtin_get_time,
+    builtin_grep, builtin_list_dir, builtin_read_file, builtin_read_session_log,
+    builtin_run_command, builtin_write_file, connect_chat_model_with_prompt,
 };
 use reedline::{DefaultPrompt, FileBackedHistory, Reedline, Signal};
 use rig::completion::CompletionModel;
@@ -64,6 +65,22 @@ struct Args {
     /// Run a single turn and exit (no REPL).
     #[arg(long, value_name = "PROMPT")]
     once: Option<String>,
+
+    /// Register write tools (apply_patch, write_file) — enables editing the
+    /// enclosing repository. Off by default; analysis and build tools are
+    /// always on.
+    #[arg(long)]
+    write: bool,
+
+    /// Run a single long-horizon turn with the task-mode system prompt
+    /// (workflow gates: fmt → test → build → clippy → commit). Takes
+    /// precedence over --once.
+    #[arg(long, value_name = "PROMPT")]
+    task: Option<String>,
+
+    /// Maximum model turns per request (default: 10; task mode: 50).
+    #[arg(long)]
+    max_turns: Option<usize>,
 }
 
 /// Extract a short provider name from a base URL hostname.
@@ -107,6 +124,13 @@ async fn main() -> Result<(), AgentError> {
     let mut mgr = SessionManager::new(&working_dir);
     let provider = provider_from_url(&args.base_url);
 
+    let task_mode = args.task.is_some();
+    let system_prompt: &str = if task_mode {
+        hanihi_core::agent::TASK_SYSTEM_PROMPT
+    } else {
+        hanihi_core::agent::DEFAULT_SYSTEM_PROMPT
+    };
+
     // Determine session name and whether to auto-create.
     let (session_name, is_new) = if let Some(ref name) = args.new_session {
         (name.clone(), true)
@@ -120,16 +144,12 @@ async fn main() -> Result<(), AgentError> {
     // Create or open the session.
     if is_new {
         if session_name == "default-session" {
-            mgr.create_default(&args.model, hanihi_core::agent::DEFAULT_SYSTEM_PROMPT)
+            mgr.create_default(&args.model, system_prompt)
                 .map_err(|e| AgentError::Rig(e.to_string()))?;
             println!("auto-created session 'default-session'");
         } else {
-            mgr.create(
-                &session_name,
-                &args.model,
-                hanihi_core::agent::DEFAULT_SYSTEM_PROMPT,
-            )
-            .map_err(|e| AgentError::Rig(e.to_string()))?;
+            mgr.create(&session_name, &args.model, system_prompt)
+                .map_err(|e| AgentError::Rig(e.to_string()))?;
             println!("created session '{session_name}'");
         }
     } else {
@@ -138,17 +158,37 @@ async fn main() -> Result<(), AgentError> {
     }
 
     // Build the agent.
-    let mut agent = connect_chat_model(args.base_url.clone(), api_key.clone(), args.model.clone())?;
+    let mut agent = connect_chat_model_with_prompt(
+        args.base_url.clone(),
+        api_key.clone(),
+        args.model.clone(),
+        system_prompt,
+    )?;
+    agent.set_max_turns(args.max_turns.unwrap_or(if task_mode { 50 } else { 10 }));
     agent.add_tool(builtin_get_time());
     agent.add_tool(builtin_echo());
 
-    // Source-tree tools: read/list the enclosing git repository. Ignore
-    // rules (.gitignore, .ignore) filter what the agent can see.
+    // Source-tree tools: read/list/grep/run-command over the enclosing git
+    // repository, plus a window into this session's own event log. Ignore
+    // rules (.gitignore, .ignore) filter what the agent can see. Write tools
+    // (apply_patch, write_file) are registered only with --write.
     match SourceTree::open() {
         Ok(tree) => {
             let tree = Arc::new(tree);
+            let traces_dir = working_dir.join("traces").join(&session_name);
+            let log_path = working_dir
+                .join("sessions")
+                .join(&session_name)
+                .join("events.jsonl");
             agent.add_tool(builtin_read_file(tree.clone()));
-            agent.add_tool(builtin_list_dir(tree));
+            agent.add_tool(builtin_list_dir(tree.clone()));
+            agent.add_tool(builtin_grep(tree.clone()));
+            agent.add_tool(builtin_run_command(tree.clone(), traces_dir));
+            agent.add_tool(builtin_read_session_log(log_path));
+            if args.write {
+                agent.add_tool(builtin_apply_patch(tree.clone()));
+                agent.add_tool(builtin_write_file(tree));
+            }
         }
         Err(e) => println!("source tools disabled (no git repository): {e}"),
     }
@@ -169,9 +209,14 @@ async fn main() -> Result<(), AgentError> {
     }
 
     println!(
-        "agent ready: model={} tools={} session='{session_name}'",
+        "agent ready: model={} tools={} session='{session_name}'{}",
         args.model,
         agent.tool_count(),
+        if args.write {
+            " (write tools enabled)"
+        } else {
+            ""
+        },
     );
 
     // Get a mutable reference to the open session.
@@ -193,7 +238,8 @@ async fn main() -> Result<(), AgentError> {
         }
     }
 
-    if let Some(prompt) = args.once {
+    let prompt = args.task.clone().or_else(|| args.once.clone());
+    if let Some(prompt) = prompt {
         let mut rx = session
             .run_streaming(&mut agent, provider, &args.model, &prompt)
             .await

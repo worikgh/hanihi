@@ -19,6 +19,16 @@ pub const DEFAULT_SYSTEM_PROMPT: &str = "You are a helpful assistant running in 
 You have access to tools. Use them when they help answer the user; otherwise answer directly. \
 When a tool result comes back, incorporate it into your final answer.";
 
+/// System prompt for task mode: long-horizon self-improvement work with
+/// explicit workflow gates (mirrors the project's Rust workflow rules).
+pub const TASK_SYSTEM_PROMPT: &str = "You are hānihi in task mode: a coding agent working on a Rust codebase. \
+Work in small steps and verify with the build before declaring success. Workflow gates: \
+run `cargo fmt` before staging changes; `cargo test` before committing; `cargo build` must pass; \
+run `cargo clippy -- -D warnings` before finishing. Make changes as small git commits with \
+descriptive messages. Never push. Study command output and trace files before retrying: if a \
+command fails, read the error and fix the cause rather than repeating it. Verify your work with \
+the build/test gates — do not assert success by eye.";
+
 /// Result of one `Agent::run` invocation.
 #[derive(Debug, Clone)]
 pub struct TurnSummary {
@@ -73,13 +83,24 @@ pub fn connect_chat_model(
     api_key: String,
     model: String,
 ) -> Result<Agent<impl CompletionModel + use<>>, AgentError> {
+    connect_chat_model_with_prompt(base_url, api_key, model, DEFAULT_SYSTEM_PROMPT)
+}
+
+/// Like [`connect_chat_model`], but with a custom system prompt (e.g. the
+/// task-mode prompt for self-improvement work).
+pub fn connect_chat_model_with_prompt(
+    base_url: String,
+    api_key: String,
+    model: String,
+    system_prompt: &str,
+) -> Result<Agent<impl CompletionModel + use<>>, AgentError> {
     let client = openai::CompletionsClient::builder()
         .api_key(&api_key)
         .base_url(&base_url)
         .build()
         .map_err(|e| AgentError::Rig(e.to_string()))?;
     let model = client.completion_model(&model);
-    Ok(Agent::new(model, DEFAULT_SYSTEM_PROMPT))
+    Ok(Agent::new(model, system_prompt))
 }
 
 /// A minimal tool-calling agent.

@@ -188,7 +188,7 @@ impl SourceTree {
 
     /// Resolve `rel` inside the repository root to a canonical absolute
     /// path, refusing escapes.
-    fn resolve(&self, rel: &Path) -> Result<PathBuf, SourceError> {
+    pub(crate) fn resolve(&self, rel: &Path) -> Result<PathBuf, SourceError> {
         let abs = self.root.join(rel);
         let canon = abs
             .canonicalize()
@@ -197,6 +197,52 @@ impl SourceTree {
             return Err(SourceError::Escape(rel.to_path_buf()));
         }
         Ok(canon)
+    }
+
+    /// Resolve a repository-relative path for writing, refusing escapes.
+    ///
+    /// Unlike [`SourceTree::resolve`], the target need not exist yet: the
+    /// nearest existing ancestor is canonicalized (resolving any symlinks)
+    /// and the non-existent tail is re-appended. Absolute paths and any
+    /// `..` component are refused before touching the filesystem.
+    pub fn resolve_for_write(&self, rel: &Path) -> Result<PathBuf, SourceError> {
+        for comp in rel.components() {
+            if matches!(
+                comp,
+                std::path::Component::ParentDir
+                    | std::path::Component::RootDir
+                    | std::path::Component::Prefix(_)
+            ) {
+                return Err(SourceError::Escape(rel.to_path_buf()));
+            }
+        }
+
+        let abs = self.root.join(rel);
+        let mut existing = abs.clone();
+        let mut tail: Vec<std::ffi::OsString> = Vec::new();
+        loop {
+            match existing.canonicalize() {
+                Ok(canon) => {
+                    let mut resolved = canon;
+                    for comp in tail.iter().rev() {
+                        resolved.push(comp);
+                    }
+                    if !resolved.starts_with(&self.root) {
+                        return Err(SourceError::Escape(rel.to_path_buf()));
+                    }
+                    return Ok(resolved);
+                }
+                Err(_) => {
+                    let Some(name) = existing.file_name() else {
+                        return Err(SourceError::NotFound(rel.to_path_buf()));
+                    };
+                    tail.push(name.to_os_string());
+                    if !existing.pop() {
+                        return Err(SourceError::NotFound(rel.to_path_buf()));
+                    }
+                }
+            }
+        }
     }
 }
 
