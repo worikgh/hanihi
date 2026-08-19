@@ -220,6 +220,22 @@ cargo publish -p hanihi-core --dry-run  # full verification, no upload
 - Tool name collisions: first registration wins (builtin `echo` shadows an MCP
   `echo`). Namespacing MCP tools is a future concern.
 - `run_command` tool — let the agent run `cargo build` / `cargo test` inside
-  the enclosing repo.
+  the enclosing repo. (Specified in plan 005.)
+- **Write tools** (plan 005) — `apply_patch` / `write_file`, registered only
+  with `--write`; repo-scoped via `SourceTree` guards; changes land as
+  commits, never pushed.
+- **LSP via MCP** — bridge an LSP server (goto-definition, references,
+  hover) through the existing MCP client. Cheaper first step than
+  tree-sitter for symbol-level code intelligence.
+- **Tree-sitter symbol analysis** — `tree-sitter` + Rust grammar deps; a
+  `symbols` module (definitions, signatures, kinds, line numbers); a
+  `symbols(path)` tool or startup index under `working/`; reference-finding
+  to support multi-file refactoring.
+- **Multi-file refactoring** — agent emits a plan applied as one multi-file
+  unified diff via `apply_patch` (plan 005), verified by workflow gates +
+  before/after evals.
+- **Background workers** — in-process task layer (durable task state in the
+  event log, `read_task` tool, file-change watcher). The plan-005 driver
+  script is the minimal external version; do that first.
 - `add_ignore` tool / `--regenerate-ignore` — grow `.ignore` from within the
   agent.

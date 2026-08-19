@@ -20,7 +20,7 @@ mode of self-modifying agents.
 
 **Read-only by default.** The agent's baseline posture is observational:
 read, search, list, and read-only commands are always available; write
-tools are registered **only** under `--self-improve`. A wrong read costs
+tools are registered **only** under `--write`. A wrong read costs
 nothing and is re-runnable; a wrong write can be destructive and never is.
 Least privilege defaults to the side where mistakes are free. This is a
 schema-level gate: a tool that is never registered cannot be called — or
@@ -28,7 +28,7 @@ even hallucinated by the model.
 
 **Writes gated.** Gate, not block: the point is to turn every mutation into
 a visible, reversible, attributable artifact. Two layers — the
-`--self-improve` registration gate (unattended task mode may write; ordinary
+`--write` registration gate (unattended task mode may write; ordinary
 sessions may not) and per-operation gating (`git apply --check` → apply →
 optional commit; interactive mode shows the diff for human approval
 first). The failure mode of an autonomous coding agent is not bad code but
@@ -151,7 +151,9 @@ Refusals: escapes, git-ignored paths, `.ignore`, anything under `.git/`.
 **Never push** — commits only; git is the undo button.
 
 **Registration gating:** write tools are registered **only** when
-`--self-improve` is passed (CLI flag). Analysis + build tools are always on.
+`--write` is passed (CLI flag). The flag names the capability, not the use
+case: it enables editing of the enclosing repo in general — self-improvement
+is one application, not the only one. Analysis + build tools are always on.
 
 ### 3. New tool: `grep` — content search
 
@@ -257,7 +259,7 @@ launches a fresh binary.
 | Timeout + output caps | `run_command`, all tools |
 | Escape + ignore refusal on reads and writes | `SourceTree` (existing + reused) |
 | `.ignore`, `.git/`, session dir off-limits to writes | write tools |
-| Writes only with `--self-improve` | CLI registration |
+| Writes only with `--write` | CLI registration |
 | Every change = commit; never push | write tools |
 | Improvement measured by evals, not self-report | §6 |
 | Human approval in REPL mode; unattended only via explicit task mode | CLI |
@@ -276,7 +278,7 @@ launches a fresh binary.
 ### Step 2 — Write path
 - `apply_patch` via `git apply --check` + `git apply` (+ optional commit)
 - `write_file` with `SourceTree` guards
-- `--self-improve` flag gates registration
+- `--write` flag gates registration
 - Tests: patch round-trip, malformed diff, refused paths
 
 ### Step 3 — `grep`
@@ -306,7 +308,7 @@ launches a fresh binary.
 ## What this is NOT
 
 - **Not autonomous self-modification without oversight.** Writes require
-  `--self-improve`; in REPL mode changes are human-approved; git history is
+  `--write`; in REPL mode changes are human-approved; git history is
   the audit trail; push is impossible.
 - **Not a full coding agent yet.** No tree-sitter symbol analysis, no
   multi-file refactoring intelligence, no persistent background workers.
