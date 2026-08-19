@@ -13,6 +13,50 @@ ties them together.
 The design principle: **read-only by default, writes gated, changes are git
 commits, improvement is measured by the eval harness — never self-reported.**
 
+## Design principles
+
+The plan rests on four clauses; each exists to close a specific failure
+mode of self-modifying agents.
+
+**Read-only by default.** The agent's baseline posture is observational:
+read, search, list, and read-only commands are always available; write
+tools are registered **only** under `--self-improve`. A wrong read costs
+nothing and is re-runnable; a wrong write can be destructive and never is.
+Least privilege defaults to the side where mistakes are free. This is a
+schema-level gate: a tool that is never registered cannot be called — or
+even hallucinated by the model.
+
+**Writes gated.** Gate, not block: the point is to turn every mutation into
+a visible, reversible, attributable artifact. Two layers — the
+`--self-improve` registration gate (unattended task mode may write; ordinary
+sessions may not) and per-operation gating (`git apply --check` → apply →
+optional commit; interactive mode shows the diff for human approval
+first). The failure mode of an autonomous coding agent is not bad code but
+*bad code at scale*; gating turns that catastrophe into a stack of small
+reviewable diffs, and forces the model to explain itself (the diff + commit
+message is the explanation) before the change lands.
+
+**Changes are git commits.** Git is memory, undo button, and audit trail in
+one: `git revert` / `git reset` un-break the agent; commit messages are its
+own working notes; `git diff HEAD~1` is the exact, token-efficient delta to
+feed back to it when it studies its own past work; commits are atomic
+checkpoints for bisect/rollback; and commit-only (never push) bounds the
+blast radius to the machine until a human reviews.
+
+**Improvement measured by the eval harness — never self-reported.** Editing
+is a capability; improvement is a claim. LLMs are fluent, confident
+self-advocates — "I think this is better" is not evidence. The eval suite is
+the external referee: fixed, pre-registered cases with assertions against
+the session log, plus the build/test/clippy gates in this plan. The agent
+never declares success; the driver runs the evals and reports numbers, and
+baseline/compare mode makes the delta quantitative.
+
+**Corollary — the gate must not be gameable.** `evals/cases/` currently
+lives inside the repo, so an agent with write access could weaken its own
+assertions. Step 5 must address this: run the driver against a read-only
+copy of the case suite, assert the suite is unchanged (`no_diff` on
+`evals/`), or keep the authoritative suite outside the repo.
+
 ---
 
 ## Architecture
