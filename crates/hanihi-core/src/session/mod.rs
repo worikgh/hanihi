@@ -608,24 +608,37 @@ impl Session {
                 LogWriter::open(&log_path).expect("re-open session log for streaming");
 
             let mut tool_calls_total: usize = 0;
+            // Track tool arguments captured at ToolCallReady so the
+            // tool_execution entry can log the real values (not a
+            // placeholder).
+            let mut pending_args: HashMap<String, serde_json::Value> = HashMap::new();
 
             while let Some(event) = agent_rx.recv().await {
                 match &event {
+                    StreamEvent::ToolCallReady {
+                        id,
+                        name: _,
+                        arguments,
+                    } => {
+                        pending_args.insert(id.clone(), arguments.clone());
+                    }
                     StreamEvent::ToolResult {
                         id,
                         name,
+                        result,
                         result_preview: _,
                     } => {
                         tool_calls_total += 1;
-                        // Log a minimal tool_execution entry.
+                        let args = pending_args.remove(id).unwrap_or(serde_json::Value::Null);
+                        // Log the real arguments and full result.
                         let _ = log_writer.write_entry(&LogEntry::tool_execution(
                             Utc::now(),
                             turn,
                             id.clone(),
                             id.clone(), // call_id same as tool_call_id (simplified)
                             name.clone(),
-                            serde_json::Value::Null, // arguments not available
-                            "(streamed)".into(),     // result not captured in detail
+                            args,
+                            result.clone(),
                         ));
                     }
                     StreamEvent::TurnComplete { summary } => {
@@ -907,6 +920,7 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rig::test_utils::{MockCompletionModel, MockStreamEvent};
 
     fn tmp_working_dir() -> PathBuf {
         std::env::temp_dir().join(format!("hanihi-session-test-{}", Uuid::new_v4()))
@@ -1016,6 +1030,56 @@ mod tests {
         assert!(latencies.is_empty());
 
         mgr.close("derive-test").expect("close");
+        std::fs::remove_dir_all(&dir).unwrap_or(());
+    }
+
+    // ── streaming log fix ──
+
+    #[tokio::test]
+    async fn streaming_logs_real_tool_args_and_result() {
+        let dir = tmp_working_dir();
+        let mut mgr = SessionManager::new(&dir);
+        let session = mgr
+            .create("stream-fix", "deepseek-chat", "p")
+            .expect("create");
+
+        // First streaming turn: a tool call to `echo`. Second: final text.
+        let model = MockCompletionModel::from_stream_turns([
+            [
+                MockStreamEvent::tool_call(
+                    "call_1",
+                    "echo",
+                    serde_json::json!({ "text": "hello" }),
+                ),
+                MockStreamEvent::final_response_with_default_usage(),
+            ],
+            [
+                MockStreamEvent::text("done"),
+                MockStreamEvent::final_response_with_default_usage(),
+            ],
+        ]);
+
+        let mut agent = Agent::new(model, "test system");
+        agent.add_tool(crate::tool::builtin_echo());
+
+        let mut rx = session
+            .run_streaming(&mut agent, "p", "m", "echo hello")
+            .await
+            .expect("run streaming");
+        while (rx.recv().await).is_some() {}
+
+        let events = session.events().expect("events");
+        let exec = events
+            .iter()
+            .find_map(|e| match e {
+                LogEntry::ToolExecution { data, .. } => Some(data),
+                _ => None,
+            })
+            .expect("a tool_execution entry");
+        assert_eq!(exec.arguments, serde_json::json!({ "text": "hello" }));
+        assert_eq!(exec.result, "hello");
+
+        mgr.close("stream-fix").expect("close");
         std::fs::remove_dir_all(&dir).unwrap_or(());
     }
 

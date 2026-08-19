@@ -52,7 +52,10 @@ pub enum StreamEvent {
     ToolResult {
         id: String,
         name: String,
+        /// Truncated preview of the result (for inline display).
         result_preview: String,
+        /// Full rendered result (for session-log persistence).
+        result: String,
     },
     /// Turn completed successfully.
     TurnComplete { summary: TurnSummary },
@@ -408,6 +411,7 @@ where
                                         id: tool_call.id.clone(),
                                         name: name.clone(),
                                         result_preview: preview,
+                                        result: rendered.clone(),
                                     })
                                     .await;
                                 tool_calls_total += 1;
