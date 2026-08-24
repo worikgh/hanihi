@@ -302,7 +302,7 @@ async fn main() -> Result<(), AgentError> {
         return Ok(());
     }
 
-    repl(&mut session, agent, provider, &args.model).await?;
+    repl(&mut *session, agent, provider, &args.model).await?;
 
     mgr.close(&session_name)
         .map_err(|e| AgentError::Rig(e.to_string()))?;
