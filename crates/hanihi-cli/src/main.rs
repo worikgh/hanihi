@@ -21,6 +21,12 @@ use rig::completion::CompletionModel;
 use tracing_subscriber::EnvFilter;
 
 const DEFAULT_WORKING_DIR: &str = "./working";
+/// Default cap on model turns per request. Effectively unlimited: a sane
+/// upper bound so runaway tool-call loops still terminate, but far above any
+/// realistic working session.
+const DEFAULT_MAX_TURNS: usize = 1000;
+/// Default cap on model turns in task mode (long-horizon self-improvement).
+const TASK_MAX_TURNS: usize = 1000;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -78,7 +84,7 @@ struct Args {
     #[arg(long, value_name = "PROMPT")]
     task: Option<String>,
 
-    /// Maximum model turns per request (default: 10; task mode: 50).
+    /// Maximum model turns per request (default: 1000; task mode: 1000).
     #[arg(long)]
     max_turns: Option<usize>,
 }
@@ -164,7 +170,7 @@ async fn main() -> Result<(), AgentError> {
         args.model.clone(),
         system_prompt,
     )?;
-    agent.set_max_turns(args.max_turns.unwrap_or(if task_mode { 50 } else { 10 }));
+    agent.set_max_turns(args.max_turns.unwrap_or(if task_mode { TASK_MAX_TURNS } else { DEFAULT_MAX_TURNS }));
     agent.add_tool(builtin_get_time());
     agent.add_tool(builtin_echo());
 
@@ -208,24 +214,15 @@ async fn main() -> Result<(), AgentError> {
         println!("attached MCP server '{program}': {count} tool(s)");
     }
 
-    println!(
-        "agent ready: model={} tools={} session='{session_name}'{}",
-        args.model,
-        agent.tool_count(),
-        if args.write {
-            " (write tools enabled)"
-        } else {
-            ""
-        },
-    );
-
-    // Get a mutable reference to the open session.
+    // Get a mutable reference to the open session so we can read its turn
+    // count for the "session renewed" metadata below.
     let session = mgr
         .open(&session_name)
         .map_err(|_e| AgentError::Rig("failed to re-open session".into()))?;
 
     // Replay prior turns from the event log so the agent remembers
     // previous conversations in this session.
+    let mut prior_turns = None;
     match session.replay_history() {
         Ok(history) if !history.is_empty() => {
             let msg_count = history.len();
@@ -236,6 +233,27 @@ async fn main() -> Result<(), AgentError> {
         Err(e) => {
             tracing::warn!("failed to replay session history: {e}");
         }
+    }
+    // How many turns has this session accumulated so far (including from
+    // prior sessions)? Use the session's own counter; it is monotonically
+    // increasing across restarts of the same session name.
+    if let Ok(turns) = session.total_turns() {
+        prior_turns = Some(turns);
+    }
+
+    println!(
+        "agent ready: model={} tools={} session='{session_name}' max_turns={}{}",
+        args.model,
+        agent.tool_count(),
+        agent.max_turns(),
+        if args.write {
+            " (write tools enabled)"
+        } else {
+            ""
+        },
+    );
+    if let Some(t) = prior_turns {
+        println!("session '{}' renewed: total turns so far = {t}", session_name);
     }
 
     let prompt = args.task.clone().or_else(|| args.once.clone());
@@ -255,8 +273,12 @@ async fn main() -> Result<(), AgentError> {
                 StreamEvent::TurnComplete { summary } => {
                     println!();
                     println!(
-                        "[tool calls: {} | tokens: {} in / {} out]",
-                        summary.tool_calls, summary.usage.input_tokens, summary.usage.output_tokens
+                        "[turn {} | tool calls: {} | tokens: {} in / {} out | max_turns: {}]",
+                        session.turn,
+                        summary.tool_calls,
+                        summary.usage.input_tokens,
+                        summary.usage.output_tokens,
+                        agent.max_turns()
                     );
                     agent.set_history(summary.final_history);
                     break;
@@ -273,7 +295,7 @@ async fn main() -> Result<(), AgentError> {
         return Ok(());
     }
 
-    repl(session, agent, provider, &args.model).await?;
+    repl(&mut session, agent, provider, &args.model).await?;
 
     mgr.close(&session_name)
         .map_err(|e| AgentError::Rig(e.to_string()))?;
@@ -325,8 +347,8 @@ async fn repl<M: CompletionModel + 'static>(
                     }
                     "/session" => {
                         println!(
-                            "session: '{}' (id={}) turn={}",
-                            session.name, session.id, session.turn
+                            "session: '{}' (id={}) turn={} max_turns={}",
+                            session.name, session.id, session.turn, agent.max_turns()
                         );
                         continue;
                     }
@@ -349,10 +371,12 @@ async fn repl<M: CompletionModel + 'static>(
                                 StreamEvent::TurnComplete { summary } => {
                                     println!();
                                     println!(
-                                        "[tool calls: {} | tokens: {} in / {} out]",
+                                        "[turn {} | tool calls: {} | tokens: {} in / {} out | max_turns: {}]",
+                                        session.turn,
                                         summary.tool_calls,
                                         summary.usage.input_tokens,
-                                        summary.usage.output_tokens
+                                        summary.usage.output_tokens,
+                                        agent.max_turns()
                                     );
                                     agent.set_history(summary.final_history);
                                     break;
