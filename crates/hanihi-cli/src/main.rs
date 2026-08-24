@@ -170,7 +170,11 @@ async fn main() -> Result<(), AgentError> {
         args.model.clone(),
         system_prompt,
     )?;
-    agent.set_max_turns(args.max_turns.unwrap_or(if task_mode { TASK_MAX_TURNS } else { DEFAULT_MAX_TURNS }));
+    agent.set_max_turns(args.max_turns.unwrap_or(if task_mode {
+        TASK_MAX_TURNS
+    } else {
+        DEFAULT_MAX_TURNS
+    }));
     agent.add_tool(builtin_get_time());
     agent.add_tool(builtin_echo());
 
@@ -253,7 +257,10 @@ async fn main() -> Result<(), AgentError> {
         },
     );
     if let Some(t) = prior_turns {
-        println!("session '{}' renewed: total turns so far = {t}", session_name);
+        println!(
+            "session '{}' renewed: total turns so far = {t}",
+            session_name
+        );
     }
 
     let prompt = args.task.clone().or_else(|| args.once.clone());
@@ -348,7 +355,10 @@ async fn repl<M: CompletionModel + 'static>(
                     "/session" => {
                         println!(
                             "session: '{}' (id={}) turn={} max_turns={}",
-                            session.name, session.id, session.turn, agent.max_turns()
+                            session.name,
+                            session.id,
+                            session.turn,
+                            agent.max_turns()
                         );
                         continue;
                     }
