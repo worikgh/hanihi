@@ -87,6 +87,20 @@ struct Args {
     /// Maximum model turns per request (default: 1000; task mode: 1000).
     #[arg(long)]
     max_turns: Option<usize>,
+
+    /// Append this text to the system prompt. Repeatable.
+    #[arg(long = "prompt", value_name = "TEXT")]
+    prompt_append: Vec<String>,
+
+    /// Append the content of this file to the system prompt. Repeatable.
+    #[arg(long = "prompt-file", value_name = "PATH")]
+    prompt_files: Vec<PathBuf>,
+
+    /// Replace the entire system prompt with these additions (no base
+    /// prompt is prepended). For use with --session to rewrite the prompt,
+    /// or with --new-session to override the default.
+    #[arg(long)]
+    new_prompt: bool,
 }
 
 /// Extract a short provider name from a base URL hostname.
@@ -104,6 +118,52 @@ fn provider_from_url(url: &str) -> &str {
         .split('.')
         .next()
         .unwrap_or("unknown")
+}
+
+/// Read the given prompt files and return their concatenated contents.
+fn read_prompt_files(paths: &[PathBuf]) -> Result<String, AgentError> {
+    let mut out = String::new();
+    for path in paths {
+        let content = std::fs::read_to_string(path)?;
+        if !out.is_empty() {
+            out.push('\n');
+        }
+        out.push_str(&content);
+    }
+    Ok(out)
+}
+
+/// Build the final system prompt.
+///
+/// - With `--new-prompt`: the prompt/appends become the *entire* prompt
+///   (no base is prepended); useful to rewrite a session's prompt or to
+///   override the default on a new session.
+/// - Otherwise: the base prompt (task-mode or default) followed by any
+///   `--prompt` / `--prompt-file` additions.
+fn build_system_prompt(
+    base: &str,
+    prompt_appends: &[String],
+    prompt_files: &[PathBuf],
+    new_prompt: bool,
+) -> Result<String, AgentError> {
+    let extras = read_prompt_files(prompt_files)?;
+    let mut parts: Vec<String> = Vec::new();
+
+    if !new_prompt {
+        parts.push(base.to_string());
+    }
+    parts.extend(prompt_appends.iter().cloned());
+    if !extras.is_empty() {
+        parts.push(extras);
+    }
+
+    let joined = parts.join("\n\n");
+    if joined.trim().is_empty() {
+        // Nothing supplied; fall back to the default base.
+        Ok(base.to_string())
+    } else {
+        Ok(joined)
+    }
 }
 
 #[tokio::main]
@@ -131,7 +191,7 @@ async fn main() -> Result<(), AgentError> {
     let provider = provider_from_url(&args.base_url);
 
     let task_mode = args.task.is_some();
-    let system_prompt: &str = if task_mode {
+    let base_prompt: &str = if task_mode {
         hanihi_core::agent::TASK_SYSTEM_PROMPT
     } else {
         hanihi_core::agent::DEFAULT_SYSTEM_PROMPT
@@ -147,28 +207,56 @@ async fn main() -> Result<(), AgentError> {
         (name, is_new)
     };
 
+    // Compute the system prompt for this invocation.
+    let system_prompt = build_system_prompt(
+        base_prompt,
+        &args.prompt_append,
+        &args.prompt_files,
+        args.new_prompt,
+    )?;
+
     // Create or open the session.
+    let session_prompt: String;
     if is_new {
+        // A new session always uses the system prompt we just built.
         if session_name == "default-session" {
-            mgr.create_default(&args.model, system_prompt)
+            mgr.create_default(&args.model, &system_prompt)
                 .map_err(|e| AgentError::Rig(e.to_string()))?;
             println!("auto-created session 'default-session'");
         } else {
-            mgr.create(&session_name, &args.model, system_prompt)
+            mgr.create(&session_name, &args.model, &system_prompt)
                 .map_err(|e| AgentError::Rig(e.to_string()))?;
             println!("created session '{session_name}'");
         }
+        session_prompt = system_prompt;
     } else {
         mgr.open(&session_name)
             .map_err(|e| AgentError::Rig(e.to_string()))?;
+        // An existing session uses its stored prompt, extended by any
+        // --prompt/--prompt-file additions unless --new-prompt replaces it.
+        let stored = mgr
+            .open(&session_name)
+            .map_err(|_e| AgentError::Rig("failed to read session prompt".into()))?
+            .read_meta()
+            .map_err(|e| AgentError::Rig(e.to_string()))?
+            .get("system_prompt")
+            .and_then(|v| v.as_str())
+            .unwrap_or(base_prompt)
+            .to_string();
+        session_prompt = build_system_prompt(
+            &stored,
+            &args.prompt_append,
+            &args.prompt_files,
+            args.new_prompt,
+        )?;
     }
 
-    // Build the agent.
+    // Build the agent with the resolved system prompt.
     let mut agent = connect_chat_model_with_prompt(
         args.base_url.clone(),
         api_key.clone(),
         args.model.clone(),
-        system_prompt,
+        &session_prompt,
     )?;
     agent.set_max_turns(args.max_turns.unwrap_or(if task_mode {
         TASK_MAX_TURNS
@@ -262,6 +350,7 @@ async fn main() -> Result<(), AgentError> {
             session_name
         );
     }
+    println!("system prompt: {} bytes", session_prompt.len());
 
     let prompt = args.task.clone().or_else(|| args.once.clone());
     if let Some(prompt) = prompt {
