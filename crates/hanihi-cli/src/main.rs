@@ -215,9 +215,8 @@ async fn main() -> Result<(), AgentError> {
         args.new_prompt,
     )?;
 
-    // Create or open the session.
-    let session_prompt: String;
-    if is_new {
+    // Create or open the session and resolve the prompt it will use.
+    let session_prompt: String = if is_new {
         // A new session always uses the system prompt we just built.
         if session_name == "default-session" {
             mgr.create_default(&args.model, &system_prompt)
@@ -228,7 +227,7 @@ async fn main() -> Result<(), AgentError> {
                 .map_err(|e| AgentError::Rig(e.to_string()))?;
             println!("created session '{session_name}'");
         }
-        session_prompt = system_prompt;
+        system_prompt
     } else {
         mgr.open(&session_name)
             .map_err(|e| AgentError::Rig(e.to_string()))?;
@@ -243,13 +242,13 @@ async fn main() -> Result<(), AgentError> {
             .and_then(|v| v.as_str())
             .unwrap_or(base_prompt)
             .to_string();
-        session_prompt = build_system_prompt(
+        build_system_prompt(
             &stored,
             &args.prompt_append,
             &args.prompt_files,
             args.new_prompt,
-        )?;
-    }
+        )?
+    };
 
     // Build the agent with the resolved system prompt.
     let mut agent = connect_chat_model_with_prompt(
