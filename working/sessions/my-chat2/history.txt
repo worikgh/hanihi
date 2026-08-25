@@ -1,0 +1,12 @@
+hello
+/help
+/session
+Are there interesting `mcp-servers` I can get?
+/session
+/session my-chat
+I want to switch sessions
+/session 
+/session my-chat
+/session 
+I am in `my-chat2`
+/quit

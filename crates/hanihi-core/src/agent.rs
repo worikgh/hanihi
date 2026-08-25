@@ -468,10 +468,7 @@ where
                 Ok(rig::streaming::StreamedAssistantContent::Final(r)) => {
                     usage_total += r.token_usage();
                 }
-                Ok(rig::streaming::StreamedAssistantContent::ReasoningDelta {
-                    reasoning: _,
-                    ..
-                })
+                Ok(rig::streaming::StreamedAssistantContent::ReasoningDelta { .. })
                 | Ok(rig::streaming::StreamedAssistantContent::Reasoning(_)) => {
                     // Silently absorb reasoning — not shown to the user yet.
                 }
