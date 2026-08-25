@@ -89,17 +89,22 @@ struct Args {
     #[arg(long)]
     max_turns: Option<usize>,
 
-    /// Append this text to the system prompt. Repeatable.
+    /// Append this text to the system prompt. Repeatable. When used with an
+    /// existing session, the appended text is persisted to the session so it
+    /// applies on future resumes too.
     #[arg(long = "prompt", value_name = "TEXT")]
     prompt_append: Vec<String>,
 
     /// Append the content of this file to the system prompt. Repeatable.
+    /// When used with an existing session, the appended content is persisted
+    /// to the session so it applies on future resumes too.
     #[arg(long = "prompt-file", value_name = "PATH")]
     prompt_files: Vec<PathBuf>,
 
-    /// Replace the entire system prompt with these additions (no base
-    /// prompt is prepended). For use with --session to rewrite the prompt,
-    /// or with --new-session to override the default.
+    /// Replace the entire system prompt with the additions (no base prompt
+    /// is prepended). For use with --session to rewrite the stored prompt,
+    /// or with --new-session to override the default. Mutually exclusive
+    /// with --prompt/--prompt-file append semantics (see below).
     #[arg(long)]
     new_prompt: bool,
 }
@@ -134,37 +139,24 @@ fn read_prompt_files(paths: &[PathBuf]) -> Result<String, AgentError> {
     Ok(out)
 }
 
-/// Build the final system prompt.
-///
-/// - With `--new-prompt`: the prompt/appends become the *entire* prompt
-///   (no base is prepended); useful to rewrite a session's prompt or to
-///   override the default on a new session.
-/// - Otherwise: `base` followed by any `--prompt` / `--prompt-file`
-///   additions.
-fn build_system_prompt(
-    base: &str,
+/// Concatenate the explicit additions (`--prompt` strings and the contents
+/// of `--prompt-file` files) into one block.
+fn collect_extras(
     prompt_appends: &[String],
     prompt_files: &[PathBuf],
-    new_prompt: bool,
 ) -> Result<String, AgentError> {
-    let extras = read_prompt_files(prompt_files)?;
+    let file_text = read_prompt_files(prompt_files)?;
     let mut parts: Vec<String> = Vec::new();
-
-    if !new_prompt {
-        parts.push(base.to_string());
-    }
     parts.extend(prompt_appends.iter().cloned());
-    if !extras.is_empty() {
-        parts.push(extras);
+    if !file_text.is_empty() {
+        parts.push(file_text);
     }
+    Ok(parts.join("\n\n"))
+}
 
-    let joined = parts.join("\n\n");
-    if joined.trim().is_empty() {
-        // Nothing supplied; fall back to the base.
-        Ok(base.to_string())
-    } else {
-        Ok(joined)
-    }
+/// Whether any explicit prompt additions were supplied.
+fn has_extras(prompt_appends: &[String], prompt_files: &[PathBuf]) -> bool {
+    !prompt_appends.is_empty() || !prompt_files.is_empty()
 }
 
 /// Read the system prompt stored in an existing session's session.json.
@@ -180,8 +172,8 @@ fn stored_session_prompt(working_dir: &std::path::Path, session_name: &str) -> O
         .map(|s| s.to_string())
 }
 
-/// Persist a (possibly rewritten) system prompt into an existing session's
-/// session.json. Reads the file, updates the field, writes it back.
+/// Persist a system prompt into an existing session's session.json. Reads
+/// the file, updates the field, writes it back.
 fn write_session_prompt(
     working_dir: &std::path::Path,
     session_name: &str,
@@ -192,8 +184,7 @@ fn write_session_prompt(
         .join(session_name)
         .join("session.json");
     let bytes = fs::read(&meta_path).map_err(AgentError::Io)?;
-    let mut meta: serde_json::Value =
-        serde_json::from_slice(&bytes).map_err(AgentError::Json)?;
+    let mut meta: serde_json::Value = serde_json::from_slice(&bytes).map_err(AgentError::Json)?;
     meta["system_prompt"] = serde_json::Value::String(prompt.to_string());
     fs::write(&meta_path, serde_json::to_string_pretty(&meta)?).map_err(AgentError::Io)?;
     Ok(())
@@ -240,38 +231,58 @@ async fn main() -> Result<(), AgentError> {
         (name, is_new)
     };
 
-    // Resolve the system prompt this invocation will use.
+    let had_extras = has_extras(&args.prompt_append, &args.prompt_files);
+
+    // Resolve the system prompt this invocation will use, and whether it
+    // must be persisted back to the session's metadata.
     //
-    // New session: built from base + additions (or, with --new-prompt,
-    // from the additions alone overriding the base).
-    //
-    // Existing session: normally the session's stored prompt extended by
-    // any --prompt/--prompt-file additions. With --new-prompt the stored
-    // prompt is *replaced* entirely by the additions (and persisted).
-    let (session_prompt, persist_new_prompt) = if is_new {
-        (
-            build_system_prompt(
-                base_prompt,
-                &args.prompt_append,
-                &args.prompt_files,
-                args.new_prompt,
-            )?,
-            false, // creation persists the prompt already
-        )
-    } else {
+    // Prompt resolution rules:
+    //  - `--new-prompt` on any session: the additions (collected from
+    //    --prompt / --prompt-file) become the ENTIRE prompt. On an existing
+    //    session this replaces and persists the stored prompt.
+    //  - Otherwise `--prompt` / `--prompt-file` append to the base prompt
+    //    (new session) or to the stored prompt (existing session), and the
+    //    appended result is persisted so it survives a resume.
+    //  - With no additions at all, the existing stored prompt is used
+    //    unchanged (or the base prompt for a fresh session).
+    let (session_prompt, do_persist) = if args.new_prompt {
+        // Replace/set the entire prompt from the additions only.
+        let prompt = collect_extras(&args.prompt_append, &args.prompt_files)?;
+        let effective = if prompt.trim().is_empty() {
+            // --new-prompt with nothing supplied: use base as the new prompt.
+            base_prompt.to_string()
+        } else {
+            prompt
+        };
+        if is_new {
+            (effective, false) // creation persists it
+        } else {
+            (effective, true) // replace + persist the stored prompt
+        }
+    } else if is_new {
+        // Fresh session: base + any appends. persisted by creation.
+        let prompt = if had_extras {
+            let extras = collect_extras(&args.prompt_append, &args.prompt_files)?;
+            format!("{base_prompt}\n\n{extras}")
+        } else {
+            base_prompt.to_string()
+        };
+        (prompt, false)
+    } else if had_extras {
+        // Existing session with appends: stored + extras, persisted.
         let stored = stored_session_prompt(&working_dir, &session_name)
             .unwrap_or_else(|| base_prompt.to_string());
-        let built = build_system_prompt(
-            &stored,
-            &args.prompt_append,
-            &args.prompt_files,
-            args.new_prompt,
-        )?;
-        // If --new-prompt replaced the prompt, persist the rewrite.
-        (built, args.new_prompt)
+        let extras = collect_extras(&args.prompt_append, &args.prompt_files)?;
+        let prompt = format!("{stored}\n\n{extras}");
+        (prompt, true)
+    } else {
+        // Existing session, no additions: use stored prompt unchanged.
+        let stored = stored_session_prompt(&working_dir, &session_name)
+            .unwrap_or_else(|| base_prompt.to_string());
+        (stored, false)
     };
 
-    // Create or open the session with the resolved prompt.
+    // Create or open the session.
     if is_new {
         if session_name == "default-session" {
             mgr.create_default(&args.model, &session_prompt)
@@ -285,9 +296,13 @@ async fn main() -> Result<(), AgentError> {
     } else {
         mgr.open(&session_name)
             .map_err(|e| AgentError::Rig(e.to_string()))?;
-        if persist_new_prompt {
+        if do_persist {
             write_session_prompt(&working_dir, &session_name, &session_prompt)?;
-            println!("session '{session_name}' system prompt replaced");
+            if args.new_prompt {
+                println!("session '{session_name}' system prompt replaced");
+            } else {
+                println!("session '{session_name}' system prompt extended");
+            }
         }
     }
 
