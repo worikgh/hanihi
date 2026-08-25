@@ -4,6 +4,7 @@
 //! [`hanihi_core::Agent`]. Supports sessions (`--session` / `--new-session`),
 //! one-shot turns (`--once`), and MCP stdio servers.
 
+use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -124,7 +125,7 @@ fn provider_from_url(url: &str) -> &str {
 fn read_prompt_files(paths: &[PathBuf]) -> Result<String, AgentError> {
     let mut out = String::new();
     for path in paths {
-        let content = std::fs::read_to_string(path)?;
+        let content = fs::read_to_string(path)?;
         if !out.is_empty() {
             out.push('\n');
         }
@@ -138,8 +139,8 @@ fn read_prompt_files(paths: &[PathBuf]) -> Result<String, AgentError> {
 /// - With `--new-prompt`: the prompt/appends become the *entire* prompt
 ///   (no base is prepended); useful to rewrite a session's prompt or to
 ///   override the default on a new session.
-/// - Otherwise: the base prompt (task-mode or default) followed by any
-///   `--prompt` / `--prompt-file` additions.
+/// - Otherwise: `base` followed by any `--prompt` / `--prompt-file`
+///   additions.
 fn build_system_prompt(
     base: &str,
     prompt_appends: &[String],
@@ -159,11 +160,43 @@ fn build_system_prompt(
 
     let joined = parts.join("\n\n");
     if joined.trim().is_empty() {
-        // Nothing supplied; fall back to the default base.
+        // Nothing supplied; fall back to the base.
         Ok(base.to_string())
     } else {
         Ok(joined)
     }
+}
+
+/// Read the system prompt stored in an existing session's session.json.
+fn stored_session_prompt(working_dir: &std::path::Path, session_name: &str) -> Option<String> {
+    let meta_path = working_dir
+        .join("sessions")
+        .join(session_name)
+        .join("session.json");
+    let bytes = fs::read_to_string(meta_path).ok()?;
+    let meta: serde_json::Value = serde_json::from_str(&bytes).ok()?;
+    meta.get("system_prompt")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+}
+
+/// Persist a (possibly rewritten) system prompt into an existing session's
+/// session.json. Reads the file, updates the field, writes it back.
+fn write_session_prompt(
+    working_dir: &std::path::Path,
+    session_name: &str,
+    prompt: &str,
+) -> Result<(), AgentError> {
+    let meta_path = working_dir
+        .join("sessions")
+        .join(session_name)
+        .join("session.json");
+    let bytes = fs::read(&meta_path).map_err(AgentError::Io)?;
+    let mut meta: serde_json::Value =
+        serde_json::from_slice(&bytes).map_err(AgentError::Json)?;
+    meta["system_prompt"] = serde_json::Value::String(prompt.to_string());
+    fs::write(&meta_path, serde_json::to_string_pretty(&meta)?).map_err(AgentError::Io)?;
+    Ok(())
 }
 
 #[tokio::main]
@@ -182,7 +215,7 @@ async fn main() -> Result<(), AgentError> {
 
     // Resolve working directory relative to cwd.
     let working_dir = if args.working_dir.is_absolute() {
-        args.working_dir
+        args.working_dir.clone()
     } else {
         std::env::current_dir()?.join(&args.working_dir)
     };
@@ -207,48 +240,56 @@ async fn main() -> Result<(), AgentError> {
         (name, is_new)
     };
 
-    // Compute the system prompt for this invocation.
-    let system_prompt = build_system_prompt(
-        base_prompt,
-        &args.prompt_append,
-        &args.prompt_files,
-        args.new_prompt,
-    )?;
-
-    // Create or open the session and resolve the prompt it will use.
-    let session_prompt: String = if is_new {
-        // A new session always uses the system prompt we just built.
-        if session_name == "default-session" {
-            mgr.create_default(&args.model, &system_prompt)
-                .map_err(|e| AgentError::Rig(e.to_string()))?;
-            println!("auto-created session 'default-session'");
-        } else {
-            mgr.create(&session_name, &args.model, &system_prompt)
-                .map_err(|e| AgentError::Rig(e.to_string()))?;
-            println!("created session '{session_name}'");
-        }
-        system_prompt
+    // Resolve the system prompt this invocation will use.
+    //
+    // New session: built from base + additions (or, with --new-prompt,
+    // from the additions alone overriding the base).
+    //
+    // Existing session: normally the session's stored prompt extended by
+    // any --prompt/--prompt-file additions. With --new-prompt the stored
+    // prompt is *replaced* entirely by the additions (and persisted).
+    let (session_prompt, persist_new_prompt) = if is_new {
+        (
+            build_system_prompt(
+                base_prompt,
+                &args.prompt_append,
+                &args.prompt_files,
+                args.new_prompt,
+            )?,
+            false, // creation persists the prompt already
+        )
     } else {
-        mgr.open(&session_name)
-            .map_err(|e| AgentError::Rig(e.to_string()))?;
-        // An existing session uses its stored prompt, extended by any
-        // --prompt/--prompt-file additions unless --new-prompt replaces it.
-        let stored = mgr
-            .open(&session_name)
-            .map_err(|_e| AgentError::Rig("failed to read session prompt".into()))?
-            .read_meta()
-            .map_err(|e| AgentError::Rig(e.to_string()))?
-            .get("system_prompt")
-            .and_then(|v| v.as_str())
-            .unwrap_or(base_prompt)
-            .to_string();
-        build_system_prompt(
+        let stored = stored_session_prompt(&working_dir, &session_name)
+            .unwrap_or_else(|| base_prompt.to_string());
+        let built = build_system_prompt(
             &stored,
             &args.prompt_append,
             &args.prompt_files,
             args.new_prompt,
-        )?
+        )?;
+        // If --new-prompt replaced the prompt, persist the rewrite.
+        (built, args.new_prompt)
     };
+
+    // Create or open the session with the resolved prompt.
+    if is_new {
+        if session_name == "default-session" {
+            mgr.create_default(&args.model, &session_prompt)
+                .map_err(|e| AgentError::Rig(e.to_string()))?;
+            println!("auto-created session 'default-session'");
+        } else {
+            mgr.create(&session_name, &args.model, &session_prompt)
+                .map_err(|e| AgentError::Rig(e.to_string()))?;
+            println!("created session '{session_name}'");
+        }
+    } else {
+        mgr.open(&session_name)
+            .map_err(|e| AgentError::Rig(e.to_string()))?;
+        if persist_new_prompt {
+            write_session_prompt(&working_dir, &session_name, &session_prompt)?;
+            println!("session '{session_name}' system prompt replaced");
+        }
+    }
 
     // Build the agent with the resolved system prompt.
     let mut agent = connect_chat_model_with_prompt(
@@ -390,7 +431,7 @@ async fn main() -> Result<(), AgentError> {
         return Ok(());
     }
 
-    repl(&mut *session, agent, provider, &args.model).await?;
+    repl(session, agent, provider, &args.model).await?;
 
     mgr.close(&session_name)
         .map_err(|e| AgentError::Rig(e.to_string()))?;
