@@ -1,2 +1,6 @@
 target/
 working/
+# Emacs working files
+*~
+.#*
+#*#
