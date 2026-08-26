@@ -6,6 +6,7 @@
 //! refused. Changes land as local git commits — never pushed. Git is the
 //! undo button and the audit trail.
 
+use std::collections::HashSet;
 use std::path::Path;
 use std::process::Stdio;
 use std::sync::Arc;
@@ -116,15 +117,65 @@ fn diff_touches_protected(diff: &str) -> Option<String> {
     None
 }
 
+/// Collect the set of repository-relative paths a diff touches, from its
+/// `diff --git a/… b/…` header lines. Returns `Err` if the diff uses paths
+/// that don't parse into a clean repo-relative form.
+fn diff_targets(diff: &str) -> Result<HashSet<String>, String> {
+    let mut targets = HashSet::new();
+    for line in diff.lines() {
+        if let Some(rest) = line.strip_prefix("diff --git ") {
+            // Format: "a/<path> b/<path>". Both halves should agree.
+            let mut parts = rest.split_whitespace();
+            let a = match parts.next() {
+                Some(p) => p.strip_prefix("a/").unwrap_or(p).to_string(),
+                None => return Err(format!("malformed diff header: {line}")),
+            };
+            let b = parts
+                .next()
+                .map(|p| p.strip_prefix("b/").unwrap_or(p).to_string())
+                .unwrap_or_else(|| a.clone());
+            targets.insert(a);
+            targets.insert(b);
+        }
+    }
+    if targets.is_empty() {
+        return Err("diff contains no file headers".into());
+    }
+    Ok(targets)
+}
+
+/// List which of `targets` have uncommitted changes in the working tree.
+/// Returns the dirty subset (repo-relative paths).
+async fn dirty_targets(root: &Path, targets: &HashSet<String>) -> Result<HashSet<String>, String> {
+    let (stdout, _) = git_run(root, &["status", "--porcelain", "--"])?;
+    let mut dirty = HashSet::new();
+    for line in stdout.lines() {
+        // `--porcelain` lines start with two status chars, then a space.
+        let path = line.get(3..).unwrap_or("").trim();
+        if path.is_empty() {
+            continue;
+        }
+        // Strip rename arrows ("old -> new") and quoted forms; keep it simple
+        // and exact: match the repo-relative path as git reports it.
+        let path = path.split(" -> ").last().unwrap_or(path);
+        if targets.contains(path) {
+            dirty.insert(path.to_string());
+        }
+    }
+    Ok(dirty)
+}
+
 /// Tool: apply a unified diff to the repository working tree.
 pub fn builtin_apply_patch(tree: Arc<SourceTree>) -> PortableDynamicTool {
     PortableDynamicTool::new(
         "apply_patch",
         "Apply a unified diff (git diff format) to the repository working tree. Validates with \
          `git apply --check` first; on failure the git error is returned so the patch can be \
-         fixed. If `message` is given, the change is committed with that message. Diffs that \
-         touch `.ignore` or `.git*` paths are refused. Changes are local commits only — never \
-         pushed.",
+         fixed. Refuses to run when any file the diff touches already has uncommitted \
+         (dirty) changes in the working tree — the diff must apply cleanly to the committed \
+         HEAD state, so resolve or commit the working-tree changes first. If `message` is \
+         given, the change is committed with that message. Diffs that touch `.ignore` or \
+         `.git*` paths are refused. Changes are local commits only — never pushed.",
         json!({
             "type": "object",
             "properties": {
@@ -145,7 +196,9 @@ pub fn builtin_apply_patch(tree: Arc<SourceTree>) -> PortableDynamicTool {
                 let diff = args
                     .get("diff")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| ToolExecutionError::invalid_args("missing string field 'diff'"))?
+                    .ok_or_else(|| {
+                        ToolExecutionError::invalid_args("missing string field 'diff'")
+                    })?
                     .to_string();
                 let message = args
                     .get("message")
@@ -156,6 +209,23 @@ pub fn builtin_apply_patch(tree: Arc<SourceTree>) -> PortableDynamicTool {
                 if let Some(rel) = diff_touches_protected(&diff) {
                     return Err(ToolExecutionError::permission_denied(format!(
                         "diff touches protected path: {rel}"
+                    )));
+                }
+
+                // Reject when the diff's target files are dirty (have
+                // uncommitted working-tree changes). This forces the model to
+                // diff against the on-disk state rather than a stale mental
+                // model — the root cause of most "corrupt patch" failures.
+                let targets = diff_targets(&diff).map_err(ToolExecutionError::provider)?;
+                let dirty = dirty_targets(tree.root(), &targets)
+                    .await
+                    .map_err(ToolExecutionError::provider)?;
+                if !dirty.is_empty() {
+                    let mut list: Vec<&str> = dirty.iter().map(String::as_str).collect();
+                    list.sort_unstable();
+                    return Err(ToolExecutionError::permission_denied(format!(
+                        "target file(s) have uncommitted changes; resolve or commit them first: {}",
+                        list.join(", ")
                     )));
                 }
 
@@ -219,7 +289,9 @@ pub fn builtin_write_file(tree: Arc<SourceTree>) -> PortableDynamicTool {
                 let rel = args
                     .get("path")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| ToolExecutionError::invalid_args("missing string field 'path'"))?
+                    .ok_or_else(|| {
+                        ToolExecutionError::invalid_args("missing string field 'path'")
+                    })?
                     .to_string();
                 let content = args
                     .get("content")
@@ -287,6 +359,22 @@ mod tests {
     use super::*;
     use crate::source::testutil::Fixture;
 
+    /// Make a real git repo out of `fx` with a configured identity and one
+    /// initial commit, so `git status --porcelain` reflects a clean tree.
+    async fn init_committed_repo(fx: &Fixture) {
+        git_run(&fx.dir, &["init", "-q"]).await.expect("git init");
+        git_run(&fx.dir, &["config", "user.email", "test@hanihi.local"])
+            .await
+            .expect("config email");
+        git_run(&fx.dir, &["config", "user.name", "hanihi-test"])
+            .await
+            .expect("config name");
+        git_run(&fx.dir, &["add", "-A"]).await.expect("git add");
+        git_run(&fx.dir, &["commit", "-q", "-m", "init"])
+            .await
+            .expect("git commit");
+    }
+
     #[tokio::test]
     async fn write_file_writes_new_file() {
         let fx = Fixture::new();
@@ -346,15 +434,7 @@ mod tests {
     #[tokio::test]
     async fn apply_patch_applies_and_commits() {
         let fx = Fixture::new();
-        // Temp fixture repos have no git identity; make it a real repo and
-        // configure one locally.
-        git_run(&fx.dir, &["init", "-q"]).await.expect("git init");
-        git_run(&fx.dir, &["config", "user.email", "test@hanihi.local"])
-            .await
-            .expect("config email");
-        git_run(&fx.dir, &["config", "user.name", "hanihi-test"])
-            .await
-            .expect("config name");
+        init_committed_repo(&fx).await;
         let tool = builtin_apply_patch(fx.tree());
         let diff =
             "--- a/src/main.rs\n+++ b/src/main.rs\n@@ -1 +1,2 @@\n fn main() {}\n+// patched\n";
@@ -374,6 +454,33 @@ mod tests {
         // Committed: working tree must be clean.
         let (stdout, _) = git_run(&fx.dir, &["status", "--porcelain"]).await.unwrap();
         assert_eq!(stdout.trim(), "", "expected clean tree, got: {stdout}");
+    }
+
+    #[tokio::test]
+    async fn apply_patch_rejects_dirty_target() {
+        let fx = Fixture::new();
+        init_committed_repo(&fx).await;
+
+        // Make an uncommitted edit to the target file, simulating drift.
+        std::fs::write(fx.dir.join("src/main.rs"), "fn main() {}\n// local\n").unwrap();
+
+        let tool = builtin_apply_patch(fx.tree());
+        let diff =
+            "--- a/src/main.rs\n+++ b/src/main.rs\n@@ -1 +1,2 @@\n fn main() {}\n+// patched\n";
+        let err = tool
+            .execute(serde_json::json!({ "diff": diff }))
+            .await
+            .expect_err("dirty target must fail");
+        assert!(
+            err.to_string().contains("uncommitted changes"),
+            "got: {err}"
+        );
+        // The file must be untouched.
+        let main = std::fs::read_to_string(fx.dir.join("src/main.rs")).unwrap();
+        assert!(!main.contains("// patched"));
+
+        let (stdout, _) = git_run(&fx.dir, &["status", "--porcelain"]).await.unwrap();
+        assert!(stdout.contains("src/main.rs"), "got: {stdout}");
     }
 
     #[tokio::test]
@@ -419,5 +526,40 @@ mod tests {
             diff_touches_protected("+++ b/.git/config\t2026-01-01\n"),
             Some(".git/config".to_string())
         );
+    }
+
+    #[test]
+    fn diff_targets_parses_headers() {
+        let diff = "diff --git a/src/main.rs b/src/main.rs\nindex abc..def 100644\n--- a/src/main.rs\n+++ b/src/main.rs\n";
+        let targets = diff_targets(diff).unwrap();
+        assert!(targets.contains("src/main.rs"));
+
+        let diff2 = "diff --git a/a.txt b/a.txt\ndiff --git a/b.txt b/c.txt\n";
+        let targets2 = diff_targets(diff2).unwrap();
+        assert!(targets2.contains("a.txt"));
+        // b.txt + c.txt are the same file renamed; both recorded.
+        assert!(targets2.contains("b.txt"));
+        assert!(targets2.contains("c.txt"));
+    }
+
+    #[test]
+    fn diff_targets_rejects_empty() {
+        assert!(diff_targets("no headers here").is_err());
+    }
+
+    #[tokio::test]
+    async fn dirty_targets_detects_modifications() {
+        let fx = Fixture::new();
+        init_committed_repo(&fx).await;
+
+        // No edits yet: clean.
+        let mut clean = HashSet::new();
+        clean.insert("src/main.rs".to_string());
+        assert!(dirty_targets(&fx.dir, &clean).await.unwrap().is_empty());
+
+        // Dirty the tree.
+        std::fs::write(fx.dir.join("src/main.rs"), "fn main() {}\n// changed\n").unwrap();
+        let dirty = dirty_targets(&fx.dir, &clean).await.unwrap();
+        assert!(dirty.contains("src/main.rs"), "got: {dirty:?}");
     }
 }
