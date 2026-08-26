@@ -147,7 +147,7 @@ fn diff_targets(diff: &str) -> Result<HashSet<String>, String> {
 /// List which of `targets` have uncommitted changes in the working tree.
 /// Returns the dirty subset (repo-relative paths).
 async fn dirty_targets(root: &Path, targets: &HashSet<String>) -> Result<HashSet<String>, String> {
-    let (stdout, _) = git_run(root, &["status", "--porcelain", "--"])?;
+    let (stdout, _) = git_run(root, &["status", "--porcelain", "--"]).await?;
     let mut dirty = HashSet::new();
     for line in stdout.lines() {
         // `--porcelain` lines start with two status chars, then a space.
