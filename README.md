@@ -78,8 +78,8 @@ evals/
   rebuild → eval gate.
 - **MCP client** — spawn an MCP stdio server, wrap each of its tools as an
   agent tool dispatching over `tools/call`
-- **CLI** — interactive reedline REPL (`/help /tools /clear /session /quit`),
-  `--once` one-shot mode for scripting and smoke tests, repeatable
+- **CLI** — interactive reedline REPL (`/help /tools /clear /session /file
+  /quit`), `--once` one-shot mode for scripting and smoke tests, repeatable
   `--mcp-command`, session management (`--session` / `--new-session`)
 - **Eval harness** (`hanihi-eval`) — run TOML-based test cases against a
   live LLM, assert tool calls / text content / error-free completion /
@@ -103,7 +103,7 @@ cargo run -p hanihi-cli -- --mcp-command "./target/debug/mcp-echo-server"
 # Run the eval suite against DeepSeek
 LLM_API_KEY=*** cargo run -p hanihi-eval -- --cases-dir ./evals/cases
 
-# REPL commands: /help /tools /clear /session /quit (or /exit)
+# REPL commands: /help /tools /clear /session /file /quit (or /exit)
 ```
 
 Configuration — every flag has an environment variable:
@@ -121,6 +121,24 @@ Configuration — every flag has an environment variable:
 | `--write` | — | write tools NOT registered |
 | `--task PROMPT` | — | none (takes precedence over `--once`) |
 | `--max-turns N` | — | 10 (50 in task mode) |
+
+## REPL commands
+
+At the interactive prompt, any line starting with `/` that matches one of the
+commands below is handled by the harness; anything else is sent to the model
+as a normal message.
+
+| Command | Effect |
+|---|---|
+| `/help` | Print the list of available commands. |
+| `/tools` | List every registered tool (name + description). |
+| `/clear` | Clear the in-session message history (`history cleared`). |
+| `/session` | Show session metadata: name, id, current turn, and `max_turns`. |
+| `/file <PATH>` | Read the file at `<PATH>` (relative to the working dir, or absolute) and send its contents to the model as the prompt. Lets multi-line content — a prompt, a plan, or code — be loaded from disk in one go when only a single line can be typed. |
+| `/quit` (or `/exit`) | Exit the REPL. |
+
+`/file` requires a non-empty path; an empty or unreadable file prints an
+error and does not run a turn.
 
 ## How it works
 
