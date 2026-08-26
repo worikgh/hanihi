@@ -102,14 +102,20 @@ async fn git_apply_diff(root: &Path, diff: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Extract the repo-relative path from a `--- a/…` or `+++ b/…` line,
+/// stripping any trailing tab metadata (timestamps from `git diff`).
+fn diff_path_from_marker(rest: &str) -> String {
+    rest.split('\t').next().unwrap_or(rest).trim().to_string()
+}
+
 /// Reject diffs that touch protected paths (`.ignore`, `.git*`).
 fn diff_touches_protected(diff: &str) -> Option<String> {
     for line in diff.lines() {
         for prefix in ["+++ b/", "--- a/"] {
             if let Some(rest) = line.strip_prefix(prefix) {
-                let rel = rest.split('\t').next().unwrap_or(rest).trim();
-                if is_protected(rel) {
-                    return Some(rel.to_string());
+                let rel = diff_path_from_marker(rest);
+                if is_protected(&rel) {
+                    return Some(rel);
                 }
             }
         }
@@ -118,26 +124,46 @@ fn diff_touches_protected(diff: &str) -> Option<String> {
 }
 
 /// Collect the set of repository-relative paths a diff touches, from its
-/// `diff --git a/… b/…` header lines. Returns `Err` if the diff uses paths
-/// that don't parse into a clean repo-relative form.
+/// `diff --git a/… b/…` header (preferred) and `--- a/…`/`+++ b/…` marker
+/// lines (fallback for minimal hunks without a full header). Returns `Err`
+/// if no path can be determined.
 fn diff_targets(diff: &str) -> Result<HashSet<String>, String> {
     let mut targets = HashSet::new();
+
     for line in diff.lines() {
         if let Some(rest) = line.strip_prefix("diff --git ") {
             // Format: "a/<path> b/<path>". Both halves should agree.
             let mut parts = rest.split_whitespace();
-            let a = match parts.next() {
-                Some(p) => p.strip_prefix("a/").unwrap_or(p).to_string(),
-                None => return Err(format!("malformed diff header: {line}")),
-            };
+            let a = parts
+                .next()
+                .map(|p| p.strip_prefix("a/").unwrap_or(p).to_string())
+                .ok_or_else(|| format!("malformed diff header: {line}"))?;
             let b = parts
                 .next()
                 .map(|p| p.strip_prefix("b/").unwrap_or(p).to_string())
                 .unwrap_or_else(|| a.clone());
             targets.insert(a);
             targets.insert(b);
+        } else if let Some(rest) = line.strip_prefix("+++ b/") {
+            targets.insert(diff_path_from_marker(rest));
+        } else if !targets.is_empty() {
+            // Once we have the header path we keep scanning; the `--- a/`
+            // marker duplicates the header and adds nothing new.
         }
     }
+
+    // Fallback: a minimal diff may only have `--- a/…` / `+++ b/…` markers
+    // and no `diff --git` header. Recognise those too.
+    if targets.is_empty() {
+        for line in diff.lines() {
+            for prefix in ["--- a/", "+++ b/"] {
+                if let Some(rest) = line.strip_prefix(prefix) {
+                    targets.insert(diff_path_from_marker(rest));
+                }
+            }
+        }
+    }
+
     if targets.is_empty() {
         return Err("diff contains no file headers".into());
     }
@@ -155,8 +181,8 @@ async fn dirty_targets(root: &Path, targets: &HashSet<String>) -> Result<HashSet
         if path.is_empty() {
             continue;
         }
-        // Strip rename arrows ("old -> new") and quoted forms; keep it simple
-        // and exact: match the repo-relative path as git reports it.
+        // Strip rename arrows ("old -> new"); match the repo-relative path
+        // as git reports it.
         let path = path.split(" -> ").last().unwrap_or(path);
         if targets.contains(path) {
             dirty.insert(path.to_string());
@@ -375,6 +401,12 @@ mod tests {
             .expect("git commit");
     }
 
+    /// A minimal single-file diff (with `diff --git` header) against
+    /// `src/main.rs`.
+    fn header_diff() -> &'static str {
+        "diff --git a/src/main.rs b/src/main.rs\nindex 8b13789..0000000 100644\n--- a/src/main.rs\n+++ b/src/main.rs\n@@ -1 +1,2 @@\n fn main() {}\n+// patched\n"
+    }
+
     #[tokio::test]
     async fn write_file_writes_new_file() {
         let fx = Fixture::new();
@@ -436,11 +468,9 @@ mod tests {
         let fx = Fixture::new();
         init_committed_repo(&fx).await;
         let tool = builtin_apply_patch(fx.tree());
-        let diff =
-            "--- a/src/main.rs\n+++ b/src/main.rs\n@@ -1 +1,2 @@\n fn main() {}\n+// patched\n";
         let out = tool
             .execute(serde_json::json!({
-                "diff": diff,
+                "diff": header_diff(),
                 "message": "test patch"
             }))
             .await
@@ -465,10 +495,8 @@ mod tests {
         std::fs::write(fx.dir.join("src/main.rs"), "fn main() {}\n// local\n").unwrap();
 
         let tool = builtin_apply_patch(fx.tree());
-        let diff =
-            "--- a/src/main.rs\n+++ b/src/main.rs\n@@ -1 +1,2 @@\n fn main() {}\n+// patched\n";
         let err = tool
-            .execute(serde_json::json!({ "diff": diff }))
+            .execute(serde_json::json!({ "diff": header_diff() }))
             .await
             .expect_err("dirty target must fail");
         assert!(
@@ -540,6 +568,16 @@ mod tests {
         // b.txt + c.txt are the same file renamed; both recorded.
         assert!(targets2.contains("b.txt"));
         assert!(targets2.contains("c.txt"));
+    }
+
+    #[test]
+    fn diff_targets_parses_minimal_markers() {
+        // A diff with only --- / +++ markers (no full header) is still
+        // recognised, so the dirty-target guard applies to hand-written
+        // minimal hunks too.
+        let diff = "--- a/src/main.rs\n+++ b/src/main.rs\n@@ -1 +1,2 @@\n fn main() {}\n+// x\n";
+        let targets = diff_targets(diff).unwrap();
+        assert!(targets.contains("src/main.rs"));
     }
 
     #[test]
