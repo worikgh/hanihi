@@ -5,7 +5,7 @@
 //! one-shot turns (`--once`), and MCP stdio servers.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use clap::Parser;
@@ -137,6 +137,23 @@ fn read_prompt_files(paths: &[PathBuf]) -> Result<String, AgentError> {
         out.push_str(&content);
     }
     Ok(out)
+}
+
+/// Read a single file's contents for use as a prompt, resolved against the
+/// given base directory when the path is not absolute.
+fn read_prompt_file(base: &Path, path: &str) -> Result<String, AgentError> {
+    let resolved = if Path::new(path).is_absolute() {
+        PathBuf::from(path)
+    } else {
+        base.join(path)
+    };
+    if !resolved.is_file() {
+        return Err(AgentError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("no such file: {}", resolved.display()),
+        )));
+    }
+    fs::read_to_string(&resolved).map_err(AgentError::Io)
 }
 
 /// Concatenate the explicit additions (`--prompt` strings and the contents
@@ -446,7 +463,8 @@ async fn main() -> Result<(), AgentError> {
         return Ok(());
     }
 
-    repl(session, agent, provider, &args.model).await?;
+    let cwd = std::env::current_dir().map_err(AgentError::Io)?;
+    repl(session, agent, provider, &args.model, &cwd, &working_dir).await?;
 
     mgr.close(&session_name)
         .map_err(|e| AgentError::Rig(e.to_string()))?;
@@ -459,6 +477,8 @@ async fn repl<M: CompletionModel + 'static>(
     mut agent: Agent<M>,
     provider: &str,
     model_name: &str,
+    cwd: &Path,
+    working_dir: &Path,
 ) -> Result<(), AgentError> {
     let history_path = session.root().join("history.txt");
     let history: Box<dyn reedline::History> =
@@ -481,7 +501,7 @@ async fn repl<M: CompletionModel + 'static>(
                     "/quit" | "/exit" => break,
                     "/help" => {
                         println!(
-                            "commands: /help /tools /clear /session /quit — anything else is sent to the model"
+                            "commands: /help /tools /clear /session /file /quit — anything else is sent to the model"
                         );
                         continue;
                     }
@@ -508,43 +528,35 @@ async fn repl<M: CompletionModel + 'static>(
                     }
                     _ => {}
                 }
-                match session
-                    .run_streaming(&mut agent, provider, model_name, &line)
-                    .await
-                {
-                    Ok(mut rx) => {
-                        while let Some(event) = rx.recv().await {
-                            match event {
-                                StreamEvent::TextDelta { text } => print!("{text}"),
-                                StreamEvent::ToolCallStart { name, .. } => {
-                                    print!("\n[🔧 {name}")
-                                }
-                                StreamEvent::ToolCallArgs { .. } => {}
-                                StreamEvent::ToolCallReady { .. } => {}
-                                StreamEvent::ToolResult { .. } => println!(" ✅]"),
-                                StreamEvent::TurnComplete { summary } => {
-                                    println!();
-                                    println!(
-                                        "[turn {} | tool calls: {} | tokens: {} in / {} out | max_turns: {}]",
-                                        session.turn,
-                                        summary.tool_calls,
-                                        summary.usage.input_tokens,
-                                        summary.usage.output_tokens,
-                                        agent.max_turns()
-                                    );
-                                    agent.set_history(summary.final_history);
-                                    break;
-                                }
-                                StreamEvent::Error { message } => {
-                                    eprintln!();
-                                    eprintln!("error: {message}");
-                                    break;
-                                }
-                            }
-                        }
+
+                // Handle `/file <PATH>`: read the file's contents relative to
+                // the working directory (or absolute) and use it as the prompt.
+                // Only a single line can be typed at the REPL prompt, so this
+                // lets multi-line content (a prompt, a plan, code) be loaded
+                // from disk and sent to the model in one go.
+                if let Some(rest) = line.strip_prefix("/file ") {
+                    let path = rest.trim();
+                    if path.is_empty() {
+                        eprintln!("/file requires a path");
+                        continue;
                     }
-                    Err(e) => eprintln!("error: {e}"),
+                    let content = match read_prompt_file(working_dir, path) {
+                        Ok(c) => c,
+                        Err(e) => {
+                            eprintln!("error reading '{path}': {e}");
+                            continue;
+                        }
+                    };
+                    if content.trim().is_empty() {
+                        eprintln!("/file '{path}' is empty");
+                        continue;
+                    }
+                    println!("using contents of '{}' ({}, {} bytes) as prompt", path, cwd.display(), content.len());
+                    run_turn(session, &mut agent, provider, model_name, &content).await;
+                    continue;
                 }
+
+                run_turn(session, &mut agent, provider, model_name, &line).await;
             }
             Ok(Signal::CtrlC) | Ok(Signal::ExternalBreak(_)) => continue,
             Ok(Signal::CtrlD) => break,
@@ -561,4 +573,49 @@ async fn repl<M: CompletionModel + 'static>(
         eprintln!("warning: failed to sync history: {e}");
     }
     Ok(())
+}
+
+/// Run a single turn with the given prompt and stream the model's output.
+async fn run_turn<M: CompletionModel + 'static>(
+    session: &mut hanihi_core::session::Session,
+    agent: &mut Agent<M>,
+    provider: &str,
+    model_name: &str,
+    prompt: &str,
+) {
+    match session
+        .run_streaming(agent, provider, model_name, prompt)
+        .await
+    {
+        Ok(mut rx) => {
+            while let Some(event) = rx.recv().await {
+                match event {
+                    StreamEvent::TextDelta { text } => print!("{text}"),
+                    StreamEvent::ToolCallStart { name, .. } => print!("\n[🔧 {name}"),
+                    StreamEvent::ToolCallArgs { .. } => {}
+                    StreamEvent::ToolCallReady { .. } => {}
+                    StreamEvent::ToolResult { .. } => println!(" ✅]"),
+                    StreamEvent::TurnComplete { summary } => {
+                        println!();
+                        println!(
+                            "[turn {} | tool calls: {} | tokens: {} in / {} out | max_turns: {}]",
+                            session.turn,
+                            summary.tool_calls,
+                            summary.usage.input_tokens,
+                            summary.usage.output_tokens,
+                            agent.max_turns()
+                        );
+                        agent.set_history(summary.final_history);
+                        break;
+                    }
+                    StreamEvent::Error { message } => {
+                        eprintln!();
+                        eprintln!("error: {message}");
+                        break;
+                    }
+                }
+            }
+        }
+        Err(e) => eprintln!("error: {e}"),
+    }
 }
