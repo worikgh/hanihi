@@ -241,6 +241,13 @@ fn check_command_argv(argv: &[String]) -> Result<(), String> {
 		    }
 		    Ok(())
 		}
+		"hash-object" => {
+		    if argv.iter().any(|a| a == "-w") {
+			Err("git hash-object is restricted to not using -w".into())
+		    } else {
+			Ok(())
+		    }
+		}
 		other => Err(format!("git subcommand '{other}' is not allowed")),
 	    }
 	}
