@@ -146,9 +146,6 @@ fn diff_targets(diff: &str) -> Result<HashSet<String>, String> {
             targets.insert(b);
         } else if let Some(rest) = line.strip_prefix("+++ b/") {
             targets.insert(diff_path_from_marker(rest));
-        } else if !targets.is_empty() {
-            // Once we have the header path we keep scanning; the `--- a/`
-            // marker duplicates the header and adds nothing new.
         }
     }
 
@@ -165,7 +162,9 @@ fn diff_targets(diff: &str) -> Result<HashSet<String>, String> {
     }
 
     if targets.is_empty() {
-        return Err("diff contains no file headers".into());
+        return Err(
+            "diff failed to parse: no file headers (diff --git or ---/+++ markers) found".into(),
+        );
     }
     Ok(targets)
 }
@@ -582,7 +581,11 @@ mod tests {
 
     #[test]
     fn diff_targets_rejects_empty() {
-        assert!(diff_targets("no headers here").is_err());
+        let err = diff_targets("no headers here").unwrap_err();
+        assert!(
+            err.contains("failed") && err.contains("no file headers"),
+            "got: {err}"
+        );
     }
 
     #[tokio::test]
