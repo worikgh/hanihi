@@ -6,7 +6,6 @@
 //! refused. Changes land as local git commits — never pushed. Git is the
 //! undo button and the audit trail.
 
-use std::collections::HashSet;
 use std::path::Path;
 use std::process::Stdio;
 use std::sync::Arc;
@@ -54,57 +53,73 @@ async fn git_run(root: &Path, args: &[&str]) -> Result<(String, String), String>
     Ok((stdout, stderr))
 }
 
-/// Validate a unified diff against the repo (`git apply --check`), then
-/// apply it (`git apply`). The diff is fed on stdin; no shell is involved.
-///
-/// The dirty-target guard (see [`builtin_apply_patch`]) runs before this and
-/// refuses any diff whose target files carry uncommitted changes, forcing the
-/// model to diff against the on-disk state rather than a stale mental model —
-/// the root cause of most "corrupt patch" failures.
-async fn git_apply_diff(root: &Path, diff: &str) -> Result<(), String> {
-    for check in [true, false] {
-        let mut cmd = tokio::process::Command::new("git");
-        cmd.current_dir(root);
-        cmd.env_clear();
-        for (k, v) in scrubbed_env() {
-            cmd.env(k, v);
-        }
-        cmd.stdin(Stdio::piped());
-        cmd.stdout(Stdio::piped());
-        cmd.stderr(Stdio::piped());
-        cmd.arg("apply");
-        if check {
-            cmd.arg("--check");
-        }
-        cmd.arg("-");
+/// Run `git apply` over the diff on stdin with the given extra args,
+/// returning `Ok(())` on success or the trimmed git error.
+async fn git_apply(root: &Path, diff: &str, extra: &[&str]) -> Result<(), String> {
+    let mut cmd = tokio::process::Command::new("git");
+    cmd.current_dir(root);
+    cmd.env_clear();
+    for (k, v) in scrubbed_env() {
+        cmd.env(k, v);
+    }
+    cmd.stdin(Stdio::piped());
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::piped());
+    cmd.arg("apply");
+    cmd.args(extra);
+    cmd.arg("-");
 
-        let mut child = cmd.spawn().map_err(|e| format!("spawn git apply: {e}"))?;
-        let mut stdin = child.stdin.take().ok_or("git apply stdin unavailable")?;
-        stdin
-            .write_all(diff.as_bytes())
-            .await
-            .map_err(|e| format!("writing diff to git apply: {e}"))?;
-        drop(stdin); // EOF
+    let mut child = cmd.spawn().map_err(|e| format!("spawn git apply: {e}"))?;
+    let mut stdin = child.stdin.take().ok_or("git apply stdin unavailable")?;
+    stdin
+        .write_all(diff.as_bytes())
+        .await
+        .map_err(|e| format!("writing diff to git apply: {e}"))?;
+    drop(stdin); // EOF
 
-        let output = child
-            .wait_with_output()
-            .await
-            .map_err(|e| format!("waiting for git apply: {e}"))?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let msg = if stderr.trim().is_empty() {
-                stdout.trim()
-            } else {
-                stderr.trim()
-            };
-            return Err(format!(
-                "git apply {}failed: {msg}",
-                if check { "--check " } else { "" }
-            ));
-        }
+    let output = child
+        .wait_with_output()
+        .await
+        .map_err(|e| format!("waiting for git apply: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let msg = if stderr.trim().is_empty() {
+            stdout.trim()
+        } else {
+            stderr.trim()
+        };
+        return Err(msg.to_string());
     }
     Ok(())
+}
+
+/// Validate a unified diff against the repo (`git apply --check`), then
+/// apply it (`git apply`). `--recount` makes git recompute hunk line counts
+/// from the bodies instead of trusting the `@@ -a,b +c,d @@` numbers, so
+/// hand-composed diffs with slightly off counts still apply.
+///
+/// `git apply` uses a 3-way merge against the index, so it already tolerates
+/// a dirty working tree — a patch applies cleanly on top of uncommitted
+/// edits to the same file, exactly as the model's self-improvement loop
+/// needs. There is no pre-emptive "tree must be clean" refusal here; if the
+/// diff genuinely does not apply, `--check` reports precisely why.
+async fn git_apply_diff(root: &Path, diff: &str) -> Result<(), String> {
+    git_apply(root, diff, &["--check", "--recount"])
+        .await
+        .map_err(|msg| format!("git apply --check failed: {msg}"))?;
+    git_apply(root, diff, &["--recount"])
+        .await
+        .map_err(|msg| format!("git apply failed: {msg}"))?;
+    Ok(())
+}
+
+/// Is the patch's change already present in the working tree? Git applies
+/// the reversed diff cleanly exactly when the current tree already contains
+/// the result the patch produces — the signal the old dirty-target guard was
+/// really after ("the change already exists, stop re-patching it").
+async fn diff_already_applied(root: &Path, diff: &str) -> bool {
+    git_apply(root, diff, &["--check", "--reverse", "--recount"]).await.is_ok()
 }
 
 /// Extract the repo-relative path from a `--- a/…` or `+++ b/…` line,
@@ -128,84 +143,16 @@ fn diff_touches_protected(diff: &str) -> Option<String> {
     None
 }
 
-/// Collect the set of repository-relative paths a diff touches, from its
-/// `diff --git a/… b/…` header (preferred) and `--- a/…`/`+++ b/…` marker
-/// lines (fallback for minimal hunks without a full header). Returns `Err`
-/// if no path can be determined.
-fn diff_targets(diff: &str) -> Result<HashSet<String>, String> {
-    let mut targets = HashSet::new();
-
-    for line in diff.lines() {
-        if let Some(rest) = line.strip_prefix("diff --git ") {
-            // Format: "a/<path> b/<path>". Both halves should agree.
-            let mut parts = rest.split_whitespace();
-            let a = parts
-                .next()
-                .map(|p| p.strip_prefix("a/").unwrap_or(p).to_string())
-                .ok_or_else(|| format!("malformed diff header: {line}"))?;
-            let b = parts
-                .next()
-                .map(|p| p.strip_prefix("b/").unwrap_or(p).to_string())
-                .unwrap_or_else(|| a.clone());
-            targets.insert(a);
-            targets.insert(b);
-        } else if let Some(rest) = line.strip_prefix("+++ b/") {
-            targets.insert(diff_path_from_marker(rest));
-        }
-    }
-
-    // Fallback: a minimal diff may only have `--- a/…` / `+++ b/…` markers
-    // and no `diff --git` header. Recognise those too.
-    if targets.is_empty() {
-        for line in diff.lines() {
-            for prefix in ["--- a/", "+++ b/"] {
-                if let Some(rest) = line.strip_prefix(prefix) {
-                    targets.insert(diff_path_from_marker(rest));
-                }
-            }
-        }
-    }
-
-    if targets.is_empty() {
-        return Err(
-            "diff failed to parse: no file headers (diff --git or ---/+++ markers) found".into(),
-        );
-    }
-    Ok(targets)
-}
-
-/// List which of `targets` have uncommitted changes in the working tree.
-/// Returns the dirty subset (repo-relative paths).
-async fn dirty_targets(root: &Path, targets: &HashSet<String>) -> Result<HashSet<String>, String> {
-    let (stdout, _) = git_run(root, &["status", "--porcelain", "--"]).await?;
-    let mut dirty = HashSet::new();
-    for line in stdout.lines() {
-        // `--porcelain` lines start with two status chars, then a space.
-        let path = line.get(3..).unwrap_or("").trim();
-        if path.is_empty() {
-            continue;
-        }
-        // Strip rename arrows ("old -> new"); match the repo-relative path
-        // as git reports it.
-        let path = path.split(" -> ").last().unwrap_or(path);
-        if targets.contains(path) {
-            dirty.insert(path.to_string());
-        }
-    }
-    Ok(dirty)
-}
-
 /// Tool: apply a unified diff to the repository working tree.
 pub fn builtin_apply_patch(tree: Arc<SourceTree>) -> PortableDynamicTool {
     PortableDynamicTool::new(
         "apply_patch",
         "Apply a unified diff (git diff format) to the repository working tree. Validates with \
-         `git apply --check` first; on failure the git error is returned so the patch can be \
-         fixed. Refuses to run when any file the diff touches already has uncommitted \
-         (dirty) changes in the working tree — the diff must apply cleanly to the committed \
-         HEAD state, so resolve or commit the working-tree changes first. If `message` is \
-         given, the change is committed with that message. Diffs that touch `.ignore` or \
-         `.git*` paths are refused. Changes are local commits only — never pushed.",
+         `git apply --check --recount` first; on failure the git error is returned so the patch \
+         can be fixed. Applies via a 3-way merge, so it works on top of other uncommitted \
+         changes — no need for a clean tree first. If `message` is given, the change is \
+         committed with that message. Diffs that touch `.ignore` or `.git*` paths are \
+         refused. Changes are local commits only — never pushed.",
         json!({
             "type": "object",
             "properties": {
@@ -239,23 +186,6 @@ pub fn builtin_apply_patch(tree: Arc<SourceTree>) -> PortableDynamicTool {
                 if let Some(rel) = diff_touches_protected(&diff) {
                     return Err(ToolExecutionError::permission_denied(format!(
                         "diff touches protected path: {rel}"
-                    )));
-                }
-
-                // Reject when the diff's target files are dirty (have
-                // uncommitted working-tree changes). This forces the model to
-                // diff against the on-disk state rather than a stale mental
-                // model — the root cause of most "corrupt patch" failures.
-                let targets = diff_targets(&diff).map_err(ToolExecutionError::provider)?;
-                let dirty = dirty_targets(tree.root(), &targets)
-                    .await
-                    .map_err(ToolExecutionError::provider)?;
-                if !dirty.is_empty() {
-                    let mut list: Vec<&str> = dirty.iter().map(String::as_str).collect();
-                    list.sort_unstable();
-                    return Err(ToolExecutionError::permission_denied(format!(
-                        "target file(s) have uncommitted changes; resolve or commit them first: {}",
-                        list.join(", ")
                     )));
                 }
 
@@ -491,28 +421,40 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn apply_patch_rejects_dirty_target() {
+    async fn apply_patch_works_on_dirty_tree() {
         let fx = Fixture::new();
         init_committed_repo(&fx).await;
 
-        // Make an uncommitted edit to the target file, simulating drift.
+        // The common self-improvement case: an unrelated uncommitted edit
+        // already sits in the target file. The patch must still apply on top
+        // of it — no "clean tree first" refusal.
         std::fs::write(fx.dir.join("src/main.rs"), "fn main() {}\n// local\n").unwrap();
 
         let tool = builtin_apply_patch(fx.tree());
-        let err = tool
-            .execute(serde_json::json!({ "diff": header_diff() }))
+        tool.execute(serde_json::json!({ "diff": header_diff() }))
             .await
-            .expect_err("dirty target must fail");
-        assert!(
-            err.to_string().contains("uncommitted changes"),
-            "got: {err}"
-        );
-        // The file must be untouched.
-        let main = std::fs::read_to_string(fx.dir.join("src/main.rs")).unwrap();
-        assert!(!main.contains("// patched"));
+            .unwrap_or_else(|e| panic!("apply over dirty tree must succeed: {e}"));
 
-        let (stdout, _) = git_run(&fx.dir, &["status", "--porcelain"]).await.unwrap();
-        assert!(stdout.contains("src/main.rs"), "got: {stdout}");
+        let main = std::fs::read_to_string(fx.dir.join("src/main.rs")).unwrap();
+        assert!(main.contains("// patched"), "got: {main}");
+        // The pre-existing uncommitted edit is preserved alongside the patch.
+        assert!(main.contains("// local"), "got: {main}");
+    }
+
+    #[tokio::test]
+    async fn apply_patch_applies_to_new_file_created_earlier() {
+        let fx = Fixture::new();
+        init_committed_repo(&fx).await;
+
+        // A new file the agent created in a prior turn (untracked). A patch
+        // that adds it must not be refused just because it is untracked.
+        std::fs::write(fx.dir.join("src/extra.rs"), "pub fn extra() {}\n").unwrap();
+        let add = "diff --git a/src/extra.rs b/src/extra.rs\nnew file mode 100644\n--- /dev/null\n+++ b/src/extra.rs\n@@ -0,0 +1 @@\n+pub fn extra() {}\n";
+
+        let tool = builtin_apply_patch(fx.tree());
+        tool.execute(serde_json::json!({ "diff": add }))
+            .await
+            .unwrap_or_else(|e| panic!("apply must succeed on untracked target: {e}"));
     }
 
     #[tokio::test]
@@ -560,52 +502,16 @@ mod tests {
         );
     }
 
-    #[test]
-    fn diff_targets_parses_headers() {
-        let diff = "diff --git a/src/main.rs b/src/main.rs\nindex abc..def 100644\n--- a/src/main.rs\n+++ b/src/main.rs\n";
-        let targets = diff_targets(diff).unwrap();
-        assert!(targets.contains("src/main.rs"));
-
-        let diff2 = "diff --git a/a.txt b/a.txt\ndiff --git a/b.txt b/c.txt\n";
-        let targets2 = diff_targets(diff2).unwrap();
-        assert!(targets2.contains("a.txt"));
-        // b.txt + c.txt are the same file renamed; both recorded.
-        assert!(targets2.contains("b.txt"));
-        assert!(targets2.contains("c.txt"));
-    }
-
-    #[test]
-    fn diff_targets_parses_minimal_markers() {
-        // A diff with only --- / +++ markers (no full header) is still
-        // recognised, so the dirty-target guard applies to hand-written
-        // minimal hunks too.
-        let diff = "--- a/src/main.rs\n+++ b/src/main.rs\n@@ -1 +1,2 @@\n fn main() {}\n+// x\n";
-        let targets = diff_targets(diff).unwrap();
-        assert!(targets.contains("src/main.rs"));
-    }
-
-    #[test]
-    fn diff_targets_rejects_empty() {
-        let err = diff_targets("no headers here").unwrap_err();
-        assert!(
-            err.contains("failed") && err.contains("no file headers"),
-            "got: {err}"
-        );
-    }
-
     #[tokio::test]
-    async fn dirty_targets_detects_modifications() {
+    async fn diff_already_applied_detects_existing_change() {
         let fx = Fixture::new();
         init_committed_repo(&fx).await;
 
-        // No edits yet: clean.
-        let mut clean = HashSet::new();
-        clean.insert("src/main.rs".to_string());
-        assert!(dirty_targets(&fx.dir, &clean).await.unwrap().is_empty());
+        // Nothing applied yet: the change is not present.
+        assert!(!diff_already_applied(&fx.dir, header_diff()).await);
 
-        // Dirty the tree.
-        std::fs::write(fx.dir.join("src/main.rs"), "fn main() {}\n// changed\n").unwrap();
-        let dirty = dirty_targets(&fx.dir, &clean).await.unwrap();
-        assert!(dirty.contains("src/main.rs"), "got: {dirty:?}");
+        // Apply it, then the change is present.
+        git_apply_diff(&fx.dir, header_diff()).await.expect("apply");
+        assert!(diff_already_applied(&fx.dir, header_diff()).await);
     }
 }
