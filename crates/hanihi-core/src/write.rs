@@ -57,11 +57,10 @@ async fn git_run(root: &Path, args: &[&str]) -> Result<(String, String), String>
 /// Validate a unified diff against the repo (`git apply --check`), then
 /// apply it (`git apply`). The diff is fed on stdin; no shell is involved.
 ///
-/// `--recount` is passed so `git apply` recomputes line counts from the hunk
-/// bodies instead of trusting the `@@ -a,b +c,d @@` counts. This tolerates
-/// hand-composed diffs whose count numbers are slightly off — a common
-/// source of "corrupt patch" failures. The dirty-target guard still runs
-/// before this, so context-drift patches are refused outright.
+/// The dirty-target guard (see [`builtin_apply_patch`]) runs before this and
+/// refuses any diff whose target files carry uncommitted changes, forcing the
+/// model to diff against the on-disk state rather than a stale mental model —
+/// the root cause of most "corrupt patch" failures.
 async fn git_apply_diff(root: &Path, diff: &str) -> Result<(), String> {
     for check in [true, false] {
         let mut cmd = tokio::process::Command::new("git");
@@ -77,7 +76,6 @@ async fn git_apply_diff(root: &Path, diff: &str) -> Result<(), String> {
         if check {
             cmd.arg("--check");
         }
-        cmd.arg("--recount");
         cmd.arg("-");
 
         let mut child = cmd.spawn().map_err(|e| format!("spawn git apply: {e}"))?;
@@ -202,8 +200,8 @@ pub fn builtin_apply_patch(tree: Arc<SourceTree>) -> PortableDynamicTool {
     PortableDynamicTool::new(
         "apply_patch",
         "Apply a unified diff (git diff format) to the repository working tree. Validates with \
-         `git apply --check --recount` first; on failure the git error is returned so the patch \
-         can be fixed. Refuses to run when any file the diff touches already has uncommitted \
+         `git apply --check` first; on failure the git error is returned so the patch can be \
+         fixed. Refuses to run when any file the diff touches already has uncommitted \
          (dirty) changes in the working tree — the diff must apply cleanly to the committed \
          HEAD state, so resolve or commit the working-tree changes first. If `message` is \
          given, the change is committed with that message. Diffs that touch `.ignore` or \
