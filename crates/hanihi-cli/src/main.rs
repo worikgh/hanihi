@@ -551,7 +551,12 @@ async fn repl<M: CompletionModel + 'static>(
                         eprintln!("/file '{path}' is empty");
                         continue;
                     }
-                    println!("using contents of '{}' ({}, {} bytes) as prompt", path, cwd.display(), content.len());
+                    println!(
+                        "using contents of '{}' ({}, {} bytes) as prompt",
+                        path,
+                        cwd.display(),
+                        content.len()
+                    );
                     run_turn(session, &mut agent, provider, model_name, &content).await;
                     continue;
                 }

@@ -125,7 +125,9 @@ async fn git_apply_diff(root: &Path, diff: &str) -> Result<(), String> {
 /// dirty-target guard was really after ("the change already exists, stop
 /// re-patching it").
 async fn diff_already_applied(root: &Path, diff: &str) -> bool {
-    git_apply(root, diff, &["--check", "--reverse", "--recount"]).await.is_ok()
+    git_apply(root, diff, &["--check", "--reverse", "--recount"])
+        .await
+        .is_ok()
 }
 
 /// Extract the repo-relative path from a `--- a/…` or `+++ b/…` line,
@@ -179,9 +181,7 @@ pub fn builtin_apply_patch(tree: Arc<SourceTree>) -> PortableDynamicTool {
                 let diff = args
                     .get("diff")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| {
-                        ToolExecutionError::invalid_args("missing string field 'diff'")
-                    })?
+                    .ok_or_else(|| ToolExecutionError::invalid_args("missing string field 'diff'"))?
                     .to_string();
                 let message = args
                     .get("message")
@@ -255,9 +255,7 @@ pub fn builtin_write_file(tree: Arc<SourceTree>) -> PortableDynamicTool {
                 let rel = args
                     .get("path")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| {
-                        ToolExecutionError::invalid_args("missing string field 'path'")
-                    })?
+                    .ok_or_else(|| ToolExecutionError::invalid_args("missing string field 'path'"))?
                     .to_string();
                 let content = args
                     .get("content")
