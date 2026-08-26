@@ -124,6 +124,7 @@ async fn git_apply_diff(root: &Path, diff: &str) -> Result<(), String> {
 /// the result the patch produces — the genuinely useful signal the old
 /// dirty-target guard was really after ("the change already exists, stop
 /// re-patching it").
+#[allow(dead_code)]
 async fn diff_already_applied(root: &Path, diff: &str) -> bool {
     git_apply(root, diff, &["--check", "--reverse", "--recount"])
         .await
