@@ -94,21 +94,26 @@ async fn git_apply(root: &Path, diff: &str, extra: &[&str]) -> Result<(), String
     Ok(())
 }
 
-/// Validate a unified diff against the repo (`git apply --check`), then
-/// apply it (`git apply`). `--recount` makes git recompute hunk line counts
-/// from the bodies instead of trusting the `@@ -a,b +c,d @@` numbers, so
-/// hand-composed diffs with slightly off counts still apply.
+/// Apply a unified diff to the repo with `git apply --3way --recount`.
 ///
-/// `git apply` uses a 3-way merge against the index, so it already tolerates
-/// a dirty working tree — a patch applies cleanly on top of uncommitted
-/// edits to the same file, exactly as the model's self-improvement loop
-/// needs. There is no pre-emptive "tree must be clean" refusal here; if the
-/// diff genuinely does not apply, `--check` reports precisely why.
+/// Why `--3way`: `git apply` without it matches hunk context strictly
+/// against the working tree, so a hand-written patch fails with "patch does
+/// not apply" the moment the target file carries any uncommitted edit — the
+/// normal state during the agent's self-improvement loop, and the reason the
+/// old dirty-target guard refused almost every call.
+///
+/// `--3way` instead merges the patch against the blob recorded in the index
+/// (what the worktree was based on), so the patch applies cleanly on top of
+/// unrelated uncommitted changes. `--recount` recomputes hunk line counts
+/// from the body, tolerating slightly off `@@ -a,b +c,d @@` numbers in
+/// hand-composed diffs.
+///
+/// Git applies atomically (nothing is written unless every file applies), so
+/// a failure leaves the working tree untouched; the precise git error is
+/// surfaced so the model can fix the patch. There is no "tree must be clean"
+/// refusal here — that was the source of the near-total failure rate.
 async fn git_apply_diff(root: &Path, diff: &str) -> Result<(), String> {
-    git_apply(root, diff, &["--check", "--recount"])
-        .await
-        .map_err(|msg| format!("git apply --check failed: {msg}"))?;
-    git_apply(root, diff, &["--recount"])
+    git_apply(root, diff, &["--3way", "--recount"])
         .await
         .map_err(|msg| format!("git apply failed: {msg}"))?;
     Ok(())
@@ -116,8 +121,9 @@ async fn git_apply_diff(root: &Path, diff: &str) -> Result<(), String> {
 
 /// Is the patch's change already present in the working tree? Git applies
 /// the reversed diff cleanly exactly when the current tree already contains
-/// the result the patch produces — the signal the old dirty-target guard was
-/// really after ("the change already exists, stop re-patching it").
+/// the result the patch produces — the genuinely useful signal the old
+/// dirty-target guard was really after ("the change already exists, stop
+/// re-patching it").
 async fn diff_already_applied(root: &Path, diff: &str) -> bool {
     git_apply(root, diff, &["--check", "--reverse", "--recount"]).await.is_ok()
 }
@@ -147,12 +153,12 @@ fn diff_touches_protected(diff: &str) -> Option<String> {
 pub fn builtin_apply_patch(tree: Arc<SourceTree>) -> PortableDynamicTool {
     PortableDynamicTool::new(
         "apply_patch",
-        "Apply a unified diff (git diff format) to the repository working tree. Validates with \
-         `git apply --check --recount` first; on failure the git error is returned so the patch \
-         can be fixed. Applies via a 3-way merge, so it works on top of other uncommitted \
-         changes — no need for a clean tree first. If `message` is given, the change is \
-         committed with that message. Diffs that touch `.ignore` or `.git*` paths are \
-         refused. Changes are local commits only — never pushed.",
+        "Apply a unified diff (git diff format) to the repository working tree. Applies with \
+         `git apply --3way --recount`, merging the patch against the index so it works on top \
+         of other uncommitted changes — no need for a clean tree first. On failure git's exact \
+         error is returned. If `message` is given, the change is committed with that message. \
+         Diffs that touch `.ignore` or `.git*` paths are refused. Changes are local commits \
+         only — never pushed.",
         json!({
             "type": "object",
             "properties": {
@@ -425,9 +431,9 @@ mod tests {
         let fx = Fixture::new();
         init_committed_repo(&fx).await;
 
-        // The common self-improvement case: an unrelated uncommitted edit
-        // already sits in the target file. The patch must still apply on top
-        // of it — no "clean tree first" refusal.
+        // The case the old guard refused almost always: an uncommitted edit
+        // already sits in the target file. `--3way` must merge the patch on
+        // top of it instead of refusing.
         std::fs::write(fx.dir.join("src/main.rs"), "fn main() {}\n// local\n").unwrap();
 
         let tool = builtin_apply_patch(fx.tree());
@@ -442,19 +448,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn apply_patch_applies_to_new_file_created_earlier() {
+    async fn apply_patch_adds_new_file_on_clean_tree() {
         let fx = Fixture::new();
         init_committed_repo(&fx).await;
 
-        // A new file the agent created in a prior turn (untracked). A patch
-        // that adds it must not be refused just because it is untracked.
-        std::fs::write(fx.dir.join("src/extra.rs"), "pub fn extra() {}\n").unwrap();
+        // Adding a brand-new file (not already present) must work.
         let add = "diff --git a/src/extra.rs b/src/extra.rs\nnew file mode 100644\n--- /dev/null\n+++ b/src/extra.rs\n@@ -0,0 +1 @@\n+pub fn extra() {}\n";
 
         let tool = builtin_apply_patch(fx.tree());
         tool.execute(serde_json::json!({ "diff": add }))
             .await
-            .unwrap_or_else(|e| panic!("apply must succeed on untracked target: {e}"));
+            .unwrap_or_else(|e| panic!("apply must succeed adding a new file: {e}"));
+
+        let extra = std::fs::read_to_string(fx.dir.join("src/extra.rs")).unwrap();
+        assert_eq!(extra, "pub fn extra() {}\n");
     }
 
     #[tokio::test]
