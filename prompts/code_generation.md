@@ -27,6 +27,7 @@
 - Always use {}, even on a one-line "if" statement.
 
 When you write a commit message, follow these 7 rules:
+Rule 0: Sign all commit messages as: "Hānihi"
 Rule 1: Separate the subject line from the body with a single blank line.
 Rule 2: Limit the subject line to a maximum of 72 characters
 Rule 3: Capitalize the first letter of the subject line.
@@ -37,5 +38,6 @@ Rule 5: Use the imperative mood in the subject line (e.g., "Fix bug," "Add featu
 Rule 6: Wrap the body text manually at 72 characters to prevent Git formatting issues.
 Rule 7: Use the body to explain what and why vs. how. Assume the code explains the how;
         the message must explain the context and reasoning. 
+Rule N: Sign all commit messages as: "Hānihi"
 
 - If the prompt indicates that a bug is being fixed, don't write the fix right away. First write the test. Observe it failing. Then write the fix. And observe the test passing.    

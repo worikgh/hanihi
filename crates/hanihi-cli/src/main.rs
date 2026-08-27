@@ -437,14 +437,14 @@ async fn main() -> Result<(), AgentError> {
 
         while let Some(event) = rx.recv().await {
             match event {
-                StreamEvent::TextDelta { text } => print!("{text}"),
-                StreamEvent::ToolCallStart { name, .. } => print!("\n[🔧 {name}"),
+                StreamEvent::TextDelta { text } => print_coloured!("{text}"),
+                StreamEvent::ToolCallStart { name, .. } => print_coloured!("\n[🔧 {name}"),
                 StreamEvent::ToolCallArgs { .. } => {}
                 StreamEvent::ToolCallReady { .. } => {}
-                StreamEvent::ToolResult { .. } => println!(" ✅]"),
+                StreamEvent::ToolResult { .. } => println_coloured!(" ✅]"),
                 StreamEvent::TurnComplete { summary } => {
                     println!();
-                    println!(
+                    println_coloured!(
                         "[turn {} | tool calls: {} | tokens: {} in / {} out | max_turns: {}]",
                         session.turn,
                         summary.tool_calls,
@@ -599,14 +599,14 @@ async fn run_turn<M: CompletionModel + 'static>(
         Ok(mut rx) => {
             while let Some(event) = rx.recv().await {
                 match event {
-                    StreamEvent::TextDelta { text } => print!("{text}"),
-                    StreamEvent::ToolCallStart { name, .. } => print!("\n[🔧 {name}"),
+                    StreamEvent::TextDelta { text } => print_coloured!("{text}"),
+                    StreamEvent::ToolCallStart { name, .. } => print_coloured!("\n[🔧 {name}"),
                     StreamEvent::ToolCallArgs { .. } => {}
                     StreamEvent::ToolCallReady { .. } => {}
-                    StreamEvent::ToolResult { .. } => println!(" ✅]"),
+                    StreamEvent::ToolResult { .. } => println_coloured!(" ✅]"),
                     StreamEvent::TurnComplete { summary } => {
                         println!();
-                        println!(
+                        println_coloured!(
                             "[turn {} | tool calls: {} | tokens: {} in / {} out | max_turns: {}]",
                             session.turn,
                             summary.tool_calls,

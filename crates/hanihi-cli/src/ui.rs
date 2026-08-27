@@ -83,7 +83,6 @@ pub fn tint(s: &str) -> String {
 }
 
 /// Print a payload to stdout in the current default colour.
-#[macro_export]
 macro_rules! print_coloured {
     ($($arg:tt)*) => {
         ::std::print!("{}", $crate::ui::tint(&format!($($arg)*)))
@@ -91,7 +90,6 @@ macro_rules! print_coloured {
 }
 
 /// Print a payload plus newline to stdout in the current default colour.
-#[macro_export]
 macro_rules! println_coloured {
     () => {
         ::std::println!()
@@ -100,3 +98,6 @@ macro_rules! println_coloured {
         ::std::println!("{}", $crate::ui::tint(&format!($($arg)*)))
     };
 }
+
+pub(crate) use print_coloured;
+pub(crate) use println_coloured;
