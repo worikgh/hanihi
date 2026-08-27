@@ -101,3 +101,31 @@ macro_rules! println_coloured {
 
 pub(crate) use print_coloured;
 pub(crate) use println_coloured;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tint_emits_dark_blue_and_reset_on_tty_like_input() {
+        // When not on a terminal `tint` passes text through untouched, so the
+        // colour path can be exercised directly through `Colour`'s SGR codes.
+        let fg = Colour::DarkBlue.sgr(true);
+        let reset = Colour::Reset.sgr(true);
+        assert_eq!(fg, "\x1b[34m");
+        assert_eq!(reset, "\x1b[0m");
+        // `Plain` emits no code but is still representable.
+        assert_eq!(Colour::Plain.sgr(true), "");
+    }
+
+    #[test]
+    fn set_default_colour_accepts_every_variant() {
+        // The future `/colour` command must be able to accept every colour
+        // without panicking or leaving the scheme in a bad state.
+        for colour in [Colour::DarkBlue, Colour::Reset, Colour::Plain] {
+            set_default_colour(colour);
+        }
+        // Default stays dark blue.
+        assert_eq!(default_colour(), Colour::DarkBlue);
+    }
+}
