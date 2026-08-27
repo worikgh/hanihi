@@ -4,6 +4,8 @@
 //! [`hanihi_core::Agent`]. Supports sessions (`--session` / `--new-session`),
 //! one-shot turns (`--once`), and MCP stdio servers.
 
+mod ui;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -20,6 +22,8 @@ use hanihi_core::{
 use reedline::{DefaultPrompt, FileBackedHistory, Reedline, Signal};
 use rig::completion::CompletionModel;
 use tracing_subscriber::EnvFilter;
+
+use crate::ui::{println_coloured, print_coloured};
 
 const DEFAULT_WORKING_DIR: &str = "./working";
 /// Default cap on model turns per request. Effectively unlimited: a sane
