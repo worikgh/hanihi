@@ -23,7 +23,7 @@ use reedline::{DefaultPrompt, FileBackedHistory, Reedline, Signal};
 use rig::completion::CompletionModel;
 use tracing_subscriber::EnvFilter;
 
-use crate::ui::{println_coloured, print_coloured};
+use crate::ui::{print_coloured, println_coloured};
 
 const DEFAULT_WORKING_DIR: &str = "./working";
 /// Default cap on model turns per request. Effectively unlimited: a sane

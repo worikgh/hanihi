@@ -234,7 +234,7 @@ fn check_command_argv(argv: &[String]) -> Result<(), String> {
                 );
             }
             match sub.as_str() {
-                "status" | "diff" | "ls-files" | "log" | "show" => Ok(()),
+                "status" | "diff" | "ls-files" | "log" | "show" | "grep" => Ok(()),
                 "apply" => {
                     if !argv.iter().any(|a| a == "--check") {
                         return Err("git apply is restricted to --check".into());
@@ -862,6 +862,7 @@ mod tests {
             argv(&["git", "diff"]),
             argv(&["git", "log", "--oneline", "-20"]),
             argv(&["git", "show", "HEAD"]),
+            argv(&["git", "grep", "fn main"]),
             argv(&["git", "apply", "--check"]),
         ] {
             check_command_argv(&cmd).expect("must be allowed");
