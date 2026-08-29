@@ -190,7 +190,7 @@ fn check_command_argv(argv: &[String]) -> Result<(), String> {
     let allowed_non_mutating = ["pwd", "ls", "tail", "grep", "nl"];
     let allowed: Vec<&str> = allowed_non_mutating
         .iter()
-        .chain(["cargo", "git"].iter())
+        .chain(["cargo", "git", "find"].iter())
         .copied()
         .collect();
 
@@ -219,8 +219,14 @@ fn check_command_argv(argv: &[String]) -> Result<(), String> {
                             .into(),
                     );
                 }
+                // TODO Make this a constant and review to ensure none of these can mutate files
+                let allowed_non_mutating =
+                    ["check", "build", "test", "clippy", "fmt", "doc", "metadata"];
+
                 match sub.as_str() {
-                    "check" | "build" | "test" | "clippy" | "fmt" | "doc" => Ok(()),
+                    val if allowed_non_mutating.contains(&sub.as_str()) && val == sub.as_str() => {
+                        Ok(())
+                    }
                     "run" => {
                         // Only `cargo run -p hanihi-eval` is permitted.
                         let mut package: Option<&str> = None;
@@ -285,6 +291,21 @@ fn check_command_argv(argv: &[String]) -> Result<(), String> {
                         }
                     }
                     other => Err(format!("git subcommand '{other}' is not allowed")),
+                }
+            }
+            "find" => {
+                if argv.get(1).is_none() {
+                    Err("find requires arguments)".into())
+                } else {
+                    let forbidden_args: [&str; 9] = [
+                        "-delete", "-exec", "-execdir", "-ok", "-okdir", "-fls", "-fprint",
+                        "-fprint0", "-fprintf",
+                    ];
+                    if argv.iter().any(|a| forbidden_args.contains(&a.as_str())) {
+                        Err("Arg {a} not allowed with find".to_string())
+                    } else {
+                        Ok(())
+                    }
                 }
             }
             other => Err(format!(

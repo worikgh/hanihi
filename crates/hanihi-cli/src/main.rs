@@ -4,12 +4,14 @@
 //! [`hanihi_core::Agent`]. Supports sessions (`--session` / `--new-session`),
 //! one-shot turns (`--once`), and MCP stdio servers.
 
+mod highlight;
 mod ui;
 
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::highlight::MonoHighlighter;
 use clap::Parser;
 use hanihi_core::agent::Agent;
 use hanihi_core::error::AgentError;
@@ -19,6 +21,7 @@ use hanihi_core::{
     builtin_grep, builtin_list_dir, builtin_read_file, builtin_read_session_log,
     builtin_run_command, builtin_write_file, connect_chat_model_with_prompt,
 };
+use nu_ansi_term::Color;
 use reedline::{DefaultPrompt, FileBackedHistory, Reedline, Signal};
 use rig::completion::CompletionModel;
 use tracing_subscriber::EnvFilter;
@@ -493,7 +496,11 @@ async fn repl<M: CompletionModel + 'static>(
                 Box::new(FileBackedHistory::new(10_000).expect("in-memory history"))
             }
         };
-    let mut editor = Reedline::create().with_history(history);
+    let edit_mode = reedline::Emacs::default();
+    let mut editor = Reedline::create()
+        .with_edit_mode(Box::new(edit_mode))
+        .with_history(history)
+        .with_highlighter(Box::new(MonoHighlighter::new(Color::Green)));
     let prompt = DefaultPrompt::default();
 
     loop {
