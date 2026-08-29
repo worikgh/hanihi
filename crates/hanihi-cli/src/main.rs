@@ -500,7 +500,7 @@ async fn repl<M: CompletionModel + 'static>(
     let mut editor = Reedline::create()
         .with_edit_mode(Box::new(edit_mode))
         .with_history(history)
-        .with_highlighter(Box::new(MonoHighlighter::new(Color::Green)));
+        .with_highlighter(Box::new(MonoHighlighter::new(Color::Cyan)));
     let prompt = DefaultPrompt::default();
 
     loop {
