@@ -602,7 +602,7 @@ async fn repl<M: CompletionModel + 'static>(
                     continue;
                 }
 
-                run_turn(session, &mut agent, provider, model_name, &line).await;
+                last_summary = run_turn(session, &mut agent, provider, model_name, &line).await;
             }
             Ok(Signal::CtrlC) | Ok(Signal::ExternalBreak(_)) => continue,
             Ok(Signal::CtrlD) => break,
