@@ -26,6 +26,8 @@ use reedline::{DefaultPrompt, FileBackedHistory, Reedline, Signal};
 use rig::completion::CompletionModel;
 use tracing_subscriber::EnvFilter;
 
+pub use hanihi_core::agent::{TurnSummary, connect_chat_model};
+
 use crate::ui::{print_coloured, println_coloured};
 
 const DEFAULT_WORKING_DIR: &str = "./working";
@@ -478,6 +480,19 @@ async fn main() -> Result<(), AgentError> {
     Ok(())
 }
 
+/// Render the per-turn completion footer shown after (and by /session for) a turn.
+fn turn_footer(
+    turn: u64,
+    tool_calls: usize,
+    tokens_in: u64,
+    tokens_out: u64,
+    max_turns: usize,
+) -> String {
+    format!(
+        "[turn {turn} | tool calls: {tool_calls} | tokens: {tokens_in} in / {tokens_out} out | max_turns: {max_turns}]"
+    )
+}
+
 /// Interactive readline loop.
 async fn repl<M: CompletionModel + 'static>(
     session: &mut hanihi_core::session::Session,
@@ -502,7 +517,7 @@ async fn repl<M: CompletionModel + 'static>(
         .with_history(history)
         .with_highlighter(Box::new(MonoHighlighter::new(Color::Cyan)));
     let prompt = DefaultPrompt::default();
-
+    let mut last_summary: Option<TurnSummary> = None;
     loop {
         match editor.read_line(&prompt) {
             Ok(Signal::Success(line) | Signal::HostCommand(line)) => {
@@ -535,6 +550,20 @@ async fn repl<M: CompletionModel + 'static>(
                             session.turn,
                             agent.max_turns()
                         );
+                        if let Some(s) = &last_summary {
+                            println!(
+                                "{}",
+                                turn_footer(
+                                    session.turn,
+                                    s.tool_calls,
+                                    s.usage.input_tokens,
+                                    s.usage.output_tokens,
+                                    agent.max_turns(),
+                                )
+                            );
+                        } else {
+                            println!("No TurnSummary");
+                        }
                         continue;
                     }
                     _ => {}
@@ -568,7 +597,8 @@ async fn repl<M: CompletionModel + 'static>(
                         cwd.display(),
                         content.len()
                     );
-                    run_turn(session, &mut agent, provider, model_name, &content).await;
+                    last_summary =
+                        run_turn(session, &mut agent, provider, model_name, &content).await;
                     continue;
                 }
 
@@ -598,7 +628,7 @@ async fn run_turn<M: CompletionModel + 'static>(
     provider: &str,
     model_name: &str,
     prompt: &str,
-) {
+) -> Option<TurnSummary> {
     match session
         .run_streaming(agent, provider, model_name, prompt)
         .await
@@ -621,17 +651,22 @@ async fn run_turn<M: CompletionModel + 'static>(
                             summary.usage.output_tokens,
                             agent.max_turns()
                         );
-                        agent.set_history(summary.final_history);
-                        break;
+                        // TODO: Do I need this `clone`?
+                        agent.set_history(summary.final_history.clone());
+                        return Some(summary);
                     }
                     StreamEvent::Error { message } => {
                         eprintln!();
                         eprintln!("error: {message}");
-                        break;
+                        return None;
                     }
                 }
             }
+            None
         }
-        Err(e) => eprintln!("error: {e}"),
+        Err(e) => {
+            eprintln!("error: {e}");
+            None
+        }
     }
 }
