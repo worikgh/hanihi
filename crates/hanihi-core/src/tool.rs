@@ -186,74 +186,111 @@ fn check_command_argv(argv: &[String]) -> Result<(), String> {
     let Some(program) = argv.first() else {
         return Err("empty command".into());
     };
-    match program.as_str() {
-        "cargo" => {
-            let Some(sub) = argv.get(1) else {
-                return Err(
-                    "cargo requires a subcommand (check, build, test, clippy, fmt, doc, run)"
-                        .into(),
-                );
-            };
-            if argv.iter().any(|a| a == "--manifest-path") {
-                return Err(
-                    "cargo --manifest-path is not allowed (cwd is pinned to the repo root)".into(),
-                );
+    // TODO Make this a constant and review to ensure none of these can mutate files
+    let allowed_non_mutating = ["pwd", "ls", "tail", "grep", "nl"];
+    let allowed: Vec<&str> = allowed_non_mutating
+        .iter()
+        .chain(["cargo", "git"].iter())
+        .copied()
+        .collect();
+
+    if allowed.iter().find(|&p| p == program).is_none() {
+        Err(format!(
+            "command '{program}' is not allowed (only {})",
+            allowed
+                .iter()
+                .fold("".to_string(), |a, b| format!("{a} {b}"))
+        ))
+    } else {
+        match program.as_str() {
+            val if allowed_non_mutating.contains(&program.as_str()) && val == program.as_str() => {
+                Ok(())
             }
-            match sub.as_str() {
-                "check" | "build" | "test" | "clippy" | "fmt" | "doc" => Ok(()),
-                "run" => {
-                    // Only `cargo run -p hanihi-eval` is permitted.
-                    let mut package: Option<&str> = None;
-                    let mut iter = argv[1..].iter().peekable();
-                    while let Some(a) = iter.next() {
-                        if a == "--" {
-                            break;
-                        }
-                        if a == "-p" || a == "--package" {
-                            package = iter.peek().map(|s| s.as_str());
-                        }
-                    }
-                    match package {
-                        Some("hanihi-eval") => Ok(()),
-                        Some(other) => Err(format!(
-                            "cargo run is restricted to -p hanihi-eval (got -p {other})"
-                        )),
-                        None => Err("cargo run requires -p hanihi-eval".into()),
-                    }
+            "cargo" => {
+                let Some(sub) = argv.get(1) else {
+                    return Err(
+                        "cargo requires a subcommand (check, build, test, clippy, fmt, doc, run)"
+                            .into(),
+                    );
+                };
+                if argv.iter().any(|a| a == "--manifest-path") {
+                    return Err(
+                        "cargo --manifest-path is not allowed (cwd is pinned to the repo root)"
+                            .into(),
+                    );
                 }
-                other => Err(format!("cargo subcommand '{other}' is not allowed")),
-            }
-        }
-        "git" => {
-            let Some(sub) = argv.get(1) else {
-                return Err("git requires a subcommand (status, diff, log, show, apply)".into());
-            };
-            if argv.iter().any(|a| a == "-C" || a == "--directory") {
-                return Err(
-                    "git -C/--directory is not allowed (cwd is pinned to the repo root)".into(),
-                );
-            }
-            match sub.as_str() {
-                "status" | "diff" | "ls-files" | "log" | "show" | "grep" => Ok(()),
-                "apply" => {
-                    if !argv.iter().any(|a| a == "--check") {
-                        return Err("git apply is restricted to --check".into());
+                match sub.as_str() {
+                    "check" | "build" | "test" | "clippy" | "fmt" | "doc" => Ok(()),
+                    "run" => {
+                        // Only `cargo run -p hanihi-eval` is permitted.
+                        let mut package: Option<&str> = None;
+                        let mut iter = argv[1..].iter().peekable();
+                        while let Some(a) = iter.next() {
+                            if a == "--" {
+                                break;
+                            }
+                            if a == "-p" || a == "--package" {
+                                package = iter.peek().map(|s| s.as_str());
+                            }
+                        }
+                        match package {
+                            Some("hanihi-eval") => Ok(()),
+                            Some(other) => Err(format!(
+                                "cargo run is restricted to -p hanihi-eval (got -p {other})"
+                            )),
+                            None => Err("cargo run requires -p hanihi-eval".into()),
+                        }
                     }
-                    Ok(())
+                    other => Err(format!("cargo subcommand '{other}' is not allowed")),
                 }
-                "hash-object" => {
-                    if argv.iter().any(|a| a == "-w") {
-                        Err("git hash-object is restricted to not using -w".into())
-                    } else {
+            }
+            "git" => {
+                let Some(sub) = argv.get(1) else {
+                    return Err(
+                        "git requires a subcommand (status, diff, log, show, apply, check-ignore)"
+                            .into(),
+                    );
+                };
+                if argv.iter().any(|a| a == "-C" || a == "--directory") {
+                    return Err(
+                        "git -C/--directory is not allowed (cwd is pinned to the repo root)".into(),
+                    );
+                }
+                // TODO Make this a constant and review to ensure none of these can mutate files
+                let allowed_non_mutating = [
+                    "status",
+                    "diff",
+                    "ls-files",
+                    "log",
+                    "show",
+                    "grep",
+                    "check-ignore",
+                    "rev-parse",
+                ];
+                match sub.as_str() {
+                    val if allowed_non_mutating.contains(&sub.as_str()) && val == sub.as_str() => {
                         Ok(())
                     }
+                    "apply" => {
+                        if !argv.iter().any(|a| a == "--check") {
+                            return Err("git apply is restricted to --check".into());
+                        }
+                        Ok(())
+                    }
+                    "hash-object" => {
+                        if argv.iter().any(|a| a == "-w") {
+                            Err("git hash-object is restricted to not using -w".into())
+                        } else {
+                            Ok(())
+                        }
+                    }
+                    other => Err(format!("git subcommand '{other}' is not allowed")),
                 }
-                other => Err(format!("git subcommand '{other}' is not allowed")),
             }
+            other => Err(format!(
+                "command '{other}' is not allowed (only cargo and git)"
+            )),
         }
-        other => Err(format!(
-            "command '{other}' is not allowed (only cargo and git)"
-        )),
     }
 }
 
