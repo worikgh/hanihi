@@ -423,7 +423,7 @@ where
                             Ok(output) => {
                                 let rendered = output.render();
                                 let preview = if rendered.len() > 200 {
-                                    format!("{}…", &rendered[..200])
+                                    format!("{}…", rendered.chars().take(200).collect::<String>())
                                 } else {
                                     rendered.clone()
                                 };
