@@ -920,6 +920,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "hanihi-session"
+version = "0.3.0"
+dependencies = [
+ "hanihi-core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "hashbrown"
 version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

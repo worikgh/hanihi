@@ -1,0 +1,15 @@
+[package]
+name = "hanihi-session"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+readme.workspace = true
+description = "Read-only session info for hānihi: print /session summaries from on-disk files, no model needed."
+keywords = ["agent", "llm", "session", "cli"]
+categories = ["command-line-utilities"]
+
+[dependencies]
+hanihi-core = { version = "0.3.0", path = "../hanihi-core" }
+serde.workspace = true
+serde_json.workspace = true
