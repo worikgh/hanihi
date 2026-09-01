@@ -923,6 +923,7 @@ dependencies = [
 name = "hanihi-session"
 version = "0.3.0"
 dependencies = [
+ "clap",
  "hanihi-core",
  "serde",
  "serde_json",
