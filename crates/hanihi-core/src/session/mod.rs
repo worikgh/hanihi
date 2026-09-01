@@ -608,6 +608,7 @@ impl Session {
                 LogWriter::open(&log_path).expect("re-open session log for streaming");
 
             let mut tool_calls_total: usize = 0;
+
             // Track tool arguments captured at ToolCallReady so the
             // tool_execution entry can log the real values (not a
             // placeholder).
@@ -1414,10 +1415,10 @@ mod tests {
             "ts": now.to_rfc3339(),
             "turn": 1,
             "data": {
-                "tool_call_id": "call_123",
-                "name": "echo",
-                "arguments": {"text": "test"},
-                "result": "test"
+            "tool_call_id": "call_123",
+            "name": "echo",
+            "arguments": {"text": "test"},
+            "result": "test"
             }
         });
         let log_path = session.root().join("events.jsonl");
