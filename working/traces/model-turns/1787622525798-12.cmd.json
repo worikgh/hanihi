@@ -1,0 +1,8 @@
+{
+  "command": "cargo build --workspace --all-features",
+  "duration_ms": 810,
+  "exit_code": 0,
+  "stderr": "    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.76s\n",
+  "stdout": "",
+  "ts": "2026-08-25T01:48:45.798105256+00:00"
+}

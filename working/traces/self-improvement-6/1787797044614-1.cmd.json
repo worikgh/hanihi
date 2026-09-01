@@ -1,0 +1,8 @@
+{
+  "command": "git status",
+  "duration_ms": 9,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "On branch main\nYour branch is ahead of 'origin/main' by 4 commits.\n  (use \"git push\" to publish your local commits)\n\nChanges not staged for commit:\n  (use \"git add <file>...\" to update what will be committed)\n  (use \"git restore <file>...\" to discard changes in working directory)\n\tmodified:   crates/hanihi-cli/src/main.rs\n\tmodified:   crates/hanihi-cli/src/ui.rs\n\nno changes added to commit (use \"git add\" and/or \"git commit -a\")\n",
+  "ts": "2026-08-27T02:17:24.614383392+00:00"
+}

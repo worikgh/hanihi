@@ -1,0 +1,8 @@
+{
+  "command": "git rev-parse --short HEAD",
+  "duration_ms": 3,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "7eb185a\n",
+  "ts": "2026-08-30T22:21:23.870426933+00:00"
+}

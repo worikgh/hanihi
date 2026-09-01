@@ -1,0 +1,8 @@
+{
+  "command": "cat .gitignore",
+  "duration_ms": 1,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "target/\ntarget/doc/\n!target/doc/\n# Emacs working files\n*~\n.#*\n#*#\n",
+  "ts": "2026-08-30T01:20:05.624250209+00:00"
+}

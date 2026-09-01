@@ -1,0 +1,8 @@
+{
+  "command": "git show HEAD:crates/hanihi-core/src/tool.rs | grep -n -E 'archive|merge-tree|read-tree|rev-list'",
+  "duration_ms": 15,
+  "exit_code": 128,
+  "stderr": "fatal: ambiguous argument '|': unknown revision or path not in the working tree.\nUse '--' to separate paths from revisions, like this:\n'git <command> [<revision>...] -- [<file>...]'\n",
+  "stdout": "",
+  "ts": "2026-08-30T01:17:18.545885469+00:00"
+}

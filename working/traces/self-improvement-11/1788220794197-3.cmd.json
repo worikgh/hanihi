@@ -1,0 +1,8 @@
+{
+  "command": "git diff -- crates/hanihi-core/src/source.rs",
+  "duration_ms": 7,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "diff --git a/crates/hanihi-core/src/source.rs b/crates/hanihi-core/src/source.rs\nindex 3db6e7d..0e79a85 100644\n--- a/crates/hanihi-core/src/source.rs\n+++ b/crates/hanihi-core/src/source.rs\n@@ -41,10 +41,10 @@ impl Language {\n             Language::Rust => \"target/\\n**/*.rs.bk\\n\",\n             Language::C => {\n                 \"build/\\ncmake-build-*/\\nCMakeFiles/\\n\\\n-                 *.o\\n*.obj\\n*.a\\n*.so\\n*.dylib\\n*.exe\\n\\\n-                 *.gcda\\n*.gcno\\n\\\n-                 a.out\\n.cache/\\n\\\n-                 # compile_commands.json — sometimes committed; useful for the agent\\n\"\n+\t\t *.o\\n*.obj\\n*.a\\n*.so\\n*.dylib\\n*.exe\\n\\\n+\t\t *.gcda\\n*.gcno\\n\\\n+\t\t a.out\\n.cache/\\n\\\n+\t\t # compile_commands.json — sometimes committed; useful for the agent\\n\"\n             }\n         }\n     }\n@@ -364,6 +364,7 @@ pub(crate) mod testutil {\n     use std::sync::Arc;\n \n     /// Throwaway git repo with an ignored `target/` dir.\n+    #[derive(Debug)]\n     pub(crate) struct Fixture {\n         pub(crate) dir: PathBuf,\n     }\n",
+  "ts": "2026-08-31T23:59:54.197713646+00:00"
+}

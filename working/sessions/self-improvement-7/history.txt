@@ -1,0 +1,10 @@
+/file /tmp/prompt.md
+I cannot let you use the tool `bash`.  Continue without it
+/file /tmp/prompt.md
+Why do you say: error: no such path: ~/.cargo/registry/src
+/file /tmp/prompt.md
+`apply_patch` failed.  Write the patch you want to apply to a file.
+`apply_patch` failed.  Resume
+Can you not read git ignored paths?
+Ok.  I have removed `working/` from the gitignore
+/quit

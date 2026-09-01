@@ -1,0 +1,8 @@
+{
+  "command": "git count-objects -v",
+  "duration_ms": 122,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "count: 929\nsize: 8976\nin-pack: 72\npacks: 1\nsize-pack: 38\nprune-packable: 72\ngarbage: 0\nsize-garbage: 0\n",
+  "ts": "2026-08-30T00:35:21.740656547+00:00"
+}

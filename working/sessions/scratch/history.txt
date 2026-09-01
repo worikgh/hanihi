@@ -1,0 +1,12 @@
+/file /tmp/net.md
+I have ethernet cable plugged into a Pi.  I can turn on a hotpoint on the pi and connect vi wifi to get a shell there.  I want the Pi to show up at the other end of the ethernet route
+Do not check this repository for related config.  `list_dir` faled, that is another issue
+Basically correct.  How do I configure it to achieve my goal
+Use Ethernet to connect to the Pi.  Locally.  I do bot care about the Internet except for you! 
+Pi 5, Debian-13.  Address does not matter.  I need to be able to connect these two machines from a script.  How do I answer question 3?
+/file /tmp/reply.md
+Ok.  `pi-link` is up now.  I want this to be temporary, and occasional.  Usually the Pi is running as a wireless access point andthe laptop as a normal laptop.  That is working well and I do not want to change it.  So I need scripts, I suppose
+1. `eth0`  2. Yes, it is connected to the router  3. No.  I can runit on the Pi using other means
+When the Pi is being used with a cable directly from it to laptop, it is **not** being used as a wireless access point.
+/file /tmp/reply.md
+/quit

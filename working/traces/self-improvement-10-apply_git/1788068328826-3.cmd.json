@@ -1,0 +1,8 @@
+{
+  "command": "git commit -m Add-hanihi-session-read-only-introspector",
+  "duration_ms": 19,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "[main 206fdcb] Add-hanihi-session-read-only-introspector\n 4 files changed, 204 insertions(+), 1 deletion(-)\n create mode 100644 crates/hanihi-session/Cargo.toml\n create mode 100644 crates/hanihi-session/src/main.rs\n",
+  "ts": "2026-08-30T05:38:48.826389667+00:00"
+}

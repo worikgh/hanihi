@@ -1,0 +1,8 @@
+{
+  "command": "git log --oneline -8",
+  "duration_ms": 4,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "30a6952 Replace-git-apply-with-pure-Rust-patch-applier\n7eb185a Expand-run_command-allowlist-and-read-only-git-verbs\n206fdcb Add-hanihi-session-read-only-introspector\n85878f4 Finish `/summary`\n3d4ba42 Expand what `/seesion` outputs\n22191d8 Use Cyan for font colour echoing interactive prompt\n656fa87 Allow changing colour of text in prompt\ndaab065 Allow `working/` and `target/doc` in gitignore\n",
+  "ts": "2026-09-01T00:06:02.923515260+00:00"
+}

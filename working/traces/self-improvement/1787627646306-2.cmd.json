@@ -1,0 +1,8 @@
+{
+  "command": "git status --porcelain",
+  "duration_ms": 7,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": " M .gitignore\n D crates/hanihi-cli/src/.#main.rs\n M crates/hanihi-core/src/tool.rs\n?? skills/\n",
+  "ts": "2026-08-25T03:14:06.306277505+00:00"
+}

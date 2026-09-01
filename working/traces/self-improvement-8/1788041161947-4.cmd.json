@@ -1,0 +1,8 @@
+{
+  "command": "cargo check -p hanihi-cli",
+  "duration_ms": 301,
+  "exit_code": 0,
+  "stderr": "    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.27s\n",
+  "stdout": "",
+  "ts": "2026-08-29T22:06:01.947499608+00:00"
+}

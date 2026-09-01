@@ -1,0 +1,8 @@
+{
+  "command": "git add working",
+  "duration_ms": 502,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "",
+  "ts": "2026-09-01T01:01:06.686982580+00:00"
+}

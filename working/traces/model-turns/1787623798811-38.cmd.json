@@ -1,0 +1,8 @@
+{
+  "command": "cargo test -p hanihi-cli",
+  "duration_ms": 40136,
+  "exit_code": 0,
+  "stderr": "   Compiling tokio v1.53.1\n   Compiling tinystr v0.8.3\n   Compiling zerotrie v0.2.4\n   Compiling icu_collections v2.2.0\n   Compiling icu_locale_core v2.2.0\n   Compiling serde v1.0.229\n   Compiling thiserror v2.0.20\n   Compiling ref-cast v1.0.26\n   Compiling clap v4.6.6\n   Compiling chrono v0.4.45\n   Compiling schemars v1.2.2\n   Compiling icu_provider v2.2.0\n   Compiling icu_normalizer v2.2.0\n   Compiling icu_properties v2.2.0\n   Compiling crossterm v0.29.0\n   Compiling idna_adapter v1.2.2\n   Compiling idna v1.1.0\n   Compiling reedline v0.49.0\n   Compiling url v2.5.8\n   Compiling tokio-util v0.7.19\n   Compiling h2 v0.4.15\n   Compiling tower v0.5.3\n   Compiling tokio-rustls v0.26.4\n   Compiling tower-http v0.6.11\n   Compiling tokio-stream v0.1.18\n   Compiling process-wrap v9.1.0\n   Compiling rmcp v3.1.2\n   Compiling hyper v1.11.0\n   Compiling hyper-util v0.1.20\n   Compiling hyper-rustls v0.27.9\n   Compiling reqwest v0.13.4\n   Compiling rig-core v0.41.0\n   Compiling hanihi-core v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-core)\n   Compiling hanihi-cli v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-cli)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 40.09s\n     Running unittests src/main.rs (target/debug/deps/hanihi_cli-f09296e47f9462e9)\n",
+  "stdout": "\nrunning 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n",
+  "ts": "2026-08-25T02:09:58.811874180+00:00"
+}

@@ -1,0 +1,7 @@
+{
+  "created_at": "2026-08-22T20:04:10.707172320+00:00",
+  "id": "c82381ec-9d28-4a02-b85d-c451f65e2660",
+  "model": "deepseek-chat",
+  "name": "add-internet-access",
+  "system_prompt": "You are a helpful assistant running in an agent harness. You have access to tools. Use them when they help answer the user; otherwise answer directly. When a tool result comes back, incorporate it into your final answer."
+}

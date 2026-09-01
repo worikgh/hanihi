@@ -1,0 +1,8 @@
+{
+  "command": "git apply --recount --check --verbose working/applytest/p4.patch",
+  "duration_ms": 5,
+  "exit_code": 0,
+  "stderr": "Checking patch working/applytest/main.rs...\n",
+  "stdout": "",
+  "ts": "2026-08-31T23:14:42.757296130+00:00"
+}

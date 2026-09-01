@@ -1,0 +1,8 @@
+{
+  "command": "git commit -m Add-apply-patch-debug-artifacts",
+  "duration_ms": 19,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "[main 4a8a2c5] Add-apply-patch-debug-artifacts\n 4 files changed, 1032 insertions(+)\n create mode 100644 crates/hanihi-core/applytest.patch\n create mode 100644 crates/hanihi-core/src/tool.patch\n create mode 100644 crates/hanihi-core/src/write.diff\n create mode 100644 crates/hanihi-core/src/write.patch\n",
+  "ts": "2026-09-01T01:00:57.080969433+00:00"
+}

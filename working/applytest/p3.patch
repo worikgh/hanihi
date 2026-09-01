@@ -1,0 +1,6 @@
+diff --git a/working/applytest/main.rs b/working/applytest/main.rs
+--- a/working/applytest/main.rs
++++ b/working/applytest/main.rs
+@@ -1 +1,2 @@
+ fn main() {}
++// patched

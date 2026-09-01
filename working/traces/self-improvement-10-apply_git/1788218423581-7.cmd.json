@@ -1,0 +1,8 @@
+{
+  "command": "cargo fmt && cargo check --workspace",
+  "duration_ms": 54,
+  "exit_code": 2,
+  "stderr": "error: unexpected argument '&&' found\n\nUsage: cargo fmt [OPTIONS] [-- <rustfmt_options>...]\n\nFor more information, try '--help'.\n",
+  "stdout": "",
+  "ts": "2026-08-31T23:20:23.581979469+00:00"
+}

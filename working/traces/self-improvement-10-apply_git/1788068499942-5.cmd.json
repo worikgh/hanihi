@@ -1,0 +1,8 @@
+{
+  "command": "git log --oneline -5",
+  "duration_ms": 5,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "206fdcb Add-hanihi-session-read-only-introspector\n85878f4 Finish `/summary`\n3d4ba42 Expand what `/seesion` outputs\n22191d8 Use Cyan for font colour echoing interactive prompt\n656fa87 Allow changing colour of text in prompt\n",
+  "ts": "2026-08-30T05:41:39.942988367+00:00"
+}

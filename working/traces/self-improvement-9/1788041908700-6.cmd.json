@@ -1,0 +1,8 @@
+{
+  "command": "git ls-files --stage crates/hanihi-cli/src/main.rs",
+  "duration_ms": 1,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "100644 7d58b20f46595dbc5eb840ddb8158122888208e9 0\tcrates/hanihi-cli/src/main.rs\n",
+  "ts": "2026-08-29T22:18:28.700232222+00:00"
+}

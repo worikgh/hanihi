@@ -1,0 +1,8 @@
+{
+  "command": "git show b074c99 --stat",
+  "duration_ms": 6,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "commit b074c99235a03cfd626d83cbb477d0e8aa3e554b\nAuthor: Worik <5387413+worikgh@users.noreply.github.com>\nDate:   Wed Aug 26 14:09:19 2026 +1200\n\n    Reject apply_patch when target files are dirty\n\n crates/hanihi-core/src/write.rs | 170 ++++++++++++++++++++++++++++++++++++----\n 1 file changed, 156 insertions(+), 14 deletions(-)\n",
+  "ts": "2026-08-26T04:07:54.337771169+00:00"
+}

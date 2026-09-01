@@ -1,0 +1,7 @@
+{
+  "created_at": "2026-08-22T19:44:07.757020428+00:00",
+  "id": "55e5a8e1-0349-4879-a0ed-e9173729afb0",
+  "model": "deepseek-chat",
+  "name": "cannabis-reg",
+  "system_prompt": "You are a helpful assistant running in an agent harness. You have access to tools. Use them when they help answer the user; otherwise answer directly. When a tool result comes back, incorporate it into your final answer."
+}

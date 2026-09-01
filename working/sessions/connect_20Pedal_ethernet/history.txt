@@ -1,0 +1,3 @@
+/help
+/file /tmp/connect_ethernet_local.md
+/quit

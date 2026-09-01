@@ -1,0 +1,11 @@
+/session
+Do not use `git_apply` in this session.  It is broken.  In the session `self-improvement-8`, and others, the tool `git_apply` failed.  Reason about that failure and determine why it failed, and what could be done to fix it.  Do not edit any code yet.  Do not use `git_apply` in this session.  It is broken
+/quit
+continue
+/quit
+continue
+/quit
+/session
+/quit
+Describe session so far
+/quit

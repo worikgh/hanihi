@@ -1,0 +1,8 @@
+{
+  "command": "cargo test -p hanihi-core --lib write::tests::apply_patch_works_on_dirty_tree -- --nocapture",
+  "duration_ms": 49339,
+  "exit_code": 0,
+  "stderr": "   Compiling aws-lc-sys v0.44.0\n   Compiling aws-lc-rs v1.18.0\n   Compiling rustls v0.23.43\n   Compiling rustls-webpki v0.103.13\n   Compiling tokio-rustls v0.26.4\n   Compiling rustls-platform-verifier v0.7.0\n   Compiling hyper-rustls v0.27.9\n   Compiling reqwest v0.13.4\n   Compiling rig-core v0.41.0\n   Compiling hanihi-core v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-core)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 49.27s\n     Running unittests src/lib.rs (target/debug/deps/hanihi_core-12c706d7be1a6e4c)\n",
+  "stdout": "\nrunning 1 test\ntest write::tests::apply_patch_works_on_dirty_tree ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 59 filtered out; finished in 0.02s\n\n",
+  "ts": "2026-08-31T23:18:33.662137262+00:00"
+}

@@ -1,0 +1,8 @@
+{
+  "command": "git diff --numstat",
+  "duration_ms": 14,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "343\t337\tcrates/hanihi-cli/src/main.rs\n5\t4\tcrates/hanihi-core/src/source.rs\n833\t831\tcrates/hanihi-core/src/tool.rs\n",
+  "ts": "2026-09-01T00:00:50.061886171+00:00"
+}

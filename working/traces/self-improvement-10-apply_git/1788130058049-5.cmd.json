@@ -1,0 +1,8 @@
+{
+  "command": "nl -ba crates/hanihi-core/src/write.rs | sed -n '425,445p'",
+  "duration_ms": 1,
+  "exit_code": 1,
+  "stderr": "nl: invalid line numbering format: '\\'425,445p\\''\nTry 'nl --help' for more information.\n",
+  "stdout": "",
+  "ts": "2026-08-30T22:47:38.050034423+00:00"
+}

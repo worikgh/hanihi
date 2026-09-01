@@ -1,0 +1,8 @@
+{
+  "command": "git status --short -- crates/hanihi-core/src/tool.rs",
+  "duration_ms": 2,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "",
+  "ts": "2026-09-01T00:23:12.683463729+00:00"
+}

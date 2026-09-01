@@ -1,0 +1,8 @@
+{
+  "command": "git log --oneline --all -- .gitignore | head -20",
+  "duration_ms": 50,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "daab065 Allow `working/` and `target/doc` in gitignore\nfe3d4de Revert tool.rs whitespace churn back to HEAD state\n9c9bb62 Keep working directory out of git repo\nda02c82 agent-harness: tokio + rig + rmcp + reedline agent scaffold\n",
+  "ts": "2026-09-01T00:01:16.909536398+00:00"
+}

@@ -1,0 +1,8 @@
+{
+  "command": "git commit -m \"Add hanihi-session read-only session introspector\"",
+  "duration_ms": 18,
+  "exit_code": 1,
+  "stderr": "error: pathspec 'hanihi-session' did not match any file(s) known to git\nerror: pathspec 'read-only' did not match any file(s) known to git\nerror: pathspec 'session' did not match any file(s) known to git\nerror: pathspec 'introspector\"' did not match any file(s) known to git\n",
+  "stdout": "",
+  "ts": "2026-08-30T05:37:29.776039382+00:00"
+}

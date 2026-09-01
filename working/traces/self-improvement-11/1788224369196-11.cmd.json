@@ -1,0 +1,8 @@
+{
+  "command": "git log --oneline -5",
+  "duration_ms": 6,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "fb695c9 Deduplicate-identical-read-only-tool-calls-per-turn\nc58c9aa Normalize-indentation-in-tool.rs-via-cargo-fmt\n30a6952 Replace-git-apply-with-pure-Rust-patch-applier\n7eb185a Expand-run_command-allowlist-and-read-only-git-verbs\n206fdcb Add-hanihi-session-read-only-introspector\n",
+  "ts": "2026-09-01T00:59:29.196452876+00:00"
+}
