@@ -1,6 +1,7 @@
 //! The agent: model + tools + message history + the tool-calling loop.
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use futures::StreamExt as _;
 use rig::client::CompletionClient;
@@ -17,7 +18,9 @@ use crate::error::AgentError;
 /// Default system prompt used when none is supplied.
 pub const DEFAULT_SYSTEM_PROMPT: &str = "You are a helpful assistant running in an agent harness. \
 You have access to tools. Use them when they help answer the user; otherwise answer directly. \
-When a tool result comes back, incorporate it into your final answer.";
+When a tool result comes back, incorporate it into your final answer. \
+Do not re-run the same read-only tool with the same arguments within a turn: reuse the result \
+you already have, because the result cannot have changed and re-running wastes resources.";
 
 /// System prompt for task mode: long-horizon self-improvement work with
 /// explicit workflow gates (mirrors the project's Rust workflow rules).
@@ -27,7 +30,73 @@ run `cargo fmt` before staging changes; `cargo test` before committing; `cargo b
 run `cargo clippy -- -D warnings` before finishing. Make changes as small git commits with \
 descriptive messages. Never push. Study command output and trace files before retrying: if a \
 command fails, read the error and fix the cause rather than repeating it. Verify your work with \
-the build/test gates — do not assert success by eye.";
+the build/test gates — do not assert success by eye. Before calling a tool, check whether an \
+identical read-only call with a usable result already appears in this turn; reuse it instead of \
+re-running.";
+
+/// Read-only, deterministic tools whose results may be reused within a turn.
+const CACHEABLE_TOOLS: &[&str] = &["read_file", "list_dir", "grep", "read_session_log", "echo"];
+
+/// Tools that mutate the repository. A successful call invalidates the
+/// per-turn read-only tool cache.
+const WRITE_TOOLS: &[&str] = &["apply_patch", "write_file"];
+
+/// Result of looking up a tool call in the per-turn cache.
+enum ToolCallCacheLookup {
+    /// An earlier identical call succeeded; reuse this rendered result.
+    Hit(String),
+    /// The identical read-only call has already been made too many times.
+    DuplicateLimit { count: usize },
+    /// Not cacheable, or the first time this call has been seen.
+    Miss,
+}
+
+/// Per-turn cache of read-only tool results keyed by `name + '\u{1}' + args`.
+#[derive(Debug, Default)]
+struct ToolCallCache {
+    results: HashMap<String, String>,
+    counts: HashMap<String, usize>,
+}
+
+impl ToolCallCache {
+    fn reset(&mut self) {
+        self.results.clear();
+        self.counts.clear();
+    }
+
+    fn key(name: &str, args: &serde_json::Value) -> String {
+        format!("{name}\u{1}{args}")
+    }
+
+    fn lookup(&mut self, name: &str, args: &serde_json::Value) -> ToolCallCacheLookup {
+        if !CACHEABLE_TOOLS.contains(&name) {
+            return ToolCallCacheLookup::Miss;
+        }
+        let key = Self::key(name, args);
+        let count = self.counts.entry(key.clone()).or_insert(0);
+        *count += 1;
+        if *count >= 3 {
+            return ToolCallCacheLookup::DuplicateLimit { count: *count };
+        }
+        match self.results.get(&key) {
+            Some(rendered) => ToolCallCacheLookup::Hit(rendered.clone()),
+            None => ToolCallCacheLookup::Miss,
+        }
+    }
+
+    fn store(&mut self, name: &str, args: &serde_json::Value, rendered: &str) {
+        if CACHEABLE_TOOLS.contains(&name) {
+            let key = Self::key(name, args);
+            self.results.insert(key, rendered.to_string());
+        }
+    }
+
+    fn invalidate_on_write(&mut self, name: &str) {
+        if WRITE_TOOLS.contains(&name) {
+            self.reset();
+        }
+    }
+}
 
 /// Result of one `Agent::run` invocation.
 #[derive(Debug, Clone)]
@@ -114,6 +183,7 @@ pub struct Agent<M: CompletionModel> {
     tools: Arc<Vec<PortableDynamicTool>>,
     history: Vec<Message>,
     max_turns: usize,
+    tool_cache: Arc<Mutex<ToolCallCache>>,
 }
 
 impl<M: CompletionModel> Agent<M> {
@@ -125,6 +195,7 @@ impl<M: CompletionModel> Agent<M> {
             tools: Arc::new(Vec::new()),
             history: Vec::new(),
             max_turns: 10,
+            tool_cache: Arc::new(Mutex::new(ToolCallCache::default())),
         }
     }
 
@@ -173,6 +244,14 @@ impl<M: CompletionModel> Agent<M> {
         self.history.clear();
     }
 
+    /// Clear the per-turn read-only tool cache (start of a new turn).
+    pub(crate) fn clear_tool_cache(&self) {
+        self.tool_cache
+            .lock()
+            .expect("tool call cache lock")
+            .reset();
+    }
+
     /// Replace the persistent message history (e.g. from session replay).
     pub fn set_history(&mut self, history: Vec<Message>) {
         self.history = history;
@@ -203,6 +282,7 @@ impl<M: CompletionModel> Agent<M> {
     /// Run one user request to completion: model calls, tool execution, and
     /// follow-up model calls until the model answers without tool calls.
     pub async fn run(&mut self, user_input: &str) -> Result<TurnSummary, AgentError> {
+        self.clear_tool_cache();
         let mut turn_messages: Vec<Message> = Vec::new();
         let mut tool_calls_total = 0usize;
         let mut usage_total = Usage::new();
@@ -288,6 +368,7 @@ impl<M: CompletionModel> Agent<M> {
         let (tx, rx) = mpsc::channel(32);
         let model = self.model.clone();
         let tools = self.tools_arc();
+        let tool_cache = self.tool_cache.clone();
         let max_turns = self.max_turns;
         let mut history = self.history.clone();
         let user_input = user_input.to_string();
@@ -300,6 +381,7 @@ impl<M: CompletionModel> Agent<M> {
                 user_input.to_string(),
                 max_turns,
                 &tx,
+                tool_cache,
             )
             .await;
             // Update the agent's history on completion.
@@ -313,23 +395,13 @@ impl<M: CompletionModel> Agent<M> {
 
     /// Dispatch a single tool call by name and render its output as text.
     pub(crate) async fn execute_tool(&self, call: &ToolCall) -> Result<String, AgentError> {
-        let name = &call.function.name;
-        let tool = self
-            .tools
-            .iter()
-            .find(|t| t.name() == name)
-            .ok_or_else(|| AgentError::Tool {
-                name: name.clone(),
-                message: "unknown tool".into(),
-            })?;
-        let output = tool
-            .execute(call.function.arguments.clone())
-            .await
-            .map_err(|e| AgentError::Tool {
-                name: name.clone(),
-                message: e.to_string(),
-            })?;
-        Ok(output.render())
+        execute_tool_with_cache(
+            self.tools.as_slice(),
+            &self.tool_cache,
+            &call.function.name,
+            call.function.arguments.clone(),
+        )
+        .await
     }
 
     /// Append the completed turn to the persistent history.
@@ -337,6 +409,49 @@ impl<M: CompletionModel> Agent<M> {
         self.history.push(Message::user(user_input));
         self.history.extend(turn_messages);
     }
+}
+
+/// Execute one tool call, reusing cached results for repeated identical
+/// read-only calls within the same turn.
+async fn execute_tool_with_cache(
+    tools: &[PortableDynamicTool],
+    cache: &Mutex<ToolCallCache>,
+    name: &str,
+    args: serde_json::Value,
+) -> Result<String, AgentError> {
+    {
+        let mut cache = cache.lock().expect("tool call cache lock");
+        match cache.lookup(name, &args) {
+            ToolCallCacheLookup::Hit(rendered) => return Ok(rendered),
+            ToolCallCacheLookup::DuplicateLimit { count } => {
+                return Ok(format!(
+                    "duplicate call skipped: '{name}' with identical arguments was already called {count} times this turn; reuse an earlier result"
+                ));
+            }
+            ToolCallCacheLookup::Miss => {}
+        }
+    }
+
+    let tool = tools
+        .iter()
+        .find(|t| t.name() == name)
+        .ok_or_else(|| AgentError::Tool {
+            name: name.to_string(),
+            message: "unknown tool".into(),
+        })?;
+    let output = tool
+        .execute(args.clone())
+        .await
+        .map_err(|e| AgentError::Tool {
+            name: name.to_string(),
+            message: e.to_string(),
+        })?;
+    let rendered = output.render();
+
+    let mut cache = cache.lock().expect("tool call cache lock");
+    cache.store(name, &args, &rendered);
+    cache.invalidate_on_write(name);
+    Ok(rendered)
 }
 
 /// The inner streaming loop, run on a spawned task.
@@ -350,10 +465,12 @@ async fn run_streaming_loop<M: CompletionModel>(
     user_input: String,
     max_turns: usize,
     tx: &mpsc::Sender<StreamEvent>,
+    tool_cache: Arc<Mutex<ToolCallCache>>,
 ) -> Result<TurnSummary, AgentError>
 where
     M::StreamingResponse: Send,
 {
+    tool_cache.lock().expect("tool call cache lock").reset();
     let mut turn_messages: Vec<Message> = Vec::new();
     let mut tool_calls_total: usize = 0;
     let mut usage_total = Usage::new();
@@ -415,52 +532,41 @@ where
                         })
                         .await;
 
-                    // Execute the tool.
+                    // Execute the tool, reusing cached results for repeated
+                    // identical read-only calls within this turn.
                     let name = tool_call.function.name.clone();
-                    let tool = tools.iter().find(|t| t.name() == name);
-                    match tool {
-                        Some(t) => match t.execute(tool_call.function.arguments.clone()).await {
-                            Ok(output) => {
-                                let rendered = output.render();
-                                let preview = if rendered.len() > 200 {
-                                    format!("{}…", rendered.chars().take(200).collect::<String>())
-                                } else {
-                                    rendered.clone()
-                                };
-                                let _ = tx
-                                    .send(StreamEvent::ToolResult {
-                                        id: tool_call.id.clone(),
-                                        name: name.clone(),
-                                        result_preview: preview,
-                                        result: rendered.clone(),
-                                    })
-                                    .await;
-                                tool_calls_total += 1;
-                                pending_results.push((tool_call.clone(), rendered));
-                            }
-                            Err(e) => {
-                                let _ = tx
-                                    .send(StreamEvent::Error {
-                                        message: e.to_string(),
-                                    })
-                                    .await;
-                                return Err(AgentError::Tool {
-                                    name: name.clone(),
-                                    message: e.to_string(),
-                                });
-                            }
-                        },
-                        None => {
-                            let msg = format!("unknown tool: {name}");
+                    match execute_tool_with_cache(
+                        tools.as_slice(),
+                        &tool_cache,
+                        &name,
+                        tool_call.function.arguments.clone(),
+                    )
+                    .await
+                    {
+                        Ok(rendered) => {
+                            let preview = if rendered.len() > 200 {
+                                format!("{}…", rendered.chars().take(200).collect::<String>())
+                            } else {
+                                rendered.clone()
+                            };
                             let _ = tx
-                                .send(StreamEvent::Error {
-                                    message: msg.clone(),
+                                .send(StreamEvent::ToolResult {
+                                    id: tool_call.id.clone(),
+                                    name: name.clone(),
+                                    result_preview: preview,
+                                    result: rendered.clone(),
                                 })
                                 .await;
-                            return Err(AgentError::Tool {
-                                name: name.clone(),
-                                message: msg,
-                            });
+                            tool_calls_total += 1;
+                            pending_results.push((tool_call.clone(), rendered));
+                        }
+                        Err(e) => {
+                            let _ = tx
+                                .send(StreamEvent::Error {
+                                    message: e.to_string(),
+                                })
+                                .await;
+                            return Err(e);
                         }
                     }
                     pending_tool_calls.push(tool_call);
@@ -606,5 +712,59 @@ mod tests {
         let mut agent = Agent::new(model, "test system");
         let err = agent.run("do it").await.expect_err("run must fail");
         assert!(matches!(err, AgentError::Tool { .. }));
+    }
+
+    /// A read-only, deterministic tool whose results can be reused within a
+    /// turn. Two identical calls on the same turn must execute the underlying
+    /// tool only once.
+    #[tokio::test]
+    async fn test_duplicate_read_only_tool_call_is_deduplicated() {
+        let executions = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = executions.clone();
+
+        // The tool is named after a real builtin ("read_file") so the
+        // cacheable-tool whitelist applies, but the callback counts
+        // executions without touching the filesystem.
+        let counting_tool = PortableDynamicTool::new(
+            "read_file",
+            "A read-only tool that counts executions.",
+            serde_json::json!({
+                "type": "object",
+                "properties": {
+                "path": { "type": "string" }
+                },
+                "required": ["path"]
+            }),
+            move |args: serde_json::Value| {
+                let counter = counter.clone();
+                Box::pin(async move {
+                    use std::sync::atomic::Ordering;
+                    counter.fetch_add(1, Ordering::SeqCst);
+                    use rig::tool::ToolOutput;
+                    Ok(ToolOutput::text(
+                        args.get("path")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or_default(),
+                    ))
+                })
+            },
+        );
+
+        let model = MockCompletionModel::from_turns([
+            MockTurn::tool_call("call_1", "read_file", serde_json::json!({"path": "a"})),
+            MockTurn::tool_call("call_2", "read_file", serde_json::json!({"path": "a"})),
+            MockTurn::text("done"),
+        ]);
+        let mut agent = Agent::new(model, "test system");
+        agent.add_tool(counting_tool);
+
+        let summary = agent
+            .run("read the same file twice")
+            .await
+            .expect("run succeeds");
+        // The two identical calls are deduplicated but still counted once.
+        assert_eq!(summary.tool_calls, 2);
+        use std::sync::atomic::Ordering;
+        assert_eq!(executions.load(Ordering::SeqCst), 1);
     }
 }
