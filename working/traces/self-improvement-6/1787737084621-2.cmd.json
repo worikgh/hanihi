@@ -1,8 +1,0 @@
-{
-  "command": "cargo clippy",
-  "duration_ms": 1369,
-  "exit_code": 0,
-  "stderr": "    Checking hanihi-core v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-core)\n    Checking hanihi-eval v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-eval)\n    Checking hanihi-cli v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-cli)\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.27s\n",
-  "stdout": "",
-  "ts": "2026-08-26T09:38:04.621981584+00:00"
-}

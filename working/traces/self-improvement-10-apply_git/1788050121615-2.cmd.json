@@ -1,8 +1,0 @@
-{
-  "command": "git rev-parse --is-shallow-repository",
-  "duration_ms": 3,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "false\n",
-  "ts": "2026-08-30T00:35:21.615182240+00:00"
-}

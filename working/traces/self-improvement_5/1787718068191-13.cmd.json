@@ -1,8 +1,0 @@
-{
-  "command": "cargo test -p hanihi-core write:: -- --nocapture",
-  "duration_ms": 2372,
-  "exit_code": 101,
-  "stderr": "   Compiling hanihi-core v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-core)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.25s\n     Running unittests src/lib.rs (target/debug/deps/hanihi_core-12c706d7be1a6e4c)\n\nthread 'write::tests::apply_patch_works_on_dirty_tree' (311064) panicked at crates/hanihi-core/src/write.rs:442:33:\napply over dirty tree must succeed: git apply failed: error: src/main.rs: does not match index\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\nerror: test failed, to rerun pass `-p hanihi-core --lib`\n",
-  "stdout": "\nrunning 10 tests\ntest write::tests::apply_patch_rejects_bad_diff_and_protected_paths ... ok\ntest write::tests::apply_patch_works_on_dirty_tree ... FAILED\ntest write::tests::diff_protected_scan ... ok\ntest write::tests::protected_path_detection ... ok\ntest write::tests::apply_patch_adds_new_file_on_clean_tree ... ok\ntest write::tests::write_file_refuses_escapes ... ok\ntest write::tests::write_file_writes_new_file ... ok\ntest write::tests::write_file_refuses_protected_and_ignored ... ok\ntest write::tests::diff_already_applied_detects_existing_change ... ok\ntest write::tests::apply_patch_applies_and_commits ... ok\n\nfailures:\n\nfailures:\n    write::tests::apply_patch_works_on_dirty_tree\n\ntest result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured; 50 filtered out; finished in 0.07s\n\n",
-  "ts": "2026-08-26T04:21:08.191167597+00:00"
-}

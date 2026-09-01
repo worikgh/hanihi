@@ -1,8 +1,0 @@
-{
-  "command": "git status",
-  "duration_ms": 8,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "On branch main\nYour branch is up to date with 'origin/main'.\n\nChanges to be committed:\n  (use \"git restore --staged <file>...\" to unstage)\n\tmodified:   crates/hanihi-cli/Cargo.toml\n\nChanges not staged for commit:\n  (use \"git add <file>...\" to update what will be committed)\n  (use \"git restore <file>...\" to discard changes in working directory)\n\tmodified:   Cargo.lock\n\n",
-  "ts": "2026-08-29T03:53:45.412032668+00:00"
-}

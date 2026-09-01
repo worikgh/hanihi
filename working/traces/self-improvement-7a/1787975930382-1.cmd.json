@@ -1,8 +1,0 @@
-{
-  "command": "grep -n \"name = \\\"reedline\\\"\" Cargo.lock",
-  "duration_ms": 3,
-  "exit_code": 2,
-  "stderr": "grep: =: No such file or directory\ngrep: \\\"reedline\\\"\": No such file or directory\n",
-  "stdout": "",
-  "ts": "2026-08-29T03:58:50.382084895+00:00"
-}

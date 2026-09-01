@@ -1,5 +1,0 @@
---- a/crates/hanihi-session/Cargo.toml
-+++ b/crates/hanihi-session/Cargo.toml
-@@ -1 +1,2 @@
- [package]
-+#

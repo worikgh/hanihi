@@ -1,7 +1,0 @@
-{
-  "created_at": "2026-08-30T00:43:05.882127282+00:00",
-  "id": "65c9d5cc-5dc4-4a71-b070-f263e2358832",
-  "model": "deepseek-v4-pro",
-  "name": "self-improvement-10-digress-non_mutating",
-  "system_prompt": "You are a helpful assistant running in an agent harness. You have access to tools. Use them when they help answer the user; otherwise answer directly. When a tool result comes back, incorporate it into your final answer."
-}

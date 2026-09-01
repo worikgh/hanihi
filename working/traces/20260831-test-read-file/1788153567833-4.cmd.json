@@ -1,8 +1,0 @@
-{
-  "command": "cat working/scratch-repro/main.rs",
-  "duration_ms": 0,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "fn main() {}\n// local\n",
-  "ts": "2026-08-31T05:19:27.833347959+00:00"
-}

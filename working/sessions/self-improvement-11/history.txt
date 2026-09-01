@@ -1,5 +1,0 @@
-What are you doing?  So many tool calls for a git acton.
-You have committed tool.rs  already.  Why were you spinning your wheels like that?
-what can you do, to change your code, so this does not happen again?  Look at how you were repeatedly calling `git status` and `git diff`.  This is a waste of tokens and other resources.
-yes
-/quit

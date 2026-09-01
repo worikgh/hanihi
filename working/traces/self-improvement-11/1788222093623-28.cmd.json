@@ -1,8 +1,0 @@
-{
-  "command": "git commit -m \"Normalize indentation in tool.rs with cargo fmt\"",
-  "duration_ms": 18,
-  "exit_code": 1,
-  "stderr": "error: pathspec 'indentation' did not match any file(s) known to git\nerror: pathspec 'in' did not match any file(s) known to git\nerror: pathspec 'tool.rs' did not match any file(s) known to git\nerror: pathspec 'with' did not match any file(s) known to git\nerror: pathspec 'cargo' did not match any file(s) known to git\nerror: pathspec 'fmt\"' did not match any file(s) known to git\n",
-  "stdout": "",
-  "ts": "2026-09-01T00:21:33.623271032+00:00"
-}

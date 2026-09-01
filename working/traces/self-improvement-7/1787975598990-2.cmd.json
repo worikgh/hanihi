@@ -1,8 +1,0 @@
-{
-  "command": "git diff",
-  "duration_ms": 13,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "diff --git a/Cargo.lock b/Cargo.lock\nindex 7c3d763..b23b391 100644\n--- a/Cargo.lock\n+++ b/Cargo.lock\n@@ -872,6 +872,7 @@ version = \"0.3.0\"\n dependencies = [\n  \"clap\",\n  \"hanihi-core\",\n+ \"nu-ansi-term\",\n  \"reedline\",\n  \"rig-core\",\n  \"serde\",\n",
-  "ts": "2026-08-29T03:53:18.990501363+00:00"
-}

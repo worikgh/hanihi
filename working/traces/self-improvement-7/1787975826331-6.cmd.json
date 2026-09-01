@@ -1,8 +1,0 @@
-{
-  "command": "git log -p -- .gitignore",
-  "duration_ms": 23,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "commit fe3d4de1354fb60b3c93855bfb58efd49382c2df\nAuthor: Worik <5387413+worikgh@users.noreply.github.com>\nDate:   Tue Aug 25 21:07:05 2026 +1200\n\n    Revert tool.rs whitespace churn back to HEAD state\n\ndiff --git a/.gitignore b/.gitignore\nindex 78b4a7c..b987015 100644\n--- a/.gitignore\n+++ b/.gitignore\n@@ -1,2 +1,6 @@\n target/\n working/\n+# Emacs working files\n+*~\n+.#*\n+#*#\n\ncommit 9c9bb6230d497bc54a8dbcb0730fd8474f9bba83\nAuthor: Worik <5387413+worikgh@users.noreply.github.com>\nDate:   Tue Aug 25 14:47:51 2026 +1200\n\n    Keep working directory out of git repo\n\ndiff --git a/.gitignore b/.gitignore\nindex 2f7896d..78b4a7c 100644\n--- a/.gitignore\n+++ b/.gitignore\n@@ -1 +1,2 @@\n target/\n+working/\n\ncommit da02c826df4deee1e5cd814053b8555f2147b696\nAuthor: Deepthought <deepthought@openclaw.local>\nDate:   Mon Aug 10 15:40:43 2026 +1200\n\n    agent-harness: tokio + rig + rmcp + reedline agent scaffold\n    \n    - agent-core: Agent loop (preamble + history + tool defs, tool-call\n      dispatch, max_turns guard), built-in get_time/echo tools, MCP stdio\n      client wrapping rmcp tools as rig PortableDynamicTools\n    - agent-cli: clap CLI + reedline REPL, --once one-shot mode, MCP attach\n    - mcp-echo-server: minimal MCP stdio demo server (mcp_echo tool)\n    - 7 unit tests (rig MockCompletionModel, no network); clippy clean\n    - smoke-tested against DeepSeek: get_time round trip + MCP echo round trip\n\ndiff --git a/.gitignore b/.gitignore\nnew file mode 100644\nindex 0000000..2f7896d\n--- /dev/null\n+++ b/.gitignore\n@@ -0,0 +1 @@\n+target/\n",
-  "ts": "2026-08-29T03:57:06.331470724+00:00"
-}

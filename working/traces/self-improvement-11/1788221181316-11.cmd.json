@@ -1,8 +1,0 @@
-{
-  "command": "git check-ignore -v working/sessions/default-session/session.json crates/hanihi-core/applytest.patch",
-  "duration_ms": 4,
-  "exit_code": 1,
-  "stderr": "",
-  "stdout": "",
-  "ts": "2026-09-01T00:06:21.316643513+00:00"
-}

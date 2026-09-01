@@ -1,8 +1,0 @@
-{
-  "command": "git apply --recount --check --verbose working/scratch-repro/dirty.patch",
-  "duration_ms": 6,
-  "exit_code": 1,
-  "stderr": "Checking patch working/scratch-repro/main.rs...\nerror: while searching for:\nfn main() {}\n\nerror: patch failed: working/scratch-repro/main.rs:1\nerror: working/scratch-repro/main.rs: patch does not apply\n",
-  "stdout": "",
-  "ts": "2026-08-31T05:19:25.910203244+00:00"
-}

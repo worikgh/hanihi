@@ -1,8 +1,0 @@
-{
-  "command": "git apply --recount --check working/applytest/p3.patch",
-  "duration_ms": 1,
-  "exit_code": 1,
-  "stderr": "error: patch failed: working/applytest/main.rs:1\nerror: working/applytest/main.rs: patch does not apply\n",
-  "stdout": "",
-  "ts": "2026-08-31T03:47:10.886792075+00:00"
-}

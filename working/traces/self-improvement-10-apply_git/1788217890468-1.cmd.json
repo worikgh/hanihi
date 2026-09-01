@@ -1,8 +1,0 @@
-{
-  "command": "git apply --check --verbose working/applytest/session.patch",
-  "duration_ms": 4,
-  "exit_code": 1,
-  "stderr": "Checking patch crates/hanihi-session/src/main.rs...\nerror: while searching for:\n//! # hanihi-session\n\nerror: patch failed: crates/hanihi-session/src/main.rs:1\nerror: crates/hanihi-session/src/main.rs: patch does not apply\n",
-  "stdout": "",
-  "ts": "2026-08-31T23:11:30.468752287+00:00"
-}

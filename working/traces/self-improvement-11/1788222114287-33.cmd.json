@@ -1,8 +1,0 @@
-{
-  "command": "git show --stat --oneline HEAD",
-  "duration_ms": 2,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "c58c9aa Normalize-indentation-in-tool.rs-via-cargo-fmt\n crates/hanihi-core/src/tool.rs | 1664 ++++++++++++++++++++--------------------\n 1 file changed, 833 insertions(+), 831 deletions(-)\n",
-  "ts": "2026-09-01T00:21:54.287028282+00:00"
-}

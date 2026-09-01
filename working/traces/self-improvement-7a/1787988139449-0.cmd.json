@@ -1,8 +1,0 @@
-{
-  "command": "git status --short",
-  "duration_ms": 1,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": " M .gitignore\n M Cargo.lock\n M crates/hanihi-cli/src/main.rs\n M crates/hanihi-core/src/tool.rs\n?? working/\n",
-  "ts": "2026-08-29T07:22:19.449459709+00:00"
-}

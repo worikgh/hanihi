@@ -1,8 +1,0 @@
-{
-  "command": "git diff HEAD -- crates/hanihi-core/src/write.rs",
-  "duration_ms": 2,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "",
-  "ts": "2026-08-26T03:54:59.931245957+00:00"
-}

@@ -1,8 +1,0 @@
-{
-  "command": "git status",
-  "duration_ms": 20,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "On branch main\nYour branch is up to date with 'origin/main'.\n\nChanges not staged for commit:\n  (use \"git add <file>...\" to update what will be committed)\n  (use \"git restore <file>...\" to discard changes in working directory)\n\tmodified:   crates/hanihi-cli/src/main.rs\n\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\tcrates/hanihi-session/\n\tplans/wts_compaction.md\n\tprompts/self-improvement.md\n\tworking/\n\nno changes added to commit (use \"git add\" and/or \"git commit -a\")\n",
-  "ts": "2026-08-29T22:18:11.366984684+00:00"
-}

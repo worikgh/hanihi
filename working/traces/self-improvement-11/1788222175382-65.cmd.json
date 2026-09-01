@@ -1,8 +1,0 @@
-{
-  "command": "git log --oneline -1 -- crates/hanihi-core/src/tool.rs",
-  "duration_ms": 5,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "c58c9aa Normalize-indentation-in-tool.rs-via-cargo-fmt\n",
-  "ts": "2026-09-01T00:22:55.382195284+00:00"
-}

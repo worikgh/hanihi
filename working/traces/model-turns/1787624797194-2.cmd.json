@@ -1,8 +1,0 @@
-{
-  "command": "git diff --stat",
-  "duration_ms": 21,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": " crates/hanihi-cli/src/.#main.rs           |   1 -\n crates/hanihi-core/src/lib.rs             |  21 -----\n working/sessions/model-turns/events.jsonl | 138 ++++++++++++++++++++++++++++++\n working/sessions/model-turns/history.txt  |  22 +++++\n 4 files changed, 160 insertions(+), 22 deletions(-)\n",
-  "ts": "2026-08-25T02:26:37.194224624+00:00"
-}

@@ -1,8 +1,0 @@
-{
-  "command": "git log --oneline -3",
-  "duration_ms": 3,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "886bb52 Fix prompt-append CLI: single session open, persist --new-prompt rewrite, correct borrow\neaa40bc Remove unneeded wildcard in pattern (clippy)\n88cf902 Fold session prompt resolution into a single expression (clippy)\n",
-  "ts": "2026-08-25T02:04:09.057362078+00:00"
-}

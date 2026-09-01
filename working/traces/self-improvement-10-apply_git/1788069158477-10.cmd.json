@@ -1,8 +1,0 @@
-{
-  "command": "git status --porcelain=v1",
-  "duration_ms": 7,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "?? crates/hanihi-core/src/tool.patch\n?? plans/wts_compaction.md\n?? prompts/self-improvement.md\n?? working/\n",
-  "ts": "2026-08-30T05:52:38.477338159+00:00"
-}

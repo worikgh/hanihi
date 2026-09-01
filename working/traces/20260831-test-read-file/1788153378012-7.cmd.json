@@ -1,8 +1,0 @@
-{
-  "command": "cargo test -p hanihi-core write::tests::apply_patch_works_on_dirty_tree -- --exact --nocapture",
-  "duration_ms": 836,
-  "exit_code": 101,
-  "stderr": "    Blocking waiting for file lock on package cache\n    Blocking waiting for file lock on package cache\n    Blocking waiting for file lock on package cache\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.65s\n     Running unittests src/lib.rs (target/debug/deps/hanihi_core-12c706d7be1a6e4c)\napply_patch_works_on_dirty_tree: fx:Fixture Fixture { dir: \"/tmp/hanihi-src-62d3ce74-d31b-4599-8ae2-bdda2fc81565\" }\n\nthread 'write::tests::apply_patch_works_on_dirty_tree' (3441543) panicked at crates/hanihi-core/src/write.rs:445:29:\napply over dirty tree must succeed: git apply failed: error: patch failed: src/main.rs:1\nerror: src/main.rs: patch does not apply\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\nerror: test failed, to rerun pass `-p hanihi-core --lib`\n",
-  "stdout": "\nrunning 1 test\ntest write::tests::apply_patch_works_on_dirty_tree ... FAILED\n\nfailures:\n\nfailures:\n    write::tests::apply_patch_works_on_dirty_tree\n\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 59 filtered out; finished in 0.12s\n\n",
-  "ts": "2026-08-31T05:16:18.012692359+00:00"
-}

@@ -1,8 +1,0 @@
-{
-  "command": "git add Cargo.toml Cargo.lock crates/hanihi-session",
-  "duration_ms": 26,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "",
-  "ts": "2026-08-30T05:37:26.697739492+00:00"
-}

@@ -1,8 +1,0 @@
-{
-  "command": "cargo test -p hanihi-core --lib write::tests::apply_patch_works_on_dirty_tree",
-  "duration_ms": 53071,
-  "exit_code": 101,
-  "stderr": "   Compiling aws-lc-sys v0.44.0\n   Compiling aws-lc-rs v1.18.0\n   Compiling rustls v0.23.43\n   Compiling rustls-webpki v0.103.13\n   Compiling tokio-rustls v0.26.4\n   Compiling rustls-platform-verifier v0.7.0\n   Compiling hyper-rustls v0.27.9\n   Compiling reqwest v0.13.4\n   Compiling rig-core v0.41.0\n   Compiling hanihi-core v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-core)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 52.99s\n     Running unittests src/lib.rs (target/debug/deps/hanihi_core-12c706d7be1a6e4c)\nerror: test failed, to rerun pass `-p hanihi-core --lib`\n",
-  "stdout": "\nrunning 1 test\ntest write::tests::apply_patch_works_on_dirty_tree ... FAILED\n\nfailures:\n\n---- write::tests::apply_patch_works_on_dirty_tree stdout ----\n\nthread 'write::tests::apply_patch_works_on_dirty_tree' (2840850) panicked at crates/hanihi-core/src/write.rs:444:29:\napply over dirty tree must succeed: git apply failed: error: patch failed: src/main.rs:1\nerror: src/main.rs: patch does not apply\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n\n\nfailures:\n    write::tests::apply_patch_works_on_dirty_tree\n\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 59 filtered out; finished in 0.03s\n\n",
-  "ts": "2026-08-30T22:41:18.244558772+00:00"
-}

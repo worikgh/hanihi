@@ -1,5 +1,0 @@
---- a/crates/hanihi-session/src/main.rs
-+++ b/crates/hanihi-session/src/main.rs
-@@ -1 +1,2 @@
- //! # hanihi-session
-+//! test

@@ -1,8 +1,0 @@
-{
-  "command": "cargo test -p hanihi-core -- write",
-  "duration_ms": 37389,
-  "exit_code": 0,
-  "stderr": "   Compiling tokio-rustls v0.26.4\n   Compiling rustls-platform-verifier v0.7.0\n   Compiling hyper-rustls v0.27.9\n   Compiling reqwest v0.13.4\n   Compiling rig-core v0.41.0\n   Compiling hanihi-core v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-core)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 36.93s\n     Running unittests src/lib.rs (target/debug/deps/hanihi_core-12c706d7be1a6e4c)\n   Doc-tests hanihi_core\n",
-  "stdout": "\nrunning 14 tests\ntest session::log::tests::write_and_read_back ... ok\ntest write::tests::apply_patch_rejects_bad_diff_and_protected_paths ... ok\ntest write::tests::diff_protected_scan ... ok\ntest write::tests::diff_targets_parses_headers ... ok\ntest write::tests::diff_targets_parses_minimal_markers ... ok\ntest write::tests::diff_targets_rejects_empty ... ok\ntest tool::tests::run_command_tool_runs_git_and_writes_trace ... ok\ntest write::tests::protected_path_detection ... ok\ntest write::tests::write_file_refuses_escapes ... ok\ntest write::tests::apply_patch_rejects_dirty_target ... ok\ntest write::tests::write_file_refuses_protected_and_ignored ... ok\ntest write::tests::write_file_writes_new_file ... ok\ntest write::tests::dirty_targets_detects_modifications ... ok\ntest write::tests::apply_patch_applies_and_commits ... ok\n\ntest result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 48 filtered out; finished in 0.13s\n\n\nrunning 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n",
-  "ts": "2026-08-26T03:54:49.607421724+00:00"
-}

@@ -1,8 +1,0 @@
-{
-  "command": "git diff HEAD --stat",
-  "duration_ms": 9,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "",
-  "ts": "2026-08-27T01:47:12.092244335+00:00"
-}

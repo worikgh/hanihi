@@ -1,8 +1,0 @@
-{
-  "command": "git status --short",
-  "duration_ms": 6,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "MM working/sessions/self-improvement-11/events.jsonl\nA  working/traces/self-improvement-11/1788224560541-43.cmd.json\nA  working/traces/self-improvement-11/1788224573610-44.cmd.json\nA  working/traces/self-improvement-11/1788224576661-45.cmd.json\n?? working/traces/self-improvement-11/1788224579686-46.cmd.json\n",
-  "ts": "2026-09-01T01:03:02.639971473+00:00"
-}

@@ -1,7 +1,0 @@
---- a/crates/hanihi-core/src/write.rs
-+++ b/crates/hanihi-core/src/write.rs
-@@ -97,3 +97,4 @@
- /// Apply a unified diff to the repo with `git apply --recount`.
-+/// TEST
- ///
- /// The patch is applied directly against the working tree

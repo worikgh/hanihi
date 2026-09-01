@@ -1,8 +1,0 @@
-{
-  "command": "git log --oneline -15 -- plans/",
-  "duration_ms": 17,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "faae0ec Steps 5, 7: eval repo/write_tools/fixture fields + build/test/clippy/no_diff assertions, cases 003-self-build & 004-self-patch; scripts/self-improve.sh driver; README + plan 005 status\ne953502 plan 005: rename --self-improve to --write (capability, not use case); README: add LSP/tree-sitter/refactoring/worker TODOs\n7f6b1b7 plan 005: expand design principles (read-only default, gated writes, git commits, eval-measured improvement)\n745faa4 Add plan 005: self-improvement (code tools)\n5cc9c93 Bump to 0.3.0 — streaming, durable execution, eval harness\n29d0688 Plan 001: working directory storage, provider/model in llm_prompt\nabb8f9a Add plan 001: sessions with JSONL event log\n",
-  "ts": "2026-08-26T00:52:30.762294668+00:00"
-}

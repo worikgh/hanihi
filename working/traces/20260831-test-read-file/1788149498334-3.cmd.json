@@ -1,8 +1,0 @@
-{
-  "command": "git show cfbcc0d --stat",
-  "duration_ms": 950,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "commit cfbcc0d5093ec6009eaea15e97a723b96041c3c8\nAuthor: Worik <5387413+worikgh@users.noreply.github.com>\nDate:   Wed Aug 26 16:20:19 2026 +1200\n\n    Replace preemptive dirty-target guard with precise git apply --check diagnostics\n\n crates/hanihi-core/src/write.rs | 292 ++++++++++++++--------------------------\n 1 file changed, 99 insertions(+), 193 deletions(-)\n",
-  "ts": "2026-08-31T04:11:38.334349277+00:00"
-}

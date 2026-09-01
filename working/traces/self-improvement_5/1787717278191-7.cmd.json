@@ -1,8 +1,0 @@
-{
-  "command": "git show 7be7a28 --stat",
-  "duration_ms": 8,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "commit 7be7a287f4f708846206aa953612357bb2b477df\nAuthor: Worik <5387413+worikgh@users.noreply.github.com>\nDate:   Wed Aug 26 14:14:02 2026 +1200\n\n    Fix diff_targets to parse minimal markers\n\n crates/hanihi-core/src/write.rs | 72 +++++++++++++++++++++++++++++++----------\n 1 file changed, 55 insertions(+), 17 deletions(-)\n",
-  "ts": "2026-08-26T04:07:58.191224720+00:00"
-}

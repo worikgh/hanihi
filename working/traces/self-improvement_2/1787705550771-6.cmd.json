@@ -1,8 +1,0 @@
-{
-  "command": "git log --oneline -8 -- prompts/",
-  "duration_ms": 7,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "0f122b0 Add prompt to use generating code\n",
-  "ts": "2026-08-26T00:52:30.771208396+00:00"
-}

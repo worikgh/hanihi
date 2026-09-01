@@ -1,8 +1,0 @@
-{
-  "command": "git diff --cached --stat",
-  "duration_ms": 5,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "",
-  "ts": "2026-08-31T23:59:51.042975561+00:00"
-}

@@ -1,8 +1,0 @@
-{
-  "command": "git add crates/hanihi-core/src/agent.rs",
-  "duration_ms": 9,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "",
-  "ts": "2026-09-01T00:59:22.087818690+00:00"
-}

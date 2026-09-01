@@ -1,8 +1,0 @@
-{
-  "command": "git status --porcelain",
-  "duration_ms": 2,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": " M crates/hanihi-cli/src/main.rs\n?? crates/hanihi-session/\n?? plans/wts_compaction.md\n?? prompts/self-improvement.md\n?? working/\n",
-  "ts": "2026-08-29T22:18:26.006685706+00:00"
-}

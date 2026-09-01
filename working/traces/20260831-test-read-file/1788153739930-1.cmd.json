@@ -1,8 +1,0 @@
-{
-  "command": "ls -la working/scratch-repro working/applytest",
-  "duration_ms": 1,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "working/applytest:\ntotal 36\ndrwxrwxr-x 2 worik worik 4096 Aug 31 15:51 .\ndrwxrwxr-x 7 worik worik 4096 Aug 31 10:55 ..\n-rw-rw-r-- 1 worik worik   22 Aug 31 10:42 foo.rs\n-rw-rw-r-- 1 worik worik   66 Aug 31 15:51 gitignore.patch\n-rw-rw-r-- 1 worik worik   22 Aug 31 15:44 main.rs\n-rw-rw-r-- 1 worik worik  145 Aug 31 15:43 p.patch\n-rw-rw-r-- 1 worik worik  201 Aug 31 15:46 p2.patch\n-rw-rw-r-- 1 worik worik  171 Aug 31 15:47 p3.patch\n-rw-rw-r-- 1 worik worik  235 Aug 31 15:49 tracked.patch\n\nworking/scratch-repro:\ntotal 20\ndrwxrwxr-x 2 worik worik 4096 Aug 31 10:57 .\ndrwxrwxr-x 7 worik worik 4096 Aug 31 10:55 ..\n-rw-rw-r-- 1 worik worik  112 Aug 31 10:57 dirty.patch\n-rw-rw-r-- 1 worik worik   22 Aug 31 10:56 main.rs\n-rw-rw-r-- 1 worik worik   22 Aug 31 10:55 target.txt\n",
-  "ts": "2026-08-31T05:22:19.930253758+00:00"
-}

@@ -1,8 +1,0 @@
-{
-  "command": "git diff HEAD -- working/applytest working/scratch-repro",
-  "duration_ms": 7,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "",
-  "ts": "2026-08-31T05:19:16.815392058+00:00"
-}

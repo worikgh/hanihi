@@ -1,8 +1,0 @@
-{
-  "command": "git check-ignore -v \"#main.rs#\" \".#main.rs\"",
-  "duration_ms": 3,
-  "exit_code": 1,
-  "stderr": "",
-  "stdout": "",
-  "ts": "2026-08-25T03:16:50.632344734+00:00"
-}

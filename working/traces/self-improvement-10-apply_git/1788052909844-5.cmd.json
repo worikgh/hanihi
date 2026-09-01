@@ -1,8 +1,0 @@
-{
-  "command": "cat .ignore",
-  "duration_ms": 1,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "# hānihi-managed ignore file (agent read policy)\ntarget/\n**/*.rs.bk\n\n",
-  "ts": "2026-08-30T01:21:49.844774228+00:00"
-}

@@ -1,7 +1,0 @@
-I have a laptop (with an ethernet port), a raspberry pi and a crossover ethernet cable.  Botrh ends are running Debian-13 and the pi is running ssh-server.  How can I ssh from the laptop to the pi using this gear?
-Onm the PI I see
-Onm the PI I see "puppy@120pedal:~ $ ip addr show eth0
-2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
-    link/ether d8:3a:dd:a1:c3:de brd ff:ff:ff:ff:ff:ff
-I do not see any address on the ethernet devices on either machine.  They are connected and the state on both is UP.
-/quit

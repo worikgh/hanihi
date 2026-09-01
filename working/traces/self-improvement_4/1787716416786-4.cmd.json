@@ -1,8 +1,0 @@
-{
-  "command": "git show --stat HEAD",
-  "duration_ms": 8,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "commit 643fb381a9e10e71f8599fc1498ee95572bcc2f5\nAuthor: Worik <5387413+worikgh@users.noreply.github.com>\nDate:   Wed Aug 26 15:30:18 2026 +1200\n\n    Add /file REPL command to read a file as prompt\n\n crates/hanihi-cli/src/main.rs | 131 ++++++++++++++++++++++++++++++------------\n 1 file changed, 94 insertions(+), 37 deletions(-)\n",
-  "ts": "2026-08-26T03:53:36.786272052+00:00"
-}

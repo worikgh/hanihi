@@ -1,8 +1,0 @@
-{
-  "command": "git add .gitignore crates/hanihi-core/src/tool.rs && git commit -m \"Allow write git subcommands and ignore Emacs files\"",
-  "duration_ms": 1,
-  "exit_code": 129,
-  "stderr": "error: unknown switch `m'\nusage: git add [<options>] [--] <pathspec>...\n\n    -n, --[no-]dry-run    dry run\n    -v, --[no-]verbose    be verbose\n\n    -i, --[no-]interactive\n                          interactive picking\n    -p, --[no-]patch      select hunks interactively\n    -e, --[no-]edit       edit current diff and apply\n    -f, --[no-]force      allow adding otherwise ignored files\n    -u, --[no-]update     update tracked files\n    --[no-]renormalize    renormalize EOL of tracked files (implies -u)\n    -N, --[no-]intent-to-add\n                          record only the fact that the path will be added later\n    -A, --[no-]all        add changes from all tracked and untracked files\n    --[no-]ignore-removal ignore paths removed in the working tree (same as --no-all)\n    --[no-]refresh        don't add, only refresh the index\n    --[no-]ignore-errors  just skip files which cannot be added because of errors\n    --[no-]ignore-missing check if - even missing - files are ignored in dry run\n    --[no-]sparse         allow updating entries outside of the sparse-checkout cone\n    --[no-]chmod (+|-)x   override the executable bit of the listed files\n    --[no-]pathspec-from-file <file>\n                          read pathspec from file\n    --[no-]pathspec-file-nul\n                          with --pathspec-from-file, pathspec elements are separated with NUL character\n\n",
-  "stdout": "",
-  "ts": "2026-08-25T09:06:09.679762483+00:00"
-}

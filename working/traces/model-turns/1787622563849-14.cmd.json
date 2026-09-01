@@ -1,8 +1,0 @@
-{
-  "command": "git status",
-  "duration_ms": 1396,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "On branch main\nYour branch is ahead of 'origin/main' by 7 commits.\n  (use \"git push\" to publish your local commits)\n\nChanges not staged for commit:\n  (use \"git add <file>...\" to update what will be committed)\n  (use \"git restore <file>...\" to discard changes in working directory)\n\tmodified:   working/sessions/model-turns/events.jsonl\n\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\tworking/traces/model-turns/1787622015100-3.cmd.json\n\tworking/traces/model-turns/1787622018395-4.cmd.json\n\tworking/traces/model-turns/1787622399359-5.cmd.json\n\tworking/traces/model-turns/1787622403183-6.cmd.json\n\tworking/traces/model-turns/1787622409431-7.cmd.json\n\tworking/traces/model-turns/1787622411871-8.cmd.json\n\tworking/traces/model-turns/1787622414390-9.cmd.json\n\tworking/traces/model-turns/1787622417606-10.cmd.json\n\tworking/traces/model-turns/1787622521089-11.cmd.json\n\tworking/traces/model-turns/1787622525798-12.cmd.json\n\tworking/traces/model-turns/1787622559352-13.cmd.json\n\nno changes added to commit (use \"git add\" and/or \"git commit -a\")\n",
-  "ts": "2026-08-25T01:49:23.849952900+00:00"
-}

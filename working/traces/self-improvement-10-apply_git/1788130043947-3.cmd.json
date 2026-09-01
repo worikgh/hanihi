@@ -1,8 +1,0 @@
-{
-  "command": "cargo test -p hanihi-core --lib write::tests::apply_patch_works_on_dirty_tree -- --nocapture",
-  "duration_ms": 53317,
-  "exit_code": 101,
-  "stderr": "   Compiling aws-lc-sys v0.44.0\n   Compiling aws-lc-rs v1.18.0\n   Compiling rustls v0.23.43\n   Compiling rustls-webpki v0.103.13\n   Compiling tokio-rustls v0.26.4\n   Compiling rustls-platform-verifier v0.7.0\n   Compiling hyper-rustls v0.27.9\n   Compiling reqwest v0.13.4\n   Compiling rig-core v0.41.0\n   Compiling hanihi-core v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-core)\nerror: invalid format string: unmatched `}` found\n   --> crates/hanihi-core/src/write.rs:432:62\n    |\n432 |     eprintln!(\"apply_patch_works_on_dirty_tree: fx:Fixture :fx:?}\");\n    |                                                                 ^ unmatched `}` in format string\n    |\n    = note: if you intended to print `}`, you can escape it using `}}`\n\nerror: could not compile `hanihi-core` (lib test) due to 1 previous error\n",
-  "stdout": "",
-  "ts": "2026-08-30T22:47:23.947151112+00:00"
-}
