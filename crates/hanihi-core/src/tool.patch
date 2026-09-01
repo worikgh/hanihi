@@ -1,0 +1,128 @@
+--- a/crates/hanihi-core/src/tool.rs
++++ b/crates/hanihi-core/src/tool.rs
+@@ -265,8 +265,9 @@ fn check_command_argv(argv: &[String]) -> Result<(), String> {
+                 // TODO Make this a constant and review to ensure none of these can mutate files
+                 let allowed_non_mutating = [
+                     "annotate",
+-                    "archive",
+                     "blame",
+                     "cat-file",
+                     "check-attr",
+@@ -295,7 +296,6 @@ fn check_command_argv(argv: &[String]) -> Result<(), String> {
+                     "mailinfo",
+                     "merge-base",
++                    "merge-tree",
+                     "name-rev",
+                     "pack-redundant",
+                     "range-diff",
+-                    "read-tree",                                                                                                                                          "rev-list",
+                     "rev-parse",
+@@ -312,33 +310,95 @@ fn check_command_argv(argv: &[String]) -> Result<(), String> {
+                     val if allowed_non_mutating.contains(&sub.as_str()) && val == sub.as_str() => {                                                                           Ok(())
+                     }
++                    // `archive` to stdout only; forbid writing a file or hitting a remote.
++                    "archive" => {
++                        let forbidden_flags = ["--output", "-o", "--remote"];
++                        if argv.iter().any(|a| forbidden_flags.contains(&a.as_str())) {
++                            Err("git archive is restricted to stdout (no --output/--remote)".into())
++                        } else {
++                            Ok(())
++                        }
++                    }
+                     "apply" => {
+                     "apply" => {
+                         if !argv.iter().any(|a| a == "--check") {
+                             return Err("git apply is restricted to --check".into());
+                         }
+                         Ok(())
+                     }
+                     "hash-object" => {
+                         if argv.iter().any(|a| a == "-w") {
+                             Err("git hash-object is restricted to not using -w".into())
+                         } else {
+                             Ok(())
+                         }
+                     }
+                     "reflog" => {
+-                        // Only allow reflog on its own or with the "show" or "list" command
+-                        // TODO: Is it possible to pass a naughty
+-                        // parameter with `-` or `--` to subvert
+-                        // non-mutation?
+-                        if argv
+-                            .iter()
+-                            .filter(|a| a.len() > 2 && &a[0..1] != "-" && &a[0..2] != "--")
+-                            .any(|a| a == "last" || a == "show")
+-                        {
+-                            Ok(())
+-                        } else {
+-                            Err("Only `reflog [show|list]`".to_string())
+-                        }
++                        // Read-only: bare `git reflog` defaults to `show HEAD`; also
++                        // allow explicit `show`/`list`. `delete`/`expire` mutate.
++                        let subcmd = argv.get(2).map(String::as_str);
++                        match subcmd {
++                            None | Some("show") | Some("list") => Ok(()),
++                            _ => Err("git reflog is restricted to show/list".into()),
++                        }
++                    }
++                    // `branch` listing only: no create/delete/move/copy/rename.
++                    "branch" => {
++                        let mutating = ["-d", "-D", "-m", "-M", "-c", "-C",
++                                         "--delete", "--move", "--copy",
++                                         "--edit-description", "--set-upstream-to"];
++                        // A bare `git branch` or flags only (`-a`, `-r`, `-l`, `-v`) is a listing.
++                        let args = &argv[2..];
++                        let has_name = args.iter().any(|a| !a.starts_with('-'));
++                        if has_name || args.iter().any(|a| mutating.contains(&a.as_str())) {
++                            Err("git branch is restricted to listing (no create/delete/move)".into())
++                        } else {
++                            Ok(())
++                        }
++                    }
++                    // `tag` listing only: no create/delete/sign/etc.
++                    "tag" => {
++                        let mutating = ["-a", "-s", "-d", "-f", "--delete", "--sign"];
++                        let args = &argv[2..];
++                        let has_name = args.iter().any(|a| !a.starts_with('-'));
++                        if has_name || args.iter().any(|a| mutating.contains(&a.as_str())) {
++                            Err("git tag is restricted to listing (no create/delete/sign)".into())
++                        } else {
++                            Ok(())
++                        }
++                    }
++                    // `remote` listing/show only: no add/remove/rename/set-url/prune.
++                    "remote" => {
++                        match argv.get(2).map(String::as_str) {
++                            None | Some("-v") | Some("--verbose") | Some("show") => Ok(()),
++                            _ => Err("git remote is restricted to list/show".into()),
++                        }
++                    }
++                    // `worktree` list only: no add/remove/lock/unlock/move/prune.
++                    "worktree" => {
++                        match argv.get(2).map(String::as_str) {
++                            Some("list") => Ok(()),
++                            _ => Err("git worktree is restricted to list".into()),
++                        }
++                    }
++                    // `submodule` status/summary only: no add/update/deinit/sync.
++                    "submodule" => {
++                        match argv.get(2).map(String::as_str) {
++                            Some("status") | Some("summary") => Ok(()),
++                            _ => Err("git submodule is restricted to status/summary".into()),
++                        }
++                    }
++                    // `config` read-only only: list/get, never a key=value write.
++                    "config" => {
++                        let read_only = ["--list", "-l", "--get", "--get-regexp",
++                                         "--get-all", "--get-urlmatch"];
++                        let args = &argv[2..];
++                        if args.is_empty()
++                            || args.iter().any(|a| read_only.contains(&a.as_str()))
++                        {
++                            Ok(())
++                        } else {
++                            Err("git config is restricted to read operations".into())
++                        }
+                     }
+                     other => Err(format!("git subcommand '{other}' is not allowed")),
+                 }
