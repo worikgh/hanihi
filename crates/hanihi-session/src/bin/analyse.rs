@@ -76,24 +76,9 @@ fn print_entries(content: &str, path: &Path) -> Result<(), String> {
         let entry: LogEntry = serde_json::from_str(line)
             .map_err(|e| format!("error parsing {} line {}: {e}", path.display(), i + 1))?;
 
-        println!("{}\t{}", kind_str(&entry), entry.ts().to_rfc3339());
+        println!("{}\t{}", entry.kind(), entry.ts().to_rfc3339());
     }
     Ok(())
-}
-
-/// Serialized tag of a [`LogEntry`], matching the `kind` field in the log.
-fn kind_str(entry: &LogEntry) -> &'static str {
-    match entry {
-        LogEntry::SessionCreated { .. } => "session_created",
-        LogEntry::SessionOpened { .. } => "session_opened",
-        LogEntry::SessionClosed { .. } => "session_closed",
-        LogEntry::UserInput { .. } => "user_input",
-        LogEntry::LlmPrompt { .. } => "llm_prompt",
-        LogEntry::LlmResponse { .. } => "llm_response",
-        LogEntry::ToolExecution { .. } => "tool_execution",
-        LogEntry::TurnComplete { .. } => "turn_complete",
-        LogEntry::Error { .. } => "error",
-    }
 }
 
 #[cfg(test)]
@@ -130,7 +115,7 @@ mod tests {
     #[test]
     fn maps_kind_for_parsed_entry() {
         let entry: LogEntry = serde_json::from_str(USER_INPUT).expect("parse");
-        assert_eq!(kind_str(&entry), "user_input");
+        assert_eq!(entry.kind(), "user_input");
         assert_eq!(entry.ts().to_rfc3339(), "2026-01-01T00:00:00+00:00");
     }
 

@@ -295,6 +295,21 @@ impl LogEntry {
         }
     }
 
+    /// Wire-format `kind` tag, matching the enum's serde `rename`.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            LogEntry::SessionCreated { .. } => "session_created",
+            LogEntry::SessionOpened { .. } => "session_opened",
+            LogEntry::SessionClosed { .. } => "session_closed",
+            LogEntry::UserInput { .. } => "user_input",
+            LogEntry::LlmPrompt { .. } => "llm_prompt",
+            LogEntry::LlmResponse { .. } => "llm_response",
+            LogEntry::ToolExecution { .. } => "tool_execution",
+            LogEntry::TurnComplete { .. } => "turn_complete",
+            LogEntry::Error { .. } => "error",
+        }
+    }
+
     /// Timestamp of this entry.
     pub fn ts(&self) -> DateTime<Utc> {
         match self {
