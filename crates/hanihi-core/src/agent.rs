@@ -22,7 +22,11 @@ pub const DEFAULT_SYSTEM_PROMPT: &str = "You are a helpful assistant running in 
 You have access to tools. Use them when they help answer the user; otherwise answer directly. \
 When a tool result comes back, incorporate it into your final answer. \
 Do not re-run the same read-only tool with the same arguments within a turn: reuse the result \
-you already have, because the result cannot have changed and re-running wastes resources.";
+you already have, because the result cannot have changed and re-running wastes resources. \
+When a tool call fails or reports an error, do not stop. Report the failure, then continue \
+toward the goal by the next viable means (retry once only if the cause was transient; \
+otherwise try a different approach). Stop only when no way to continue remains, and then \
+explain what blocked you.";
 
 /// System prompt for task mode: long-horizon self-improvement work with
 /// explicit workflow gates (mirrors the project's Rust workflow rules).
@@ -34,7 +38,10 @@ descriptive messages. Never push. Study command output and trace files before re
 command fails, read the error and fix the cause rather than repeating it. Verify your work with \
 the build/test gates — do not assert success by eye. Before calling a tool, check whether an \
 identical read-only call with a usable result already appears in this turn; reuse it instead of \
-re-running.";
+re-running. When a tool call fails or reports an error, do not stop. Report the failure, then \
+continue toward the goal by the next viable means (retry once only if the cause was transient; \
+otherwise try a different approach). Stop only when no way to continue remains, and then \
+explain what blocked you.";
 
 /// Read-only, deterministic tools whose results may be reused within a turn.
 const CACHEABLE_TOOLS: &[&str] = &["read_file", "list_dir", "grep", "read_session_log", "echo"];
