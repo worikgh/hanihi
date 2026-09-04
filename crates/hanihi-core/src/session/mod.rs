@@ -21,13 +21,12 @@ use std::path::{Path, PathBuf};
 use chrono::Utc;
 use rig::completion::message::{ToolCall, ToolFunction};
 use rig::completion::{AssistantContent, CompletionModel, Message};
-use serde::Serialize;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use self::lock::SessionGuard;
 use self::log::{ErrorStage, LogEntry, LogWriter, ToolCallData, UsageData};
-use crate::agent::{Agent, StreamEvent, TurnSummary};
+use crate::agent::{Agent, StreamEvent, TurnSummary, messages_for_log};
 use crate::error::AgentError;
 
 /// Errors produced by session operations.
@@ -45,6 +44,8 @@ pub enum SessionError {
     Io(io::Error),
     /// A JSON (de)serialization error occurred.
     Json(serde_json::Error),
+    /// A line in the event log could not be parsed.
+    LogLine { line: usize, message: String },
 }
 
 impl std::fmt::Display for SessionError {
@@ -67,6 +68,9 @@ impl std::fmt::Display for SessionError {
             }
             SessionError::Io(e) => write!(f, "io error: {e}"),
             SessionError::Json(e) => write!(f, "json error: {e}"),
+            SessionError::LogLine { line, message } => {
+                write!(f, "log line {line}: {message}")
+            }
         }
     }
 }
@@ -396,7 +400,7 @@ impl Session {
         for _ in 0..agent.max_turns() {
             // Build and log the prompt.
             let tools = agent.tool_definitions();
-            let messages_json = self.messages_for_log(
+            let messages_json = messages_for_log(
                 agent.system_prompt(),
                 agent.history(),
                 &turn_messages,
@@ -427,7 +431,7 @@ impl Session {
                     AssistantContent::Text(t) => text_parts.push(t.clone()),
                     AssistantContent::ToolCall(call) => tool_calls.push(call.clone()),
                     AssistantContent::Reasoning(r) => {
-                        reasoning_parts.push(format!("{r:?}"));
+                        reasoning_parts.push(r.display_text());
                     }
                     AssistantContent::Image(_) => {}
                 }
@@ -565,15 +569,15 @@ impl Session {
     ///
     /// Like [`run`], but model output arrives token-by-token through a
     /// channel. The caller reads [`StreamEvent`]s while the agent loop
-    /// runs concurrently. Session lifecycle and tool execution events
-    /// are logged from the stream.
+    /// runs concurrently. Prompt, response, tool execution, completion,
+    /// and error events are logged from the stream.
     ///
     /// [`StreamEvent`]: crate::agent::StreamEvent
     pub async fn run_streaming<M: CompletionModel + 'static>(
         &mut self,
         agent: &mut Agent<M>,
-        _provider: &str,
-        _model_name: &str,
+        provider: &str,
+        model_name: &str,
         user_input: &str,
     ) -> Result<mpsc::Receiver<StreamEvent>, AgentError>
     where
@@ -596,16 +600,26 @@ impl Session {
 
         let (tx, rx) = mpsc::channel(32);
 
-        // Spawn a task that reads from the agent stream, logs tool
-        // executions and turn completion, and forwards events to the
-        // session's own channel.
+        // Spawn a task that reads from the agent stream, writes log entries
+        // for prompt/response/tool execution/completion/error, and forwards
+        // events to the session's own channel.
         let turn = self.turn;
         let log_path = self.events_path();
+        let provider = provider.to_string();
+        let model_name = model_name.to_string();
 
         tokio::spawn(async move {
-            // Re-open the log for appending from this task.
-            let mut log_writer =
-                LogWriter::open(&log_path).expect("re-open session log for streaming");
+            let mut log_writer = match LogWriter::open(&log_path) {
+                Ok(writer) => writer,
+                Err(e) => {
+                    let _ = tx
+                        .send(StreamEvent::Error {
+                            message: format!("re-open session log for streaming: {e}"),
+                        })
+                        .await;
+                    return;
+                }
+            };
 
             let mut tool_calls_total: usize = 0;
 
@@ -615,14 +629,58 @@ impl Session {
             let mut pending_args: HashMap<String, serde_json::Value> = HashMap::new();
 
             while let Some(event) = agent_rx.recv().await {
-                match &event {
+                // Translate agent stream events into log entries. On writer
+                // failure, report an error and stop logging further events.
+                let write_result = match &event {
                     StreamEvent::ToolCallReady {
                         id,
                         name: _,
                         arguments,
                     } => {
                         pending_args.insert(id.clone(), arguments.clone());
+                        Ok(())
                     }
+                    StreamEvent::CompletionRequest {
+                        ts,
+                        messages,
+                        tool_definitions,
+                    } => log_writer.write_entry(&LogEntry::llm_prompt(
+                        *ts,
+                        turn,
+                        provider.clone(),
+                        model_name.clone(),
+                        messages.clone(),
+                        tool_definitions.clone(),
+                    )),
+                    StreamEvent::CompletionResponse {
+                        ts,
+                        message_id,
+                        text,
+                        reasoning,
+                        tool_calls,
+                        input_tokens,
+                        output_tokens,
+                    } => log_writer.write_entry(&LogEntry::llm_response(
+                        *ts,
+                        turn,
+                        message_id.clone(),
+                        text.clone(),
+                        reasoning.clone(),
+                        tool_calls.as_ref().map(|calls| {
+                            calls
+                                .iter()
+                                .map(|c| ToolCallData {
+                                    id: c.id.clone(),
+                                    name: c.name.clone(),
+                                    arguments: c.arguments.clone(),
+                                })
+                                .collect()
+                        }),
+                        UsageData {
+                            input_tokens: *input_tokens as u32,
+                            output_tokens: *output_tokens as u32,
+                        },
+                    )),
                     StreamEvent::ToolResult {
                         id,
                         name,
@@ -632,7 +690,7 @@ impl Session {
                         tool_calls_total += 1;
                         let args = pending_args.remove(id).unwrap_or(serde_json::Value::Null);
                         // Log the real arguments and full result.
-                        let _ = log_writer.write_entry(&LogEntry::tool_execution(
+                        log_writer.write_entry(&LogEntry::tool_execution(
                             Utc::now(),
                             turn,
                             id.clone(),
@@ -640,78 +698,42 @@ impl Session {
                             name.clone(),
                             args,
                             result.clone(),
-                        ));
+                        ))
                     }
                     StreamEvent::TurnComplete { summary } => {
-                        let _ = log_writer.write_entry(&LogEntry::turn_complete(
+                        log_writer.write_entry(&LogEntry::turn_complete(
                             Utc::now(),
                             turn,
                             summary.text.clone(),
                             tool_calls_total,
-                        ));
-                        // Note: caller must call agent.set_history(summary.final_history)
-                        // after reading TurnComplete.
+                        ))
                     }
-                    StreamEvent::Error { message } => {
-                        let _ = log_writer.write_entry(&LogEntry::error(
-                            Utc::now(),
-                            turn,
-                            ErrorStage::LlmCall,
-                            message.clone(),
-                        ));
-                    }
-                    _ => {}
+                    StreamEvent::Error { message } => log_writer.write_entry(&LogEntry::error(
+                        Utc::now(),
+                        turn,
+                        ErrorStage::LlmCall,
+                        message.clone(),
+                    )),
+                    StreamEvent::TextDelta { .. }
+                    | StreamEvent::ToolCallStart { .. }
+                    | StreamEvent::ToolCallArgs { .. } => Ok(()),
+                };
+
+                if let Err(e) = write_result {
+                    let _ = tx
+                        .send(StreamEvent::Error {
+                            message: format!("writing session log: {e}"),
+                        })
+                        .await;
+                    let _ = tx.send(event).await;
+                    break;
                 }
+
                 let _ = tx.send(event).await;
             }
         });
 
         Ok(rx)
-    }
-
-    /// Build a JSON representation of the messages sent to the model,
-    /// for inclusion in the `llm_prompt` log entry.
-    fn messages_for_log(
-        &self,
-        system_prompt: &str,
-        history: &[Message],
-        turn_messages: &[Message],
-        user_input: &str,
-    ) -> Result<serde_json::Value, AgentError> {
-        #[derive(Serialize)]
-        struct LogMessage {
-            role: String,
-            content: serde_json::Value,
-        }
-
-        let mut msgs: Vec<LogMessage> = Vec::new();
-
-        // System preamble.
-        msgs.push(LogMessage {
-            role: "system".into(),
-            content: serde_json::Value::String(system_prompt.to_string()),
-        });
-
-        // Serialize each message via serde.
-        fn msg_to_value(msg: &Message) -> Result<LogMessage, AgentError> {
-            let v = serde_json::to_value(msg).map_err(|e| AgentError::Rig(e.to_string()))?;
-            let role = v["role"].as_str().unwrap_or("unknown").to_string();
-            Ok(LogMessage {
-                role,
-                content: v["content"].clone(),
-            })
-        }
-
-        for m in history.iter().chain(turn_messages.iter()) {
-            msgs.push(msg_to_value(m)?);
-        }
-        // Current user message.
-        msgs.push(LogMessage {
-            role: "user".into(),
-            content: serde_json::Value::String(user_input.to_string()),
-        });
-
-        serde_json::to_value(&msgs).map_err(|e| AgentError::Rig(e.to_string()))
     }
 
     /// Append an entry to the event log.
@@ -847,16 +869,10 @@ impl Session {
             return Ok(Vec::new());
         }
         let contents = fs::read_to_string(&path)?;
-        let mut entries = Vec::new();
-        for line in contents.lines() {
-            let line = line.trim();
-            if line.is_empty() {
-                continue;
-            }
-            let entry: LogEntry = serde_json::from_str(line).map_err(SessionError::Json)?;
-            entries.push(entry);
-        }
-        Ok(entries)
+        self::log::parse_log_strict(&contents).map_err(|e| SessionError::LogLine {
+            line: e.line,
+            message: e.message,
+        })
     }
 
     /// Compute cumulative token usage from all `llm_response` events.
@@ -1079,6 +1095,18 @@ mod tests {
             .expect("a tool_execution entry");
         assert_eq!(exec.arguments, serde_json::json!({ "text": "hello" }));
         assert_eq!(exec.result, "hello");
+
+        // Streaming now logs prompt and response events too.
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, LogEntry::LlmPrompt { .. }))
+        );
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, LogEntry::LlmResponse { .. }))
+        );
 
         mgr.close("stream-fix").expect("close");
         std::fs::remove_dir_all(&dir).unwrap_or(());

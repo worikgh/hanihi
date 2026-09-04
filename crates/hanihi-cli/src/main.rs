@@ -447,6 +447,7 @@ async fn main() -> Result<(), AgentError> {
                 StreamEvent::ToolCallArgs { .. } => {}
                 StreamEvent::ToolCallReady { .. } => {}
                 StreamEvent::ToolResult { .. } => println_coloured!(" ✅]"),
+                StreamEvent::CompletionRequest { .. } | StreamEvent::CompletionResponse { .. } => {}
                 StreamEvent::TurnComplete { summary } => {
                     println!();
                     println_coloured!(
@@ -482,6 +483,7 @@ async fn main() -> Result<(), AgentError> {
 
 /// Render the per-turn completion footer shown after (and by /session for) a turn.
 fn turn_footer(
+    model: &str,
     turn: u64,
     tool_calls: usize,
     tokens_in: u64,
@@ -489,7 +491,7 @@ fn turn_footer(
     max_turns: usize,
 ) -> String {
     format!(
-        "[turn {turn} | tool calls: {tool_calls} | tokens: {tokens_in} in / {tokens_out} out | max_turns: {max_turns}]"
+        "[model: {model} turn {turn} | tool calls: {tool_calls} | tokens: {tokens_in} in / {tokens_out} out | max_turns: {max_turns}]"
     )
 }
 
@@ -554,6 +556,7 @@ async fn repl<M: CompletionModel + 'static>(
                             println!(
                                 "{}",
                                 turn_footer(
+                                    session.model.as_str(),
                                     session.turn,
                                     s.tool_calls,
                                     s.usage.input_tokens,
@@ -641,10 +644,13 @@ async fn run_turn<M: CompletionModel + 'static>(
                     StreamEvent::ToolCallArgs { .. } => {}
                     StreamEvent::ToolCallReady { .. } => {}
                     StreamEvent::ToolResult { .. } => println_coloured!(" ✅]"),
+                    StreamEvent::CompletionRequest { .. }
+                    | StreamEvent::CompletionResponse { .. } => {}
                     StreamEvent::TurnComplete { summary } => {
                         println!();
                         println_coloured!(
-                            "[turn {} | tool calls: {} | tokens: {} in / {} out | max_turns: {}]",
+                            "[model: {} turn {} | tool calls: {} | tokens: {} in / {} out | max_turns: {}]",
+                            session.model,
                             session.turn,
                             summary.tool_calls,
                             summary.usage.input_tokens,

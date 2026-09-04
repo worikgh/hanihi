@@ -552,24 +552,24 @@ pub fn builtin_write_file(tree: Arc<SourceTree>) -> PortableDynamicTool {
     PortableDynamicTool::new(
         "write_file",
         "Write a text file inside the git repository. `path` is relative to the repo root. \
-         Refused: paths outside the repo, git-ignored paths, `.ignore`, `.gitignore`, anything \
-         under `.git/`. If `message` is given, the change is committed with that message. \
-         Local commits only — never pushed.",
+	 Refused: paths outside the repo, git-ignored paths, `.ignore`, `.gitignore`, anything \
+	 under `.git/`. If `message` is given, the change is committed with that message. \
+	 Local commits only — never pushed.",
         json!({
             "type": "object",
             "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "Path relative to the repo root"
-                },
-                "content": {
-                    "type": "string",
-                    "description": "Full file contents"
-                },
-                "message": {
-                    "type": "string",
-                    "description": "Optional commit message"
-                }
+            "path": {
+                "type": "string",
+                "description": "Path relative to the repo root"
+            },
+            "content": {
+                "type": "string",
+                "description": "Full file contents"
+            },
+            "message": {
+                "type": "string",
+                "description": "Optional commit message"
+            }
             },
             "required": ["path", "content"]
         }),
@@ -676,8 +676,8 @@ mod tests {
         let tool = builtin_write_file(fx.tree());
         let out = tool
             .execute(serde_json::json!({
-                "path": "src/new.rs",
-                "content": "pub fn added() {}\n"
+            "path": "src/new.rs",
+            "content": "pub fn added() {}\n"
             }))
             .await
             .expect("write succeeds");
@@ -694,8 +694,8 @@ mod tests {
 
         let err = tool
             .execute(serde_json::json!({
-                "path": ".ignore",
-                "content": "junk\n"
+            "path": ".ignore",
+            "content": "junk\n"
             }))
             .await
             .expect_err("protected path must fail");
@@ -703,8 +703,8 @@ mod tests {
 
         let err = tool
             .execute(serde_json::json!({
-                "path": "target/debug/junk.rs",
-                "content": "junk\n"
+            "path": "target/debug/junk.rs",
+            "content": "junk\n"
             }))
             .await
             .expect_err("ignored path must fail");
@@ -718,8 +718,8 @@ mod tests {
         let name = format!("hanihi-write-outside-{}", uuid::Uuid::new_v4());
         let err = tool
             .execute(serde_json::json!({
-                "path": format!("../{name}"),
-                "content": "x"
+            "path": format!("../{name}"),
+            "content": "x"
             }))
             .await
             .expect_err("escape must fail");
@@ -733,8 +733,8 @@ mod tests {
         let tool = builtin_apply_patch(fx.tree());
         let out = tool
             .execute(serde_json::json!({
-                "diff": header_diff(),
-                "message": "test patch"
+            "diff": header_diff(),
+            "message": "test patch"
             }))
             .await
             .unwrap_or_else(|e| panic!("apply failed: {e}"));
@@ -800,9 +800,9 @@ mod tests {
         assert!(err.to_string().contains("failed"), "got: {err}");
 
         let err = tool
-            .execute(serde_json::json!({ "diff": "--- a/.ignore\n+++ b/.ignore\n@@ -1 +1 @@\n-x\n+y\n" }))
-            .await
-            .expect_err("protected diff must fail");
+	    .execute(serde_json::json!({ "diff": "--- a/.ignore\n+++ b/.ignore\n@@ -1 +1 @@\n-x\n+y\n" }))
+	    .await
+	    .expect_err("protected diff must fail");
         assert!(err.to_string().contains("protected"), "got: {err}");
     }
 

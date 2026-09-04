@@ -1,8 +1,10 @@
 //! Append-only JSONL event log for session persistence.
 //!
 //! [`LogWriter`] appends one line of JSON per event to an `events.jsonl` file.
-//! Each line is a complete, independently parseable JSON object.
+//! Each line is a complete, independently parseable JSON object carrying a
+//! `schema` version so readers can detect old and future formats.
 
+use std::fmt;
 use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::Path;
@@ -10,8 +12,15 @@ use std::path::Path;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 
+/// Current log-line schema version.
+///
+/// Policy: additive changes (a new optional field with `#[serde(default)]`)
+/// do not bump this. Breaking changes (rename, remove, restructure) bump it
+/// and add a migration in [`migrate`].
+pub const SCHEMA_VERSION: u32 = 1;
+
 /// One entry in the session event log.
-#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind")]
 pub enum LogEntry {
     /// Session directory first created.
@@ -81,7 +90,7 @@ pub enum LogEntry {
 
 // --- Data structs for each variant ---
 
-#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct SessionCreatedData {
     pub session_id: String,
     pub name: String,
@@ -89,24 +98,24 @@ pub struct SessionCreatedData {
     pub system_prompt: String,
 }
 
-#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct SessionOpenedData {
     pub session_id: String,
     pub name: String,
 }
 
-#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct SessionClosedData {
     pub session_id: String,
     pub name: String,
 }
 
-#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct UserInputData {
     pub text: String,
 }
 
-#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct LlmPromptData {
     pub provider: String,
     pub model: String,
@@ -114,7 +123,7 @@ pub struct LlmPromptData {
     pub tool_definitions: serde_json::Value,
 }
 
-#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct LlmResponseData {
     pub message_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -126,20 +135,20 @@ pub struct LlmResponseData {
     pub usage: UsageData,
 }
 
-#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct ToolCallData {
     pub id: String,
     pub name: String,
     pub arguments: serde_json::Value,
 }
 
-#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct UsageData {
     pub input_tokens: u32,
     pub output_tokens: u32,
 }
 
-#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct ToolExecutionData {
     pub tool_call_id: String,
     #[serde(default)]
@@ -149,19 +158,19 @@ pub struct ToolExecutionData {
     pub result: String,
 }
 
-#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct TurnCompleteData {
     pub text: String,
     pub tool_calls: usize,
 }
 
-#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct ErrorData {
     pub stage: ErrorStage,
     pub message: String,
 }
 
-#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ErrorStage {
     LlmCall,
@@ -360,12 +369,123 @@ impl LogWriter {
         })
     }
 
-    /// Append one entry as a JSON line.
+    /// Append one entry as a JSON line, injecting the current schema version.
     pub fn write_entry(&mut self, entry: &LogEntry) -> std::io::Result<()> {
-        let line = serde_json::to_string(entry)?;
+        let mut value = serde_json::to_value(entry)?;
+        value
+            .as_object_mut()
+            .expect("LogEntry serializes as a JSON object")
+            .insert("schema".into(), serde_json::json!(SCHEMA_VERSION));
+        let line = serde_json::to_string(&value)?;
         writeln!(self.inner, "{line}")?;
         self.inner.flush()
     }
+}
+
+// --- Reading ---
+
+/// A single line-level error from reading a session log.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LogReadError {
+    /// 1-based line number in the log file.
+    pub line: usize,
+    /// Human-readable description of the failure.
+    pub message: String,
+}
+
+impl fmt::Display for LogReadError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "line {}: {}", self.line, self.message)
+    }
+}
+
+impl std::error::Error for LogReadError {}
+
+/// Outcome of a tolerant log read: valid entries plus any bad lines.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LogReadResult {
+    /// Entries from lines that parsed successfully.
+    pub entries: Vec<LogEntry>,
+    /// Errors for lines that were skipped, in file order.
+    pub errors: Vec<LogReadError>,
+}
+
+/// Apply known migrations for log lines older than [`SCHEMA_VERSION`].
+///
+/// Hook for future breaking changes. There are no migrations yet: version 0
+/// (legacy, no `schema` field) parses through the existing lenient
+/// `#[serde(default)]` fields.
+fn migrate(_value: &mut serde_json::Value, _from: u32) -> Result<(), String> {
+    Ok(())
+}
+
+/// Parse one non-blank log line into a [`LogEntry`], enforcing schema checks.
+fn parse_entry_line(line: &str) -> Result<LogEntry, String> {
+    let mut value: serde_json::Value = serde_json::from_str(line).map_err(|e| e.to_string())?;
+
+    let schema = match value.get("schema") {
+        None => 0,
+        Some(schema) => schema
+            .as_u64()
+            .ok_or_else(|| "schema must be an integer".to_string())? as u32,
+    };
+
+    if schema > SCHEMA_VERSION {
+        return Err(format!(
+            "schema {schema} is newer than supported schema {SCHEMA_VERSION}"
+        ));
+    }
+    if schema < SCHEMA_VERSION {
+        migrate(&mut value, schema)?;
+    }
+
+    serde_json::from_value(value).map_err(|e| e.to_string())
+}
+
+/// Parse every log line, returning the first error.
+pub fn parse_log_strict(contents: &str) -> Result<Vec<LogEntry>, LogReadError> {
+    let mut entries = Vec::new();
+    for (index, line) in contents.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        match parse_entry_line(line) {
+            Ok(entry) => entries.push(entry),
+            Err(message) => {
+                return Err(LogReadError {
+                    line: index + 1,
+                    message,
+                });
+            }
+        }
+    }
+    Ok(entries)
+}
+
+/// Parse every log line, collecting valid entries and reporting bad lines.
+pub fn parse_log_tolerant(contents: &str) -> LogReadResult {
+    let mut result = LogReadResult::default();
+    for (index, line) in contents.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        match parse_entry_line(line) {
+            Ok(entry) => result.entries.push(entry),
+            Err(message) => result.errors.push(LogReadError {
+                line: index + 1,
+                message,
+            }),
+        }
+    }
+    result
+}
+
+/// Read a log file from disk, collecting valid entries and reporting bad lines.
+pub fn read_log_tolerant(path: &Path) -> std::io::Result<LogReadResult> {
+    let contents = std::fs::read_to_string(path)?;
+    Ok(parse_log_tolerant(&contents))
 }
 
 #[cfg(test)]
@@ -375,6 +495,17 @@ mod tests {
 
     fn log_path() -> PathBuf {
         std::env::temp_dir().join(format!("hanihi-log-test-{}.jsonl", uuid::Uuid::new_v4()))
+    }
+
+    fn valid_user_input_line() -> String {
+        serde_json::json!({
+            "schema": SCHEMA_VERSION,
+            "kind": "user_input",
+            "ts": "2026-01-01T00:00:00Z",
+            "turn": 1,
+            "data": {"text": "hi"}
+        })
+        .to_string()
     }
 
     #[test]
@@ -421,5 +552,112 @@ mod tests {
         assert_eq!(lines.len(), 2);
 
         std::fs::remove_file(&path).unwrap_or(());
+    }
+
+    #[test]
+    fn writer_injects_schema() {
+        let path = log_path();
+        let mut writer = LogWriter::open(&path).expect("open");
+        writer
+            .write_entry(&LogEntry::user_input(Utc::now(), 1, "hi".into()))
+            .expect("write");
+
+        let contents = std::fs::read_to_string(&path).expect("read");
+        let value: serde_json::Value = serde_json::from_str(contents.trim()).expect("parse json");
+        assert_eq!(value["schema"], SCHEMA_VERSION);
+        assert_eq!(value["kind"], "user_input");
+
+        std::fs::remove_file(&path).unwrap_or(());
+    }
+
+    #[test]
+    fn strict_parses_schema_and_legacy_lines() {
+        let legacy =
+            r#"{"kind":"user_input","ts":"2026-01-01T00:00:00Z","turn":1,"data":{"text":"hi"}}"#;
+        let contents = format!("{}\n{}\n", valid_user_input_line(), legacy);
+        let entries = parse_log_strict(&contents).expect("parse strict");
+        assert_eq!(entries.len(), 2);
+        assert!(matches!(entries[0], LogEntry::UserInput { .. }));
+        assert!(matches!(entries[1], LogEntry::UserInput { .. }));
+    }
+
+    #[test]
+    fn strict_reports_first_error_with_line_number() {
+        let contents = format!(
+            "{}\nnot json\n{}\n",
+            valid_user_input_line(),
+            valid_user_input_line()
+        );
+        let err = parse_log_strict(&contents).expect_err("bad line must fail");
+        assert_eq!(err.line, 2);
+        assert!(
+            err.message.contains("not json"),
+            "unexpected: {}",
+            err.message
+        );
+    }
+
+    #[test]
+    fn tolerant_collects_valid_and_reports_bad_lines() {
+        let future = serde_json::json!({
+            "schema": SCHEMA_VERSION + 1,
+            "kind": "user_input",
+            "ts": "2026-01-01T00:00:00Z",
+            "turn": 1,
+            "data": {"text": "future"}
+        })
+        .to_string();
+        let contents = format!(
+            "\n{}\nnot json\n{}\n{}\n",
+            valid_user_input_line(),
+            future,
+            valid_user_input_line()
+        );
+        let result = parse_log_tolerant(&contents);
+
+        assert_eq!(result.entries.len(), 2);
+        assert_eq!(result.errors.len(), 2);
+
+        assert_eq!(result.errors[0].line, 3);
+        assert!(result.errors[0].message.contains("not json"));
+
+        assert_eq!(result.errors[1].line, 4);
+        assert!(
+            result.errors[1].message.contains("newer"),
+            "unexpected: {}",
+            result.errors[1].message
+        );
+    }
+
+    #[test]
+    fn tolerant_empty_input() {
+        let result = parse_log_tolerant("");
+        assert!(result.entries.is_empty());
+        assert!(result.errors.is_empty());
+    }
+
+    #[test]
+    fn strict_reports_future_schema() {
+        let future = serde_json::json!({
+            "schema": SCHEMA_VERSION + 1,
+            "kind": "user_input",
+            "ts": "2026-01-01T00:00:00Z",
+            "turn": 1,
+            "data": {"text": "future"}
+        })
+        .to_string();
+        let err = parse_log_strict(&future).expect_err("future schema must fail");
+        assert!(err.message.contains("newer"), "unexpected: {}", err.message);
+    }
+
+    #[test]
+    fn strict_rejects_non_integer_schema() {
+        let bad = r#"{"schema":"one","kind":"user_input","ts":"2026-01-01T00:00:00Z","turn":1,"data":{"text":"hi"}}"#;
+        let err = parse_log_strict(bad).expect_err("non-integer schema must fail");
+        assert!(
+            err.message.contains("integer"),
+            "unexpected: {}",
+            err.message
+        );
     }
 }

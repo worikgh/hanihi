@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use chrono::Utc;
 use futures::StreamExt as _;
 use rig::client::CompletionClient;
 use rig::completion::message::ToolCall;
@@ -11,6 +12,7 @@ use rig::completion::{
 };
 use rig::providers::openai;
 use rig::tool::PortableDynamicTool;
+use serde::Serialize;
 use tokio::sync::mpsc;
 
 use crate::error::AgentError;
@@ -112,6 +114,14 @@ pub struct TurnSummary {
     pub final_history: Vec<Message>,
 }
 
+/// A tool call carried in a [`StreamEvent::CompletionResponse`].
+#[derive(Debug, Clone)]
+pub struct StreamToolCall {
+    pub id: String,
+    pub name: String,
+    pub arguments: serde_json::Value,
+}
+
 /// Events emitted during a streaming agent turn.
 #[derive(Debug, Clone)]
 pub enum StreamEvent {
@@ -135,6 +145,22 @@ pub enum StreamEvent {
         result_preview: String,
         /// Full rendered result (for session-log persistence).
         result: String,
+    },
+    /// A completion request was assembled and is about to be sent.
+    CompletionRequest {
+        ts: chrono::DateTime<Utc>,
+        messages: serde_json::Value,
+        tool_definitions: serde_json::Value,
+    },
+    /// A streaming completion response finished.
+    CompletionResponse {
+        ts: chrono::DateTime<Utc>,
+        message_id: Option<String>,
+        text: Option<String>,
+        reasoning: Option<String>,
+        tool_calls: Option<Vec<StreamToolCall>>,
+        input_tokens: u64,
+        output_tokens: u64,
     },
     /// Turn completed successfully.
     TurnComplete { summary: TurnSummary },
@@ -370,6 +396,7 @@ impl<M: CompletionModel> Agent<M> {
         let tools = self.tools_arc();
         let tool_cache = self.tool_cache.clone();
         let max_turns = self.max_turns;
+        let system_prompt = self.system_prompt.clone();
         let mut history = self.history.clone();
         let user_input = user_input.to_string();
 
@@ -378,15 +405,15 @@ impl<M: CompletionModel> Agent<M> {
                 model,
                 tools,
                 &mut history,
-                user_input.to_string(),
+                user_input,
+                system_prompt,
                 max_turns,
                 &tx,
                 tool_cache,
             )
             .await;
-            // Update the agent's history on completion.
-            // (History is sent back to the agent via a final message or
-            //  we update it after the stream. For now, the caller handles it.)
+            // The agent's persistent history is returned to the caller via
+            // `TurnComplete.final_history`; the caller seeds it back.
             let _ = result;
         });
 
@@ -409,6 +436,49 @@ impl<M: CompletionModel> Agent<M> {
         self.history.push(Message::user(user_input));
         self.history.extend(turn_messages);
     }
+}
+
+/// Build the JSON message list sent to the model, for `llm_prompt` log entries.
+pub(crate) fn messages_for_log(
+    system_prompt: &str,
+    history: &[Message],
+    turn_messages: &[Message],
+    user_input: &str,
+) -> Result<serde_json::Value, AgentError> {
+    #[derive(Serialize)]
+    struct LogMessage {
+        role: String,
+        content: serde_json::Value,
+    }
+
+    let mut msgs: Vec<LogMessage> = Vec::new();
+
+    // System preamble.
+    msgs.push(LogMessage {
+        role: "system".into(),
+        content: serde_json::Value::String(system_prompt.to_string()),
+    });
+
+    // Serialize each message via serde.
+    fn msg_to_value(msg: &Message) -> Result<LogMessage, AgentError> {
+        let v = serde_json::to_value(msg).map_err(|e| AgentError::Rig(e.to_string()))?;
+        let role = v["role"].as_str().unwrap_or("unknown").to_string();
+        Ok(LogMessage {
+            role,
+            content: v["content"].clone(),
+        })
+    }
+
+    for m in history.iter().chain(turn_messages.iter()) {
+        msgs.push(msg_to_value(m)?);
+    }
+    // Current user message.
+    msgs.push(LogMessage {
+        role: "user".into(),
+        content: serde_json::Value::String(user_input.to_string()),
+    });
+
+    serde_json::to_value(&msgs).map_err(|e| AgentError::Rig(e.to_string()))
 }
 
 /// Execute one tool call, reusing cached results for repeated identical
@@ -463,6 +533,7 @@ async fn run_streaming_loop<M: CompletionModel>(
     tools: Arc<Vec<PortableDynamicTool>>,
     history: &mut Vec<Message>,
     user_input: String,
+    system_prompt: String,
     max_turns: usize,
     tx: &mpsc::Sender<StreamEvent>,
     tool_cache: Arc<Mutex<ToolCallCache>>,
@@ -476,11 +547,23 @@ where
     let mut usage_total = Usage::new();
 
     for _turn in 0..max_turns {
-        // Build the request.
+        // Build the request and report it before sending.
+        let tool_definitions = tools.iter().map(|t| t.definition()).collect::<Vec<_>>();
+        let messages_json = messages_for_log(&system_prompt, history, &turn_messages, &user_input)?;
+        let tool_definitions_json = serde_json::to_value(&tool_definitions)?;
+        let _ = tx
+            .send(StreamEvent::CompletionRequest {
+                ts: Utc::now(),
+                messages: messages_json,
+                tool_definitions: tool_definitions_json,
+            })
+            .await;
+
         let request = model
             .completion_request(Message::user(user_input.clone()))
+            .preamble(system_prompt.clone())
             .messages(history.iter().chain(turn_messages.iter()).cloned())
-            .tools(tools.iter().map(|t| t.definition()).collect::<Vec<_>>())
+            .tools(tool_definitions)
             .build();
 
         let mut stream = model
@@ -488,10 +571,13 @@ where
             .await
             .map_err(|e| AgentError::Rig(e.to_string()))?;
 
-        // Track tool calls and their results during this model call.
+        // Track tool calls, their results, and per-call text/reasoning/usage
+        // during this model call.
         let mut pending_tool_calls: Vec<ToolCall> = Vec::new();
         let mut pending_results: Vec<(ToolCall, String)> = Vec::new();
         let mut text_buf = String::new();
+        let mut reasoning_buf = String::new();
+        let mut call_usage = Usage::new();
 
         while let Some(item) = stream.next().await {
             match item {
@@ -572,11 +658,22 @@ where
                     pending_tool_calls.push(tool_call);
                 }
                 Ok(rig::streaming::StreamedAssistantContent::Final(r)) => {
-                    usage_total += r.token_usage();
+                    let usage = r.token_usage();
+                    usage_total += usage;
+                    call_usage = usage;
                 }
-                Ok(rig::streaming::StreamedAssistantContent::ReasoningDelta { .. })
-                | Ok(rig::streaming::StreamedAssistantContent::Reasoning(_)) => {
-                    // Silently absorb reasoning — not shown to the user yet.
+                Ok(rig::streaming::StreamedAssistantContent::ReasoningDelta {
+                    reasoning, ..
+                }) => {
+                    reasoning_buf.push_str(&reasoning);
+                }
+                Ok(rig::streaming::StreamedAssistantContent::Reasoning(r)) => {
+                    if reasoning_buf.is_empty() {
+                        reasoning_buf = r.display_text();
+                    } else {
+                        reasoning_buf.push('\n');
+                        reasoning_buf.push_str(&r.display_text());
+                    }
                 }
                 Ok(rig::streaming::StreamedAssistantContent::Unknown(_)) => {}
                 Err(e) => {
@@ -589,8 +686,32 @@ where
                 }
             }
         }
-        // Capture message_id from the stream.
+
+        // Capture message_id and report the completed response.
         let message_id = stream.message_id.clone();
+        let response_text = (!text_buf.is_empty()).then(|| text_buf.clone());
+        let response_reasoning = (!reasoning_buf.is_empty()).then(|| reasoning_buf.clone());
+        let response_tool_calls = (!pending_tool_calls.is_empty()).then(|| {
+            pending_tool_calls
+                .iter()
+                .map(|call| StreamToolCall {
+                    id: call.id.clone(),
+                    name: call.function.name.clone(),
+                    arguments: call.function.arguments.clone(),
+                })
+                .collect()
+        });
+        let _ = tx
+            .send(StreamEvent::CompletionResponse {
+                ts: Utc::now(),
+                message_id: message_id.clone(),
+                text: response_text,
+                reasoning: response_reasoning,
+                tool_calls: response_tool_calls,
+                input_tokens: call_usage.input_tokens,
+                output_tokens: call_usage.output_tokens,
+            })
+            .await;
 
         // If no tool calls were made, the turn is complete.
         if pending_tool_calls.is_empty() {
@@ -766,5 +887,20 @@ mod tests {
         assert_eq!(summary.tool_calls, 2);
         use std::sync::atomic::Ordering;
         assert_eq!(executions.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn messages_for_log_includes_system_history_and_user() {
+        let history = vec![Message::user("earlier")];
+        let turn_messages = vec![Message::assistant("partial")];
+        let value =
+            messages_for_log("system", &history, &turn_messages, "now").expect("build messages");
+
+        let arr = value.as_array().expect("messages is an array");
+        assert_eq!(arr.len(), 3);
+        assert_eq!(arr[0]["role"], "system");
+        assert_eq!(arr[0]["content"], "system");
+        assert_eq!(arr[1]["role"], "user");
+        assert_eq!(arr[2]["role"], "assistant");
     }
 }

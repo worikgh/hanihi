@@ -3,7 +3,7 @@ use std::process::ExitCode;
 
 use clap::Parser;
 use hanihi_core::session::SessionManager;
-use hanihi_core::session::log::LogEntry;
+use hanihi_core::session::log::read_log_tolerant;
 
 const DEFAULT_WORKING_DIR: &str = "./working";
 
@@ -58,25 +58,23 @@ fn session_names(working_dir: &Path) -> Result<Vec<String>, String> {
 }
 
 /// Print `kind<TAB>ts` for every entry in one session's `events.jsonl`.
+///
+/// Bad lines are reported as warnings on stderr but do not abort the read.
 fn analyse_session(working_dir: &Path, name: &str) -> Result<(), String> {
     let path = working_dir.join("sessions").join(name).join("events.jsonl");
-    let content = std::fs::read_to_string(&path)
-        .map_err(|e| format!("error reading {}: {e}", path.display()))?;
-    print_entries(&content, &path)
-}
+    let outcome =
+        read_log_tolerant(&path).map_err(|e| format!("error reading {}: {e}", path.display()))?;
 
-/// Parse each JSONL line as a [`LogEntry`] and print `kind<TAB>ts`.
-fn print_entries(content: &str, path: &Path) -> Result<(), String> {
-    for (i, line) in content.lines().enumerate() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-
-        let entry: LogEntry = serde_json::from_str(line)
-            .map_err(|e| format!("error parsing {} line {}: {e}", path.display(), i + 1))?;
-
+    for entry in &outcome.entries {
         println!("{}\t{}", entry.kind(), entry.ts().to_rfc3339());
+    }
+    for err in &outcome.errors {
+        eprintln!(
+            "warning: {} line {}: {}",
+            path.display(),
+            err.line,
+            err.message
+        );
     }
     Ok(())
 }
@@ -84,10 +82,10 @@ fn print_entries(content: &str, path: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hanihi_core::session::log::LogEntry;
 
-    const USER_INPUT: &str =
-        r#"{"kind":"user_input","ts":"2026-01-01T00:00:00Z","turn":1,"data":{"text":"hi"}}"#;
-    const TURN_COMPLETE: &str = r#"{"kind":"turn_complete","ts":"2026-01-01T00:00:01Z","turn":1,"data":{"text":"x","tool_calls":0}}"#;
+    const USER_INPUT: &str = r#"{"schema":1,"kind":"user_input","ts":"2026-01-01T00:00:00Z","turn":1,"data":{"text":"hi"}}"#;
+    const TURN_COMPLETE: &str = r#"{"schema":1,"kind":"turn_complete","ts":"2026-01-01T00:00:01Z","turn":1,"data":{"text":"x","tool_calls":0}}"#;
 
     fn tmp_dir(tag: &str) -> PathBuf {
         let nanos = std::time::SystemTime::now()
@@ -120,16 +118,20 @@ mod tests {
     }
 
     #[test]
-    fn skips_blank_lines_and_parses_valid_entries() {
-        let content = format!("\n{USER_INPUT}\n\n{TURN_COMPLETE}\n");
-        assert!(print_entries(&content, Path::new("events.jsonl")).is_ok());
+    fn parses_valid_entries_with_tolerant_reader() {
+        let log = format!("{USER_INPUT}\n{TURN_COMPLETE}\n");
+        let outcome = hanihi_core::session::log::parse_log_tolerant(&log);
+        assert_eq!(outcome.entries.len(), 2);
+        assert!(outcome.errors.is_empty());
     }
 
     #[test]
-    fn reports_line_number_for_bad_json() {
-        let content = format!("{USER_INPUT}\nnot json\n");
-        let err = print_entries(&content, Path::new("events.jsonl")).expect_err("bad line");
-        assert!(err.contains("line 2"), "unexpected: {err}");
+    fn reports_bad_lines_as_errors_not_failures() {
+        let log = format!("{USER_INPUT}\nnot json\n");
+        let outcome = hanihi_core::session::log::parse_log_tolerant(&log);
+        assert_eq!(outcome.entries.len(), 1);
+        assert_eq!(outcome.errors.len(), 1);
+        assert_eq!(outcome.errors[0].line, 2);
     }
 
     #[test]
