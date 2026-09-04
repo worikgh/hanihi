@@ -25,7 +25,9 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use self::lock::SessionGuard;
-use self::log::{ErrorStage, LogEntry, LogWriter, ToolCallData, UsageData};
+use self::log::{
+    ErrorStage, LlmResponseData, LogEntry, LogWriter, ToolCallData, ToolExecutionData, UsageData,
+};
 use crate::agent::{Agent, StreamEvent, TurnSummary, messages_for_log};
 use crate::error::AgentError;
 
@@ -766,6 +768,12 @@ impl Session {
     /// stops at the last `turn_complete` or `error` boundary. Partial turns
     /// (events after the last complete turn without a close) are dropped.
     ///
+    /// Tool calls and their results are paired by `tool_call_id`, not by
+    /// log position, so both logging orders replay identically:
+    ///
+    /// - non-streaming: `llm_response` (tool calls) → `tool_execution`*
+    /// - streaming:      `tool_execution`* → `llm_response` (tool calls)
+    ///
     /// Lifecycle events (`session_created`, `session_opened`, etc.) and
     /// `llm_prompt` entries are skipped — they're not needed for history
     /// reconstruction.
@@ -773,79 +781,27 @@ impl Session {
         let entries = self.events()?;
         let mut messages: Vec<Message> = Vec::new();
         let mut safe_len: usize = 0;
-        // Track whether the last assistant message had tool calls.
-        let mut last_had_tool_calls = false;
+        let mut turn = TurnState::default();
 
         for entry in &entries {
             match entry {
                 LogEntry::UserInput { data, .. } => {
-                    messages.push(Message::user(data.text.clone()));
-                    last_had_tool_calls = false;
+                    // A new user message starts a fresh turn; any partial
+                    // previous turn is dropped.
+                    turn = TurnState::default();
+                    turn.user = Some(data.text.clone());
                 }
                 LogEntry::LlmResponse { data, .. } => {
-                    if let Some(ref tcs) = data.tool_calls {
-                        let contents: Vec<AssistantContent> = tcs
-                            .iter()
-                            .map(|tc| {
-                                AssistantContent::ToolCall(ToolCall::new(
-                                    tc.id.clone(),
-                                    ToolFunction {
-                                        name: tc.name.clone(),
-                                        arguments: tc.arguments.clone(),
-                                    },
-                                ))
-                            })
-                            .collect();
-                        messages.push(Message::Assistant {
-                            id: data.message_id.clone(),
-                            content: rig::OneOrMany::from_iter_optional(contents)
-                                .expect("assistant message has at least one tool call"),
-                        });
-                        last_had_tool_calls = true;
-                    } else if let Some(ref text) = data.text {
-                        messages.push(Message::assistant(text.clone()));
-                        last_had_tool_calls = false;
-                    }
+                    turn.responses.push(data.clone());
                 }
                 LogEntry::ToolExecution { data, .. } => {
-                    // Streaming sessions may lack llm_response entries. If
-                    // the last assistant had no tool calls, synthesize one
-                    // for this specific tool execution.
-                    let was_synthetic = !last_had_tool_calls;
-                    if was_synthetic {
-                        let tc = ToolCall::new(
-                            data.tool_call_id.clone(),
-                            ToolFunction {
-                                name: data.name.clone(),
-                                arguments: data.arguments.clone(),
-                            },
-                        );
-                        messages.push(Message::Assistant {
-                            id: None,
-                            content: rig::OneOrMany::one(AssistantContent::ToolCall(tc)),
-                        });
-                        last_had_tool_calls = true;
-                    }
-                    let call_id = if data.call_id.is_empty() {
-                        data.tool_call_id.clone()
-                    } else {
-                        data.call_id.clone()
-                    };
-                    messages.push(Message::tool_result_with_call_id(
-                        data.tool_call_id.clone(),
-                        Some(call_id),
-                        data.result.clone(),
-                    ));
-                    // If we synthesized the assistant, reset so the
-                    // next tool_exec gets its own assistant too.
-                    if was_synthetic {
-                        last_had_tool_calls = false;
-                    }
+                    turn.executions.push(data.clone());
                 }
                 LogEntry::TurnComplete { .. } | LogEntry::Error { .. } => {
-                    // End of a completed turn — mark all accumulated
-                    // messages as safe.
+                    // End of a completed turn — mark its messages as safe.
+                    messages.extend(turn.replay());
                     safe_len = messages.len();
+                    turn = TurnState::default();
                 }
                 // Skip lifecycle and prompt entries.
                 LogEntry::SessionCreated { .. }
@@ -932,6 +888,114 @@ impl Session {
 
         Ok(latencies)
     }
+}
+
+/// Events of one turn, in log order, awaiting reconstruction.
+#[derive(Default)]
+struct TurnState {
+    user: Option<String>,
+    responses: Vec<LlmResponseData>,
+    executions: Vec<ToolExecutionData>,
+}
+
+impl TurnState {
+    /// Rebuild the canonical OpenAI transcript for this turn.
+    fn replay(&self) -> Vec<Message> {
+        let mut out = Vec::new();
+        if let Some(user) = &self.user {
+            out.push(Message::user(user.clone()));
+        }
+
+        // Pair each declared tool call with its execution by id, not by
+        // position, so streaming and non-streaming logs replay the same.
+        let mut used = vec![false; self.executions.len()];
+
+        for response in &self.responses {
+            if let Some(tool_calls) = &response.tool_calls {
+                let contents: Vec<AssistantContent> = tool_calls
+                    .iter()
+                    .map(|tc| {
+                        AssistantContent::ToolCall(ToolCall::new(
+                            tc.id.clone(),
+                            ToolFunction {
+                                name: tc.name.clone(),
+                                arguments: tc.arguments.clone(),
+                            },
+                        ))
+                    })
+                    .collect();
+                out.push(Message::Assistant {
+                    id: response.message_id.clone(),
+                    content: rig::OneOrMany::from_iter_optional(contents)
+                        .expect("assistant message has at least one tool call"),
+                });
+
+                for tc in tool_calls {
+                    let found = self
+                        .executions
+                        .iter()
+                        .enumerate()
+                        .find(|(i, e)| !used[*i] && e.tool_call_id == tc.id);
+
+                    match found {
+                        Some((idx, exec)) => {
+                            used[idx] = true;
+                            out.push(replay_tool_result(exec));
+                        }
+                        None => out.push(replay_error_tool_result(&tc.id)),
+                    }
+                }
+            } else if let Some(text) = &response.text {
+                out.push(Message::assistant(text.clone()));
+            }
+        }
+
+        // Legacy streaming logs lack llm_response entries entirely, so any
+        // unclaimed execution gets a synthetic assistant message.
+        for (idx, exec) in self.executions.iter().enumerate() {
+            if used[idx] {
+                continue;
+            }
+            let tc = ToolCall::new(
+                exec.tool_call_id.clone(),
+                ToolFunction {
+                    name: exec.name.clone(),
+                    arguments: exec.arguments.clone(),
+                },
+            );
+            out.push(Message::Assistant {
+                id: None,
+                content: rig::OneOrMany::one(AssistantContent::ToolCall(tc)),
+            });
+            out.push(replay_tool_result(exec));
+        }
+
+        out
+    }
+}
+
+/// Render one logged tool execution as a tool-result message.
+fn replay_tool_result(data: &ToolExecutionData) -> Message {
+    let call_id = if data.call_id.is_empty() {
+        data.tool_call_id.clone()
+    } else {
+        data.call_id.clone()
+    };
+    Message::tool_result_with_call_id(
+        data.tool_call_id.clone(),
+        Some(call_id),
+        data.result.clone(),
+    )
+}
+
+/// A declared tool call with no logged result must still be answered,
+/// otherwise the transcript is 400-bound.
+fn replay_error_tool_result(id: &str) -> Message {
+    Message::tool_result_with_call_id(
+        id.to_string(),
+        Some(id.to_string()),
+        format!("{{\"error\":\"no tool result recorded for call {id}\"}}"),
+    )
 }
 
 #[cfg(test)]
