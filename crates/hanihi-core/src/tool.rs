@@ -16,6 +16,7 @@ use rig::tool::{PortableDynamicTool, ToolExecutionError, ToolOutput};
 use serde_json::json;
 use tokio::io::AsyncReadExt as _;
 
+use crate::debug;
 use crate::source::{SourceError, SourceTree};
 
 /// Map a [`SourceError`] onto a rig tool error with the right kind.
@@ -37,6 +38,7 @@ pub(crate) fn map_source_err(e: SourceError) -> ToolExecutionError {
 
 /// Tool: report the current local date and time.
 pub fn builtin_get_time() -> PortableDynamicTool {
+    debug::log_to_file("get_time tool constructed", "builtin_get_time called");
     PortableDynamicTool::new(
         "get_time",
         "Get the current local date and time in RFC 3339 format.",

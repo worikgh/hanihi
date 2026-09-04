@@ -13,6 +13,7 @@ use std::sync::Arc;
 use rig::tool::{PortableDynamicTool, ToolExecutionError, ToolOutput};
 use serde_json::json;
 
+use crate::debug;
 use crate::source::SourceTree;
 use crate::tool::{map_source_err, scrubbed_env};
 
@@ -195,6 +196,7 @@ fn parse_diff(diff: &str) -> Result<Vec<FilePatch>, String> {
     let lines: Vec<&str> = diff.lines().collect();
     let blocks = file_blocks(&lines);
     if blocks.is_empty() {
+        debug::log_to_file("apply_patch on non-diff", diff);
         return Err("no `---`/`+++` file markers found".into());
     }
 
@@ -215,6 +217,7 @@ fn parse_diff(diff: &str) -> Result<Vec<FilePatch>, String> {
             let line = lines[i];
             if let Some(rest) = line.strip_prefix("@@") {
                 if !rest.contains("@@") {
+                    debug::log_to_file("apply_patch bad hunk header", diff);
                     return Err(format!("malformed hunk header: @@{rest}"));
                 }
                 i += 1;
@@ -234,9 +237,11 @@ fn parse_diff(diff: &str) -> Result<Vec<FilePatch>, String> {
                 continue;
             }
             if line.starts_with("Binary files ") || line == "GIT binary patch" {
+                debug::log_to_file("apply_patch binary diff", diff);
                 return Err("binary patches are not supported".into());
             }
             if line.starts_with("rename from ") || line.starts_with("rename to ") {
+                debug::log_to_file("apply_patch rename/copy diff", diff);
                 return Err("rename/copy patches are not supported".into());
             }
             i += 1;
@@ -479,28 +484,30 @@ fn diff_touches_protected(diff: &str) -> Option<String> {
 
 /// Tool: apply a unified diff to the repository working tree.
 pub fn builtin_apply_patch(tree: Arc<SourceTree>) -> PortableDynamicTool {
+    let json = json!({
+        "type": "object",
+        "properties": {
+        "diff": {
+            "type": "string",
+            "description": "Unified diff against the current working tree"
+        },
+        "message": {
+            "type": "string",
+            "description": "Optional commit message"
+        }
+        },
+        "required": ["diff"]
+    });
+    let _call_back = || ();
     PortableDynamicTool::new(
         "apply_patch",
         "Apply a unified diff (git diff format) to the repository working tree. The diff is \
-         parsed and applied directly against the current working-tree contents, so it works on \
-         top of other uncommitted changes — no clean tree or `git apply` needed. Application is \
-         all-or-nothing: if any hunk fails to match, nothing is written. If `message` is given, \
-         the change is committed with that message. Diffs that touch `.ignore` or `.git*` paths \
-         are refused. Changes are local commits only — never pushed.",
-        json!({
-            "type": "object",
-            "properties": {
-                "diff": {
-                    "type": "string",
-                    "description": "Unified diff against the current working tree"
-                },
-                "message": {
-                    "type": "string",
-                    "description": "Optional commit message"
-                }
-            },
-            "required": ["diff"]
-        }),
+	 parsed and applied directly against the current working-tree contents, so it works on \
+	 top of other uncommitted changes — no clean tree or `git apply` needed. Application is \
+	 all-or-nothing: if any hunk fails to match, nothing is written. If `message` is given, \
+	 the change is committed with that message. Diffs that touch `.ignore` or `.git*` paths \
+	 are refused. Changes are local commits only — never pushed.",
+        json,
         move |args: serde_json::Value| {
             let tree = tree.clone();
             Box::pin(async move {
