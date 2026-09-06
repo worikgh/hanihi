@@ -1,7 +1,6 @@
 # hānihi
 
-A minimal tool-calling agent harness in Rust — the core of a future coding
-agent. Built on:
+A  tool-calling agent harness in Rust. Built on:
 
 - **rig** (`rig-core` 0.41) — OpenAI-compatible chat completions client, tool
   definitions, completion loop
@@ -25,7 +24,7 @@ crates/
 ├── hanihi-eval/        # binary: eval runner — run test cases against a live
 │                       #   LLM and check assertions against the session log
 └── mcp-echo-server/    # binary: minimal MCP stdio server (demo, one
-                        #   `mcp_echo` tool; not published)
+                        #   `mcp_echo` tool)
 evals/
 └── cases/              # eval test cases (TOML + README per case)
 ```
