@@ -41,3 +41,24 @@ Rule 7: Use the body to explain what and why vs. how. Assume the code explains t
 Rule N: Sign all commit messages as: "Hānihi"
 
 - If the prompt indicates that a bug is being fixed, don't write the fix right away. First write the test. Observe it failing. Then write the fix. And observe the test passing.
+
+## Patch tooling (apply_patch / write_file)
+
+- `apply_patch` accepts only unified diffs:                                                                                                             `--- a/<path>` / `+++ b/<path>` headers and `@@ -l,c +l,c @@` hunks.
+  Never emit `*** Begin Patch`, `*** Update File:`, or any other patch format.
+- Before producing a diff, read the current contents of every file it
+  touches with `read_file`, or generate it with `git diff`. Copy all
+  context lines and `-` lines verbatim from that output. Never
+  reconstruct context from memory or from an earlier read.
+- Keep multi-file changes consistent and the tree compilable: include all
+  related changes in one patch (or one uninterrupted write sequence), then
+  run the relevant check immediately (`cargo check`, `cargo test`, etc.).
+  Never leave one file referencing a symbol another file does not define.
+- After `apply_patch` fails with "context does not match", do not retry the
+  same diff. Re-read the target file, rebuild the diff from its current
+  contents, then re-apply and verify with the appropriate check.
+- Prefer `apply_patch` for small, surgical edits verified against freshly
+  read content. Prefer `write_file` with complete file contents for large
+  rewrites or when exact context is uncertain.
+
+
