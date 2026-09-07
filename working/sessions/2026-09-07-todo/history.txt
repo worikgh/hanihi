@@ -1,0 +1,7 @@
+/file /tmp/prompt.md
+/file .p_apply_patch.md
+/session
+Continue
+/session
+Where are max turns set?
+/quit

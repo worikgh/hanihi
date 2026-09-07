@@ -1,0 +1,8 @@
+{
+  "command": "git apply --recount --check working/scratch-repro/dirty.patch",
+  "duration_ms": 2,
+  "exit_code": 1,
+  "stderr": "error: patch failed: working/scratch-repro/main.rs:1\nerror: working/scratch-repro/main.rs: patch does not apply\n",
+  "stdout": "",
+  "ts": "2026-08-31T05:19:24.136083408+00:00"
+}

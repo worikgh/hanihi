@@ -1,0 +1,6 @@
+/file ../plans/009-bug-fix-b.md
+/quit
+Continue
+/quit
+Continue
+/quit

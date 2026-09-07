@@ -1,0 +1,8 @@
+{
+  "command": "git log --oneline -5",
+  "duration_ms": 8,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "ae5deb2 Add REPL commands section and include /file in command lists\n643fb38 Add /file REPL command to read a file as prompt\nacbbb8e Revert --recount; keep dirty-target guard\n5ea9522 Add --recount to git apply for tolerance to count drift\n6052c97 Include 'failed' in parse error for bad diffs\n",
+  "ts": "2026-08-26T04:08:01.987284302+00:00"
+}

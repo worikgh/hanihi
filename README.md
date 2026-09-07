@@ -200,7 +200,10 @@ type = "no_error"
 The runner creates a temp session, runs the prompt against a live LLM, then
 checks each assertion against the `events.jsonl` log. Assertion types:
 `tool_called`, `tool_not_called`, `text_contains`, `text_not_contains`,
-`text_regex`, `no_error`, `max_turns`, `latency_ms`, `token_budget`.
+`text_regex`, `no_error`, `max_turns`, `latency_ms`, `token_budget`,
+`build_succeeds`, `tests_pass`, `clippy_clean`, `no_diff`.
+The last four run `cargo`/`git` gates in the case's repo and need a `repo`
+(or `fixture`) field in `case.toml`.
 
 Tools are rig `PortableDynamicTool`s: name + description + JSON schema + an
 async callback over raw `serde_json::Value`. MCP tools get wrapped into this

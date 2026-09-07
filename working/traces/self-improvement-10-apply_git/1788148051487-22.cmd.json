@@ -1,0 +1,8 @@
+{
+  "command": "od -c working/applytest/main.rs",
+  "duration_ms": 1,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "0000000   f   n       m   a   i   n   (   )       {   }  \\n   /   /    \n0000020   l   o   c   a   l  \\n\n0000026\n",
+  "ts": "2026-08-31T03:47:31.487294886+00:00"
+}

@@ -1,0 +1,8 @@
+{
+  "command": "cargo test -p hanihi-core --lib session::tests",
+  "duration_ms": 5528,
+  "exit_code": 0,
+  "stderr": "   Compiling hanihi-core v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-core)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.45s\n     Running unittests src/lib.rs (target/debug/deps/hanihi_core-12c706d7be1a6e4c)\n",
+  "stdout": "\nrunning 14 tests\ntest session::tests::create_default_allowed_once ... ok\ntest session::tests::list_sessions ... ok\ntest session::tests::create_and_open_session ... ok\ntest session::tests::derived_properties_on_empty_session ... ok\ntest session::tests::not_found_error ... ok\ntest session::tests::replay_empty_session_returns_empty ... ok\ntest session::tests::duplicate_name_rejected ... ok\ntest session::tests::replay_multi_turn ... ok\ntest session::tests::replay_old_log_missing_call_id ... ok\ntest session::tests::replay_simple_text_turn ... ok\ntest session::tests::reserved_name_rejected ... ok\ntest session::tests::replay_truncates_partial_turn ... ok\ntest session::tests::replay_with_tool_calls ... ok\ntest session::tests::streaming_logs_real_tool_args_and_result ... ok\n\ntest result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 55 filtered out; finished in 0.02s\n\n",
+  "ts": "2026-09-04T03:20:39.980114068+00:00"
+}

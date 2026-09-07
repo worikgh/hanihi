@@ -1,0 +1,8 @@
+{
+  "command": "cargo test -p hanihi-core apply_patch -- --nocapture",
+  "duration_ms": 690,
+  "exit_code": 0,
+  "stderr": "    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.54s\n     Running unittests src/lib.rs (target/debug/deps/hanihi_core-12c706d7be1a6e4c)\n",
+  "stdout": "\nrunning 3 tests\ntest write::tests::apply_patch_rejects_bad_diff_and_protected_paths ... ok\ntest write::tests::apply_patch_rejects_dirty_target ... ok\ntest write::tests::apply_patch_applies_and_commits ... ok\n\ntest result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 59 filtered out; finished in 0.08s\n\n",
+  "ts": "2026-08-26T04:07:50.925744809+00:00"
+}

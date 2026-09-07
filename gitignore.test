@@ -1,0 +1,8 @@
+target/
+target/doc/
+!target/doc/
+# Emacs working files
+*~
+.#*
+#*#
+# test line added by apply_patch

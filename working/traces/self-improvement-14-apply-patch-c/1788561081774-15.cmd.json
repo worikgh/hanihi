@@ -1,0 +1,8 @@
+{
+  "command": "git log --oneline -8",
+  "duration_ms": 11,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "173007a Implement debug logging\n9a9c3cd Fix the bug in session replay that broke resumed sessions\na05e3bd Extend system prompt to encourage the model to persevere in the face of tool failures\n44c231c Extend logging\n5ab651d Remove patching artifacts from repository\ndd998d2 Add a method to get the kind of a `LogEntry`\n39ab113 Add summary to `analyse`\na8ca132 Use the `hanihi-session` structures that were written to the log to read the log\n",
+  "ts": "2026-09-04T22:31:21.774068935+00:00"
+}

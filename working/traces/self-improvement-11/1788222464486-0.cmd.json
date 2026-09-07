@@ -1,0 +1,8 @@
+{
+  "command": "git status && git log --oneline -3",
+  "duration_ms": 5,
+  "exit_code": 129,
+  "stderr": "error: unknown option `oneline'\nusage: git status [<options>] [--] [<pathspec>...]\n\n    -v, --[no-]verbose    be verbose\n    -s, --[no-]short      show status concisely\n    -b, --[no-]branch     show branch information\n    --[no-]show-stash     show stash information\n    --[no-]ahead-behind   compute full ahead/behind values\n    --[no-]porcelain[=<version>]\n                          machine-readable output\n    --[no-]long           show status in long format (default)\n    -z, --[no-]null       terminate entries with NUL\n    -u, --[no-]untracked-files[=<mode>]\n                          show untracked files, optional modes: all, normal, no. (Default: all)\n    --[no-]ignored[=<mode>]\n                          show ignored files, optional modes: traditional, matching, no. (Default: traditional)\n    --[no-]ignore-submodules[=<when>]\n                          ignore changes to submodules, optional when: all, dirty, untracked. (Default: all)\n    --[no-]column[=<style>]\n                          list untracked files in columns\n    --no-renames          do not detect renames\n    --renames             opposite of --no-renames\n    -M, --find-renames[=<n>]\n                          detect renames, optionally set similarity index\n\n",
+  "stdout": "",
+  "ts": "2026-09-01T00:27:44.486907939+00:00"
+}

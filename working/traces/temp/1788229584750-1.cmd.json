@@ -1,0 +1,8 @@
+{
+  "command": "git config --get status.showUntrackedFiles",
+  "duration_ms": 3,
+  "exit_code": 1,
+  "stderr": "",
+  "stdout": "",
+  "ts": "2026-09-01T02:26:24.750948948+00:00"
+}

@@ -1,0 +1,8 @@
+Test your apply_patch builtin by using it to add a rule to `.gitignore` that prevents debug.log files being pulled into the repository
+Why did you try to create /home/worik/Documents/2026/hanihi/README.md? When you tried to crete it, and it already existed, why did you stop?
+I just ran: `cp .gitignore gitignore.test`.  Modify `gitignore.test` with `apply_patch`
+Oops.  Try again
+I just ran: `cp .gitignore gitignore.test`.  Modify `gitignore.test` with `apply_patch`
+I am checking if Hānihi's `apply_patch` works.  Add a hello world function to hanihi-core/src/tool.rs using `apply_patch`.  
+Report on your attempt
+/quit

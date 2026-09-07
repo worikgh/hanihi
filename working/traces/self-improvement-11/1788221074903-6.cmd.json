@@ -1,0 +1,8 @@
+{
+  "command": "git check-ignore -v working crates/hanihi-core/src/write.patch crates/hanihi-core/src/write.diff crates/hanihi-core/src/tool.patch crates/hanihi-core/applytest.patch prompts/self-improvement.md reports/001_apply_patch.md",
+  "duration_ms": 4,
+  "exit_code": 1,
+  "stderr": "",
+  "stdout": "",
+  "ts": "2026-09-01T00:04:34.903125230+00:00"
+}

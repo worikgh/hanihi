@@ -1,0 +1,8 @@
+/session
+/file /tmp/prompt.md
+/quit
+Place a `dbg!()` macro on the first line of the file `tool.rs` in the crate `hanihi-core`
+/session
+/quit
+Place a `dbg!()` macro on the first line of the file `tool.rs` in the crate `hanihi-core`
+/quit

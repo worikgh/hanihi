@@ -1,0 +1,8 @@
+{
+  "command": "git diff --stat -- crates/hanihi-core/src/agent.rs",
+  "duration_ms": 7,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": " crates/hanihi-core/src/agent.rs | 280 +++++++++++++++++++++++++++++++---------\n 1 file changed, 220 insertions(+), 60 deletions(-)\n",
+  "ts": "2026-09-01T00:58:41.436525085+00:00"
+}

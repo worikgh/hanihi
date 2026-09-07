@@ -1,0 +1,8 @@
+{
+  "command": "git log --oneline -3 -- plans/",
+  "duration_ms": 17,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "faae0ec Steps 5, 7: eval repo/write_tools/fixture fields + build/test/clippy/no_diff assertions, cases 003-self-build & 004-self-patch; scripts/self-improve.sh driver; README + plan 005 status\ne953502 plan 005: rename --self-improve to --write (capability, not use case); README: add LSP/tree-sitter/refactoring/worker TODOs\n7f6b1b7 plan 005: expand design principles (read-only default, gated writes, git commits, eval-measured improvement)\n",
+  "ts": "2026-08-26T00:52:16.655361543+00:00"
+}

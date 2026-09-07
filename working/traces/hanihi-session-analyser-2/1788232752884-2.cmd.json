@@ -1,0 +1,8 @@
+{
+  "command": "git status --short",
+  "duration_ms": 7,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": " M Cargo.toml\n",
+  "ts": "2026-09-01T03:19:12.884775691+00:00"
+}

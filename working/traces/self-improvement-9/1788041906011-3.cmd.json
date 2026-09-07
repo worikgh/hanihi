@@ -1,0 +1,8 @@
+{
+  "command": "git log --oneline -5",
+  "duration_ms": 0,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "22191d8 Use Cyan for font colour echoing interactive prompt\n656fa87 Allow changing colour of text in prompt\ndaab065 Allow `working/` and `target/doc` in gitignore\n1117843 Add custom reedline MonoHighlighter for input colouring\nf25511f A guid for programming Rust\n",
+  "ts": "2026-08-29T22:18:26.011007708+00:00"
+}

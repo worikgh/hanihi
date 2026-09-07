@@ -1,0 +1,15 @@
+Change the colour of the text in the user interface when using from a terminal.  It should be dark blue by default.  In the future we will add a command to set the colour from the terminal
+/quit
+You have been in a loop running `clippy.  Why?
+Have you done it?
+/quit
+The text in the terminal, as I type now, is still grey.
+/quit
+You had a failure.  In a builtin tool `grep`
+The colour of the text you output is dark blue.  I was unclear:  I want the colour of the text that apears as I type to be dark blue, and the text you type to be black
+Add `grep` to the allow list for `run_command`, let me know, I cn recompile and start you and then you can continue.
+/quit
+The colour of the text you output is black, now.  I want the colour of the text that apears as I type to be dark blue
+What went wrong then?
+continue to finish the task
+/quit

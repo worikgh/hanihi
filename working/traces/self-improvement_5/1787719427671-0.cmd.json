@@ -1,0 +1,8 @@
+{
+  "command": "git log --oneline -6",
+  "duration_ms": 6,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "d03e958 Apply patches with --3way so dirty-tree patching works\ncfbcc0d Replace preemptive dirty-target guard with precise git apply --check diagnostics\nae5deb2 Add REPL commands section and include /file in command lists\n643fb38 Add /file REPL command to read a file as prompt\nacbbb8e Revert --recount; keep dirty-target guard\n5ea9522 Add --recount to git apply for tolerance to count drift\n",
+  "ts": "2026-08-26T04:43:47.671018291+00:00"
+}

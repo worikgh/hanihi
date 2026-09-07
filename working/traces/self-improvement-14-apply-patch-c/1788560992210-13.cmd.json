@@ -1,0 +1,8 @@
+{
+  "command": "git status --short",
+  "duration_ms": 0,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "D  crates/hanihi-core/hanihi-debug.log\n",
+  "ts": "2026-09-04T22:29:52.210980442+00:00"
+}

@@ -1,0 +1,8 @@
+{
+  "command": "git status --short",
+  "duration_ms": 6,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "",
+  "ts": "2026-08-26T09:44:01.382098132+00:00"
+}

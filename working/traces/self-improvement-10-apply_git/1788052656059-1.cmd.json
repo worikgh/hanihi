@@ -1,0 +1,8 @@
+{
+  "command": "git config --get-regexp '^remote\\.'",
+  "duration_ms": 7,
+  "exit_code": 1,
+  "stderr": "",
+  "stdout": "",
+  "ts": "2026-08-30T01:17:36.059129503+00:00"
+}

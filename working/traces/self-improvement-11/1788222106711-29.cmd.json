@@ -1,0 +1,8 @@
+{
+  "command": "git commit -m Normalize-indentation-in-tool.rs-via-cargo-fmt",
+  "duration_ms": 19,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "[main c58c9aa] Normalize-indentation-in-tool.rs-via-cargo-fmt\n 1 file changed, 833 insertions(+), 831 deletions(-)\n",
+  "ts": "2026-09-01T00:21:46.711463071+00:00"
+}

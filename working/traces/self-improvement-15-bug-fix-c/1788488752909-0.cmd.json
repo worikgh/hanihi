@@ -1,0 +1,8 @@
+{
+  "command": "find /home/worik/.cargo/registry/src -maxdepth 2 -type d -name \"rig-core-*\"",
+  "duration_ms": 54,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "",
+  "ts": "2026-09-04T02:25:52.909965174+00:00"
+}

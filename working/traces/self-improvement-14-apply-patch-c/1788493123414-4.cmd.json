@@ -1,0 +1,8 @@
+{
+  "command": "cargo fmt --all",
+  "duration_ms": 455,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "",
+  "ts": "2026-09-04T03:38:43.414546450+00:00"
+}

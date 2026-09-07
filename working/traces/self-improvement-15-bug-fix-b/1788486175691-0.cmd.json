@@ -1,0 +1,8 @@
+{
+  "command": "grep -rn \"fn tool_result_with_call_id\" ~/.cargo/registry/src 2>/dev/null | head -5",
+  "duration_ms": 7,
+  "exit_code": 2,
+  "stderr": "grep: tool_result_with_call_id\": No such file or directory\ngrep: ~/.cargo/registry/src: No such file or directory\ngrep: 2>/dev/null: No such file or directory\ngrep: |: No such file or directory\ngrep: head: No such file or directory\n",
+  "stdout": "",
+  "ts": "2026-09-04T01:42:55.691209072+00:00"
+}

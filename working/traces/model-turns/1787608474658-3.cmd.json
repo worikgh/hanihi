@@ -1,0 +1,8 @@
+{
+  "command": "git apply --check",
+  "duration_ms": 3,
+  "exit_code": 128,
+  "stderr": "error: No valid patches in input (allow with \"--allow-empty\")\n",
+  "stdout": "",
+  "ts": "2026-08-24T21:54:34.658266185+00:00"
+}

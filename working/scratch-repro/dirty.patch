@@ -1,0 +1,5 @@
+--- a/working/scratch-repro/main.rs
++++ b/working/scratch-repro/main.rs
+@@ -1 +1,2 @@
+ fn main() {}
++// patched

@@ -1,0 +1,8 @@
+{
+  "command": "cargo check -p hanihi-cli",
+  "duration_ms": 1104,
+  "exit_code": 101,
+  "stderr": "    Checking hanihi-cli v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-cli)\nerror[E0596]: cannot borrow `session` as mutable, as it is not declared as mutable\n   --> crates/hanihi-cli/src/main.rs:298:10\n    |\n298 |     repl(&mut session, agent, provider, &args.model).await?;\n    |          ^^^^^^^^^^^^ cannot borrow as mutable\n    |\nnote: the binding is already a mutable borrow\n   --> crates/hanihi-cli/src/main.rs:219:9\n    |\n219 |     let session = mgr\n    |         ^^^^^^^\nhelp: to reborrow the mutable reference, add `*`\n    |\n298 |     repl(&mut *session, agent, provider, &args.model).await?;\n    |               +\n\nFor more information about this error, try `rustc --explain E0596`.\nerror: could not compile `hanihi-cli` (bin \"hanihi-cli\") due to 1 previous error\n",
+  "stdout": "",
+  "ts": "2026-08-24T21:57:18.830423985+00:00"
+}

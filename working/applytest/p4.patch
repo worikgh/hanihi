@@ -1,0 +1,6 @@
+--- a/working/applytest/main.rs
++++ b/working/applytest/main.rs
+@@ -1,2 +1,3 @@
+ fn main() {}
+ // local
++// patched

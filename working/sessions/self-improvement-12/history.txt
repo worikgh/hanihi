@@ -1,0 +1,3 @@
+I interupted you.  You are taking a long time and making a lot of tool calls.  Can you finish?
+/session
+/quit

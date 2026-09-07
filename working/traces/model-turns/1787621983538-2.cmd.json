@@ -1,0 +1,8 @@
+{
+  "command": "cargo clippy",
+  "duration_ms": 627,
+  "exit_code": 0,
+  "stderr": "warning: this pattern is unneeded as the `..` pattern can match that element\n   --> crates/hanihi-core/src/agent.rs:472:21\n    |\n472 | /                     reasoning: _,\n473 | |                     ..\n    | |____________________^ help: remove it\n    |\n    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#unneeded_wildcard_pattern\n    = note: `#[warn(clippy::unneeded_wildcard_pattern)]` on by default\n\nwarning: `hanihi-core` (lib) generated 1 warning (run `cargo clippy --fix --lib -p hanihi-core -- ` to apply 1 suggestion)\n    Checking hanihi-cli v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-cli)\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.51s\n",
+  "stdout": "",
+  "ts": "2026-08-25T01:39:43.538649720+00:00"
+}

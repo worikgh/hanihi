@@ -1,0 +1,8 @@
+{
+  "command": "cargo doc -p reedline --no-deps -q",
+  "duration_ms": 2068,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "",
+  "ts": "2026-08-29T04:05:24.093338970+00:00"
+}

@@ -44,7 +44,7 @@ Rule N: Sign all commit messages as: "Hānihi"
 
 ## Patch tooling (apply_patch / write_file)
 
-- `apply_patch` accepts only unified diffs:                                                                                                             `--- a/<path>` / `+++ b/<path>` headers and `@@ -l,c +l,c @@` hunks.
+- `apply_patch` accepts only unified diffs: `--- a/<path>` / `+++ b/<path>` headers and `@@ -l,c +l,c @@` hunks.
   Never emit `*** Begin Patch`, `*** Update File:`, or any other patch format.
 - Before producing a diff, read the current contents of every file it
   touches with `read_file`, or generate it with `git diff`. Copy all
