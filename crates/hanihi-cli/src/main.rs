@@ -19,7 +19,8 @@ use hanihi_core::session::SessionManager;
 use hanihi_core::{
     McpClient, SourceTree, StreamEvent, builtin_apply_patch, builtin_echo, builtin_get_time,
     builtin_grep, builtin_list_dir, builtin_read_file, builtin_read_session_log,
-    builtin_run_command, builtin_write_file, connect_chat_model_with_prompt,
+    builtin_run_command, builtin_run_command_write, builtin_write_file,
+    connect_chat_model_with_prompt,
 };
 use nu_ansi_term::Color;
 use reedline::{DefaultPrompt, FileBackedHistory, Reedline, Signal};
@@ -362,7 +363,11 @@ async fn main() -> Result<(), AgentError> {
             agent.add_tool(builtin_read_file(tree.clone()));
             agent.add_tool(builtin_list_dir(tree.clone()));
             agent.add_tool(builtin_grep(tree.clone()));
-            agent.add_tool(builtin_run_command(tree.clone(), traces_dir));
+            if args.write {
+                agent.add_tool(builtin_run_command_write(tree.clone(), traces_dir));
+            } else {
+                agent.add_tool(builtin_run_command(tree.clone(), traces_dir));
+            }
             agent.add_tool(builtin_read_session_log(log_path));
             if args.write {
                 agent.add_tool(builtin_apply_patch(tree.clone()));

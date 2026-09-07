@@ -16,7 +16,6 @@ use rig::tool::{PortableDynamicTool, ToolExecutionError, ToolOutput};
 use serde_json::json;
 use tokio::io::AsyncReadExt as _;
 
-use crate::debug;
 use crate::source::{SourceError, SourceTree};
 
 /// Map a [`SourceError`] onto a rig tool error with the right kind.
@@ -272,7 +271,23 @@ const NON_MUTATING: &[&str] = &[
     "xxd",
     "zipinfo",
 ];
+
+/// Which allowlist `check_command_argv` applies.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CommandMode {
+    /// Analysis/build only: git stays read-only.
+    ReadOnly,
+    /// Write tools are active: bounded git housekeeping is admitted.
+    Write,
+}
+
+#[cfg(test)]
 fn check_command_argv(argv: &[String]) -> Result<(), String> {
+    check_command_argv_mode(argv, CommandMode::ReadOnly)
+}
+
+/// Validate a whitespace-split command against the allowlist for `mode`.
+fn check_command_argv_mode(argv: &[String], mode: CommandMode) -> Result<(), String> {
     let Some(program) = argv.first() else {
         return Err("empty command".into());
     };
@@ -504,7 +519,10 @@ fn check_command_argv(argv: &[String]) -> Result<(), String> {
                             ))
                         }
                     }
-                    "add" | "commit" => Ok(()),
+                    "add" => check_git_add(mode),
+                    "restore" => check_git_restore(argv, mode),
+                    "rm" => check_git_rm(argv, mode),
+                    "commit" => check_git_commit(argv, mode),
                     other => Err(format!("git subcommand '{other}' is not allowed")),
                 }
             }
@@ -528,6 +546,82 @@ fn check_command_argv(argv: &[String]) -> Result<(), String> {
             )),
         }
     }
+}
+
+/// Flags permitted on `git commit --amend`, besides `-m`/`--message` values.
+const GIT_COMMIT_AMEND_OK: &[&str] = &["--amend", "--no-edit"];
+/// `git commit` message flags; each consumes the following argv element.
+const GIT_COMMIT_MESSAGE_FLAGS: &[&str] = &["-m", "--message"];
+
+/// True when `arg` is `flag` exactly, or `flag=value`.
+fn arg_is_flag(arg: &str, flag: &str) -> bool {
+    arg == flag
+        || arg
+            .strip_prefix(flag)
+            .is_some_and(|rest| rest.starts_with('='))
+}
+
+fn check_git_add(mode: CommandMode) -> Result<(), String> {
+    if mode != CommandMode::Write {
+        return Err("git add is restricted to write mode".into());
+    }
+    Ok(())
+}
+
+fn check_git_restore(argv: &[String], mode: CommandMode) -> Result<(), String> {
+    if mode != CommandMode::Write {
+        return Err("git restore is restricted to write mode".into());
+    }
+    if argv.get(2).map(String::as_str) != Some("--staged") {
+        return Err("git restore is restricted to --staged (unstaging only)".into());
+    }
+    if argv[3..]
+        .iter()
+        .any(|a| arg_is_flag(a, "--source") || a == "-s")
+    {
+        return Err("git restore --source is not allowed".into());
+    }
+    Ok(())
+}
+
+fn check_git_rm(argv: &[String], mode: CommandMode) -> Result<(), String> {
+    if mode != CommandMode::Write {
+        return Err("git rm is restricted to write mode".into());
+    }
+    if !argv[2..].iter().any(|a| a == "--cached") {
+        return Err("git rm is restricted to --cached (index only)".into());
+    }
+    Ok(())
+}
+
+fn check_git_commit(argv: &[String], mode: CommandMode) -> Result<(), String> {
+    if mode != CommandMode::Write {
+        return Err("git commit is restricted to write mode".into());
+    }
+    let args = &argv[2..];
+    if args.iter().any(|a| a == "--amend") {
+        check_commit_amend_args(args)?;
+    }
+    Ok(())
+}
+
+/// Reject any `git commit --amend` argument outside the whitelisted shapes.
+fn check_commit_amend_args(args: &[String]) -> Result<(), String> {
+    let mut iter = args.iter().peekable();
+    while let Some(a) = iter.next() {
+        if GIT_COMMIT_MESSAGE_FLAGS.contains(&a.as_str()) {
+            iter.next();
+            continue;
+        }
+        if arg_is_flag(a, "--message") {
+            continue;
+        }
+        if GIT_COMMIT_AMEND_OK.contains(&a.as_str()) {
+            continue;
+        }
+        return Err(format!("git commit --amend does not allow argument '{a}'"));
+    }
+    Ok(())
 }
 
 /// Build the minimal environment passed to child processes: PATH, HOME, and
@@ -674,6 +768,15 @@ fn render_command_result(command: &str, outcome: &CommandOutcome, trace_path: &P
     out
 }
 
+/// `run_command` description when write tools are active.
+const RUN_COMMAND_DESC_WRITE: &str = "Run an allowlisted command inside the repository root. \
+No shell: the command is split on whitespace into argv. cargo subcommands: check, build, test, \
+clippy, fmt, doc, run -p hanihi-eval. git subcommands: status, diff, log, show, apply --check; \
+write mode also allows git add, git restore --staged, git rm --cached, git commit, and git \
+commit --amend. cwd is pinned to the repo root; the environment is scrubbed (PATH, HOME, \
+CARGO_* only); output is capped at 64 KiB; the full output is written to a trace file. Returns \
+exit code, duration, stdout/stderr (truncated), and the trace path.";
+
 /// Tool: run an allowlisted `cargo`/`git` command inside the repo root.
 ///
 /// Registered always (it is an analysis/build tool, not a write tool). The
@@ -682,14 +785,40 @@ fn render_command_result(command: &str, outcome: &CommandOutcome, trace_path: &P
 /// persisted to a trace file. The result carries exit code + duration +
 /// truncated stdout/stderr + the trace path.
 pub fn builtin_run_command(tree: Arc<SourceTree>, traces_dir: PathBuf) -> PortableDynamicTool {
-    PortableDynamicTool::new(
-        "run_command",
-        "Run an allowlisted command inside the repository root. No shell: the command is \
+    builtin_run_command_for(tree, traces_dir, CommandMode::ReadOnly)
+}
+
+/// Write-mode variant of [`builtin_run_command`]: admits bounded git
+/// housekeeping verbs (`add`, `restore --staged`, `rm --cached`, `commit`,
+/// `commit --amend`).
+pub fn builtin_run_command_write(
+    tree: Arc<SourceTree>,
+    traces_dir: PathBuf,
+) -> PortableDynamicTool {
+    builtin_run_command_for(tree, traces_dir, CommandMode::Write)
+}
+
+fn builtin_run_command_for(
+    tree: Arc<SourceTree>,
+    traces_dir: PathBuf,
+    mode: CommandMode,
+) -> PortableDynamicTool {
+    // Read-only keeps its original description verbatim; only write mode
+    // advertises the extra housekeeping verbs.
+    let description = match mode {
+        CommandMode::ReadOnly => {
+            "Run an allowlisted command inside the repository root. No shell: the command is \
 	 split on whitespace into argv. cargo subcommands: check, build, test, clippy, fmt, \
 	 doc, run -p hanihi-eval. git subcommands: status, diff, log, show, apply --check. \
 	 cwd is pinned to the repo root; the environment is scrubbed (PATH, HOME, CARGO_* \
 	 only); output is capped at 64 KiB; the full output is written to a trace file. \
-	 Returns exit code, duration, stdout/stderr (truncated), and the trace path.",
+	 Returns exit code, duration, stdout/stderr (truncated), and the trace path."
+        }
+        CommandMode::Write => RUN_COMMAND_DESC_WRITE,
+    };
+    PortableDynamicTool::new(
+        "run_command",
+        description,
         json!({
             "type": "object",
             "properties": {
@@ -725,7 +854,8 @@ pub fn builtin_run_command(tree: Arc<SourceTree>, traces_dir: PathBuf) -> Portab
                 if argv.is_empty() {
                     return Err(ToolExecutionError::invalid_args("empty command"));
                 }
-                check_command_argv(&argv).map_err(ToolExecutionError::permission_denied)?;
+                check_command_argv_mode(&argv, mode)
+                    .map_err(ToolExecutionError::permission_denied)?;
 
                 let outcome =
                     execute_captured(&argv, tree.root(), Duration::from_secs(timeout_secs))
@@ -1174,6 +1304,133 @@ mod tests {
                 "--manifest-path",
                 "/etc/Cargo.toml"
             ]))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn command_allowlist_read_only_denies_housekeeping() {
+        let cases = [
+            argv(&["git", "add"]),
+            argv(&["git", "add", "-A"]),
+            argv(&["git", "add", "--all"]),
+            argv(&["git", "restore", "--staged", "src/main.rs"]),
+            argv(&["git", "rm", "--cached", "src/main.rs"]),
+            argv(&["git", "commit"]),
+            argv(&["git", "commit", "--amend", "--no-edit"]),
+        ];
+        for cmd in cases {
+            assert!(
+                check_command_argv_mode(&cmd, CommandMode::ReadOnly).is_err(),
+                "read-only mode must deny: {cmd:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn command_allowlist_write_accepts_housekeeping() {
+        let cases = [
+            argv(&["git", "add"]),
+            argv(&["git", "add", "-A"]),
+            argv(&["git", "add", "--all"]),
+            argv(&["git", "restore", "--staged", "src/main.rs"]),
+            argv(&["git", "restore", "--staged", "src/lib.rs", "Cargo.toml"]),
+            argv(&["git", "rm", "--cached", "src/main.rs"]),
+            argv(&["git", "commit"]),
+            argv(&["git", "commit", "--amend"]),
+            argv(&["git", "commit", "--amend", "--no-edit"]),
+            argv(&["git", "commit", "--no-edit", "--amend"]),
+            argv(&["git", "commit", "--amend", "-m", "reword"]),
+            argv(&["git", "commit", "--amend", "--message", "reword"]),
+        ];
+        for cmd in cases {
+            check_command_argv_mode(&cmd, CommandMode::Write)
+                .unwrap_or_else(|e| panic!("write mode must allow {cmd:?}: {e}"));
+        }
+    }
+
+    #[test]
+    fn command_allowlist_write_still_denies_history_verbs() {
+        let cases = [
+            argv(&["git", "push", "origin", "main"]),
+            argv(&["git", "reset"]),
+            argv(&["git", "reset", "--hard"]),
+            argv(&["git", "rebase", "main"]),
+            argv(&["git", "filter-branch", "--all"]),
+            argv(&["git", "filter-repo", "--path", "x"]),
+            argv(&["git", "merge", "main"]),
+            argv(&["git", "cherry-pick", "HEAD~1"]),
+            argv(&["git", "revert", "HEAD"]),
+        ];
+        for cmd in cases {
+            assert!(
+                check_command_argv_mode(&cmd, CommandMode::Write).is_err(),
+                "write mode must deny: {cmd:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn command_allowlist_write_bounds_commit_amend() {
+        let allowed = [
+            argv(&["git", "commit", "--amend"]),
+            argv(&["git", "commit", "--amend", "--no-edit"]),
+            argv(&["git", "commit", "--amend", "-m", "msg"]),
+            argv(&["git", "commit", "--amend", "--message", "msg"]),
+        ];
+        for cmd in allowed {
+            check_command_argv_mode(&cmd, CommandMode::Write)
+                .unwrap_or_else(|e| panic!("bounded amend must allow {cmd:?}: {e}"));
+        }
+
+        let denied = [
+            argv(&["git", "commit", "--amend", "-c", "HEAD~2"]),
+            argv(&["git", "commit", "--amend", "--reedit-message", "HEAD~2"]),
+            argv(&["git", "commit", "--amend", "-C", "HEAD~2"]),
+            argv(&["git", "commit", "--amend", "--reuse-message", "HEAD~2"]),
+            argv(&["git", "commit", "--amend", "--fixup", "HEAD~2"]),
+            argv(&["git", "commit", "--amend", "--fixup=HEAD~2"]),
+            argv(&["git", "commit", "--amend", "--squash", "HEAD~2"]),
+            argv(&["git", "commit", "--amend", "--squash=HEAD~2"]),
+            argv(&["git", "commit", "--amend", "--author", "X <x@y>"]),
+            argv(&["git", "commit", "--amend", "--author=X <x@y>"]),
+            argv(&["git", "commit", "--amend", "--date", "2020-01-01"]),
+            argv(&["git", "commit", "--amend", "--date=2020-01-01"]),
+            argv(&[
+                "git",
+                "commit",
+                "--amend",
+                "--committer-date-is-author-date",
+            ]),
+            argv(&["git", "commit", "--amend", "--reset-author"]),
+        ];
+        for cmd in denied {
+            assert!(
+                check_command_argv_mode(&cmd, CommandMode::Write).is_err(),
+                "must deny: {cmd:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn command_allowlist_write_denies_cwd_escapes() {
+        let cases = [
+            argv(&["git", "-C", "/tmp", "add", "-A"]),
+            argv(&["git", "--directory", "/tmp", "restore", "--staged", "x"]),
+            argv(&["git", "-C", "/tmp", "rm", "--cached", "x"]),
+            argv(&["git", "-C", "/tmp", "commit", "--amend", "--no-edit"]),
+        ];
+        for cmd in cases {
+            assert!(
+                check_command_argv_mode(&cmd, CommandMode::Write).is_err(),
+                "write mode must deny cwd escape: {cmd:?}"
+            );
+        }
+        assert!(
+            check_command_argv_mode(
+                &argv(&["cargo", "check", "--manifest-path", "/etc/Cargo.toml"]),
+                CommandMode::Write
+            )
             .is_err()
         );
     }

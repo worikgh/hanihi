@@ -17,7 +17,7 @@ use hanihi_core::session::log::LogEntry;
 use hanihi_core::{
     SourceTree, builtin_apply_patch, builtin_echo, builtin_get_time, builtin_grep,
     builtin_list_dir, builtin_read_file, builtin_read_session_log, builtin_run_command,
-    builtin_write_file,
+    builtin_run_command_write, builtin_write_file,
 };
 use serde::Deserialize;
 use tracing_subscriber::EnvFilter;
@@ -685,7 +685,11 @@ async fn run_case(
         agent.add_tool(builtin_read_file(tree.clone()));
         agent.add_tool(builtin_list_dir(tree.clone()));
         agent.add_tool(builtin_grep(tree.clone()));
-        agent.add_tool(builtin_run_command(tree.clone(), traces_dir));
+        if case.write_tools {
+            agent.add_tool(builtin_run_command_write(tree.clone(), traces_dir));
+        } else {
+            agent.add_tool(builtin_run_command(tree.clone(), traces_dir));
+        }
         agent.add_tool(builtin_read_session_log(log_path));
         if case.write_tools {
             agent.add_tool(builtin_apply_patch(tree.clone()));
