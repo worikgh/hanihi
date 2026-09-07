@@ -2,6 +2,8 @@
 
 A  tool-calling agent harness in Rust. Built on:
 
+** A lot of the documents and code herein are written using AI and other algorithmic systems**
+
 - **rig** (`rig-core` 0.41) — OpenAI-compatible chat completions client, tool
   definitions, completion loop
 - **rmcp** (3.1) — Model Context Protocol client: attach tools from MCP stdio
