@@ -13,6 +13,9 @@ struct Args {
     /// Analyse this session: print kind and timestamp per log entry.
     #[arg(long, value_name = "SESSION")]
     session: Option<String>,
+
+    #[arg(long="working-directory", short='d', default_value = DEFAULT_WORKING_DIR)]
+    working_dir: String,
 }
 
 fn main() -> ExitCode {
