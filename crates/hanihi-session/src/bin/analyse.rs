@@ -18,7 +18,7 @@ struct Args {
     working_dir: String,
 
     #[arg(long="cost", short='c',  action = clap::ArgAction::SetTrue)]
-    cost: Option<bool>,
+    cost: bool,
 }
 
 enum Action {
@@ -36,14 +36,15 @@ enum Action {
 impl Args {
     fn action(&self) -> Result<Action, String> {
         if self.session.is_none() {
-            if self.cost.is_none() {
-                Ok(Action::ListSessions)
+            // `self.cost`
+            if self.cost {
+                Err(format!("Must specify a session: cost: {:?}", self.cost))
             } else {
-                Err("Must specify a session".into())
+                Ok(Action::ListSessions)
             }
         } else {
             let session = self.session.clone().unwrap();
-            if self.cost.is_some() {
+            if self.cost {
                 Ok(Action::CostOfSession(session))
             } else {
                 Ok(Action::SessionBrief(session))
