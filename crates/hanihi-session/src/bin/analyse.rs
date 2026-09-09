@@ -2,41 +2,89 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::Parser;
-use hanihi_core::session::SessionManager;
 use hanihi_core::session::log::read_log_tolerant;
+use hanihi_core::session::{SessionManager, log::LogEntry};
 
 const DEFAULT_WORKING_DIR: &str = "./working";
 
 #[derive(Debug, Parser)]
 #[command(name = "analyse", about = "Inspect hānihi session logs")]
 struct Args {
-    /// Analyse this session: print kind and timestamp per log entry.
+    /// Analyse this session: If no other arguments print kind and timestamp per log entry.
     #[arg(long, value_name = "SESSION")]
     session: Option<String>,
 
     #[arg(long="working-directory", short='d', default_value = DEFAULT_WORKING_DIR)]
     working_dir: String,
+
+    #[arg(long="cost", short='c',  action = clap::ArgAction::SetTrue)]
+    cost: Option<bool>,
 }
 
+enum Action {
+    // Defrault action, list available sessions
+    ListSessions,
+
+    // If only the session is declared then list the time stamp and
+    // kind of each entry in the session
+    SessionBrief(String),
+
+    // The argument "--cost" or "-c" is supplied, and a session.
+    // Display a three column display: Timestamp, tokens in, tokes out
+    CostOfSession(String),
+}
+impl Args {
+    fn action(&self) -> Result<Action, String> {
+        if self.session.is_none() {
+            if self.cost.is_none() {
+                Ok(Action::ListSessions)
+            } else {
+                Err("Must specify a session".into())
+            }
+        } else {
+            let session = self.session.clone().unwrap();
+            if self.cost.is_some() {
+                Ok(Action::CostOfSession(session))
+            } else {
+                Ok(Action::SessionBrief(session))
+            }
+        }
+    }
+}
 fn main() -> ExitCode {
     let args = Args::parse();
     let working_dir = PathBuf::from(DEFAULT_WORKING_DIR);
 
-    match args.session {
-        Some(name) => match analyse_session(&working_dir, &name) {
+    // Calculate what the user wants to display.
+    match args.action() {
+        Ok(Action::SessionBrief(session)) => {
+            match analyse_session(&working_dir, session.as_str()) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("{e}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
+        Ok(Action::ListSessions) => match list_sessions(&working_dir) {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
                 eprintln!("{e}");
                 ExitCode::FAILURE
             }
         },
-        None => match list_sessions(&working_dir) {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(e) => {
-                eprintln!("{e}");
+        Ok(Action::CostOfSession(session)) => {
+            if let Err(error) = analyse_cost(&working_dir, &session) {
+                eprintln!("{error}");
                 ExitCode::FAILURE
+            } else {
+                ExitCode::SUCCESS
             }
-        },
+        }
+        Err(error) => {
+            eprintln!("{error}");
+            ExitCode::FAILURE
+        }
     }
 }
 
@@ -60,18 +108,44 @@ fn session_names(working_dir: &Path) -> Result<Vec<String>, String> {
         .map_err(|e| format!("error listing sessions: {e}"))
 }
 
+/// Helper function to get the session event file
+fn session_events(working_dir: &Path, session: &str) -> Result<PathBuf, String> {
+    Ok(working_dir
+        .join("sessions")
+        .join(session)
+        .join("events.jsonl"))
+}
+
+/// A report on the costs (in tokens) of LLM_Prompts
+fn analyse_cost(working_dir: &Path, session: &str) -> Result<(), String> {
+    let path = session_events(working_dir, session)?;
+    let logs =
+        read_log_tolerant(&path).map_err(|e| format!("error reading {}: {e}", path.display()))?;
+    for entry in &logs.entries {
+        if let LogEntry::LlmResponse { ts, turn: _, data } = entry {
+            println!(
+                "{}\t{}\t{}",
+                ts.to_rfc3339(),
+                data.usage.input_tokens,
+                data.usage.output_tokens
+            );
+        }
+    }
+    Ok(())
+}
+
 /// Print `kind<TAB>ts` for every entry in one session's `events.jsonl`.
 ///
 /// Bad lines are reported as warnings on stderr but do not abort the read.
-fn analyse_session(working_dir: &Path, name: &str) -> Result<(), String> {
-    let path = working_dir.join("sessions").join(name).join("events.jsonl");
-    let outcome =
+fn analyse_session(working_dir: &Path, session: &str) -> Result<(), String> {
+    let path = session_events(working_dir, session)?;
+    let logs =
         read_log_tolerant(&path).map_err(|e| format!("error reading {}: {e}", path.display()))?;
 
-    for entry in &outcome.entries {
+    for entry in &logs.entries {
         println!("{}\t{}", entry.kind(), entry.ts().to_rfc3339());
     }
-    for err in &outcome.errors {
+    for err in &logs.errors {
         eprintln!(
             "warning: {} line {}: {}",
             path.display(),
