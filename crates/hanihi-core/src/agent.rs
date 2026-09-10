@@ -858,11 +858,11 @@ mod tests {
             "read_file",
             "A read-only tool that counts executions.",
             serde_json::json!({
-                "type": "object",
-                "properties": {
-                "path": { "type": "string" }
-                },
-                "required": ["path"]
+            "type": "object",
+            "properties": {
+            "path": { "type": "string" }
+            },
+            "required": ["path"]
             }),
             move |args: serde_json::Value| {
                 let counter = counter.clone();
