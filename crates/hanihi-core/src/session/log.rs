@@ -488,6 +488,166 @@ pub fn read_log_tolerant(path: &Path) -> std::io::Result<LogReadResult> {
     Ok(parse_log_tolerant(&contents))
 }
 
+// Display for `LogEntry`
+use std::fmt::{Display, Formatter};
+
+impl Display for LogEntry {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::SessionCreated { ts, turn, data } => {
+                writeln!(f, "[{ts}] Session created (turn {turn})")?;
+                writeln!(f, "  ID: {id}", id = data.session_id)?;
+                writeln!(f, "  Name: {name}", name = data.name)?;
+                writeln!(f, "  Model: {model}", model = data.model)?;
+                write!(f, "  System prompt: {}", data.system_prompt)
+            }
+
+            Self::SessionOpened { ts, turn, data } => {
+                write!(
+                    f,
+                    "[{ts}] Session opened (turn {turn}) — {} ({})",
+                    data.name, data.session_id
+                )
+            }
+
+            Self::SessionClosed { ts, turn, data } => {
+                write!(
+                    f,
+                    "[{ts}] Session closed (turn {turn}) — {} ({})",
+                    data.name, data.session_id
+                )
+            }
+
+            Self::UserInput { ts, turn, data } => {
+                writeln!(f, "[{ts}] User input (turn {turn})")?;
+                write_indented(f, &data.text, "  ")
+            }
+
+            Self::LlmPrompt { ts, turn, data } => {
+                writeln!(f, "[{ts}] LLM prompt (turn {turn})")?;
+                writeln!(f, "  Provider: {}", data.provider)?;
+                writeln!(f, "  Model: {}", data.model)?;
+                writeln!(f, "  Messages: ")?;
+                write_json_indented(f, &data.messages, "    ")?;
+                writeln!(f)?;
+                writeln!(f, "  Tool definitions:")?;
+                write_json_indented(f, &data.tool_definitions, "    ")
+            }
+
+            Self::LlmResponse { ts, turn, data } => {
+                writeln!(f, "[{ts}] LLM response (turn {turn})")?;
+
+                if let Some(message_id) = &data.message_id {
+                    writeln!(f, "  Message ID: {message_id}")?;
+                }
+
+                if let Some(text) = &data.text {
+                    writeln!(f, "  Text:")?;
+                    write_indented(f, text, "    ")?;
+                    writeln!(f)?;
+                }
+
+                if let Some(reasoning) = &data.reasoning {
+                    writeln!(f, "  Reasoning:")?;
+                    write_indented(f, reasoning, "    ")?;
+                    writeln!(f)?;
+                }
+
+                if let Some(tool_calls) = &data.tool_calls {
+                    if !tool_calls.is_empty() {
+                        writeln!(f, "  Tool calls:")?;
+
+                        for call in tool_calls {
+                            writeln!(f, "    - {} ({})", call.name, call.id)?;
+                            writeln!(f, "      Arguments:")?;
+                            write_json_indented(f, &call.arguments, "        ")?;
+                            writeln!(f)?;
+                        }
+                    }
+                }
+
+                write!(
+                    f,
+                    "  Usage: {} input tokens, {} output tokens",
+                    data.usage.input_tokens, data.usage.output_tokens
+                )
+            }
+
+            Self::ToolExecution { ts, turn, data } => {
+                writeln!(f, "[{ts}] Tool execution (turn {turn})")?;
+                writeln!(f, "  Tool: {}", data.name)?;
+                writeln!(f, "  Call ID: {}", tool_call_id(data))?;
+                writeln!(f, "  Arguments:")?;
+                write_json_indented(f, &data.arguments, "    ")?;
+                writeln!(f)?;
+                writeln!(f, "  Result:")?;
+                write_indented(f, &data.result, "    ")
+            }
+
+            Self::TurnComplete { ts, turn, data } => {
+                writeln!(f, "[{ts}] Turn complete (turn {turn})")?;
+                writeln!(f, "  Tool calls: {}", data.tool_calls)?;
+                write_indented(f, &data.text, "  ")
+            }
+
+            Self::Error { ts, turn, data } => {
+                write!(
+                    f,
+                    "[{ts}] Error during {} (turn {turn}): {}",
+                    data.stage, data.message
+                )
+            }
+        }
+    }
+}
+
+impl Display for ErrorStage {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::LlmCall => write!(f, "LLM call"),
+            Self::ToolExecution => write!(f, "tool execution"),
+        }
+    }
+}
+
+fn write_indented(f: &mut Formatter<'_>, text: &str, indent: &str) -> fmt::Result {
+    for (index, line) in text.lines().enumerate() {
+        if index > 0 {
+            writeln!(f)?;
+        }
+
+        write!(f, "{indent}{line}")?;
+    }
+
+    Ok(())
+}
+
+fn write_json_indented(
+    f: &mut Formatter<'_>,
+    value: &serde_json::Value,
+    indent: &str,
+) -> fmt::Result {
+    let json = serde_json::to_string_pretty(value).map_err(|_| fmt::Error)?;
+
+    for (index, line) in json.lines().enumerate() {
+        if index > 0 {
+            writeln!(f)?;
+        }
+
+        write!(f, "{indent}{line}")?;
+    }
+
+    Ok(())
+}
+
+fn tool_call_id(data: &ToolExecutionData) -> &str {
+    if data.call_id.is_empty() {
+        &data.tool_call_id
+    } else {
+        &data.call_id
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

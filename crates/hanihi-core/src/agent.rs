@@ -531,6 +531,7 @@ async fn execute_tool_with_cache(
     Ok(rendered)
 }
 
+#[allow(clippy::too_many_arguments)]
 /// The inner streaming loop, run on a spawned task.
 ///
 /// Consumes the model stream, executes tools when complete tool calls

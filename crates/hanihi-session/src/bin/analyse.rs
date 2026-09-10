@@ -1,17 +1,22 @@
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use clap::Parser;
+use clap::{ArgGroup, Parser};
 use hanihi_core::session::log::read_log_tolerant;
 use hanihi_core::session::{SessionManager, log::LogEntry};
 
 const DEFAULT_WORKING_DIR: &str = "./working";
 
 #[derive(Debug, Parser)]
+#[command(group(
+    ArgGroup::new("output")
+	.args(["cost", "verbose"])
+	.multiple(false)
+))]
 #[command(name = "analyse", about = "Inspect hānihi session logs")]
 struct Args {
     /// Analyse this session: If no other arguments print kind and timestamp per log entry.
-    #[arg(long, value_name = "SESSION")]
+    #[arg(short = 's', long, value_name = "SESSION")]
     session: Option<String>,
 
     #[arg(long="working-directory", short='d', default_value = DEFAULT_WORKING_DIR)]
@@ -19,26 +24,32 @@ struct Args {
 
     #[arg(long="cost", short='c',  action = clap::ArgAction::SetTrue)]
     cost: bool,
+
+    #[arg(long="verbose", short='v',  action = clap::ArgAction::SetTrue)]
+    verbose: bool,
 }
 
 enum Action {
-    // Defrault action, list available sessions
+    /// Defrault action, list available sessions
     ListSessions,
 
-    // If only the session is declared then list the time stamp and
-    // kind of each entry in the session
+    /// If only the session is declared then list the time stamp and
+    /// kind of each entry in the session
     SessionBrief(String),
 
-    // The argument "--cost" or "-c" is supplied, and a session.
-    // Display a three column display: Timestamp, tokens in, tokes out
+    /// The argument "--cost" or "-c" is supplied, and a session.
+    /// Display a three column display: Timestamp, tokens in, tokes out
     CostOfSession(String),
+
+    /// Display verbose session information
+    Verbose(String),
 }
 impl Args {
     fn action(&self) -> Result<Action, String> {
         if self.session.is_none() {
             // `self.cost`
-            if self.cost {
-                Err(format!("Must specify a session: cost: {:?}", self.cost))
+            if self.cost || self.verbose {
+                Err(format!("Must specify a session"))
             } else {
                 Ok(Action::ListSessions)
             }
@@ -46,6 +57,8 @@ impl Args {
             let session = self.session.clone().unwrap();
             if self.cost {
                 Ok(Action::CostOfSession(session))
+            } else if self.verbose {
+                Ok(Action::Verbose(session))
             } else {
                 Ok(Action::SessionBrief(session))
             }
@@ -77,6 +90,14 @@ fn main() -> ExitCode {
         Ok(Action::CostOfSession(session)) => {
             if let Err(error) = analyse_cost(&working_dir, &session) {
                 eprintln!("{error}");
+                ExitCode::FAILURE
+            } else {
+                ExitCode::SUCCESS
+            }
+        }
+        Ok(Action::Verbose(session)) => {
+            if let Err(e) = verbose_session(&working_dir, &session) {
+                eprintln!("{e}");
                 ExitCode::FAILURE
             } else {
                 ExitCode::SUCCESS
@@ -153,6 +174,18 @@ fn analyse_session(working_dir: &Path, session: &str) -> Result<(), String> {
             err.line,
             err.message
         );
+    }
+    Ok(())
+}
+
+/// Print everything from the session
+fn verbose_session(working_dir: &Path, session: &str) -> Result<(), String> {
+    let path = session_events(working_dir, session)?;
+    let logs =
+        read_log_tolerant(&path).map_err(|e| format!("error reading {}: {e}", path.display()))?;
+
+    for entry in &logs.entries {
+        println!("{}", entry);
     }
     Ok(())
 }
