@@ -53,30 +53,30 @@ pub fn builtin_get_time() -> PortableDynamicTool {
     )
 }
 
-/// Tool: echo the provided text back verbatim.
-pub fn builtin_echo() -> PortableDynamicTool {
-    PortableDynamicTool::new(
-        "echo",
-        "Echo the provided text back verbatim.",
-        json!({
-            "type": "object",
-            "properties": {
-            "text": { "type": "string", "description": "Text to echo" }
-            },
-            "required": ["text"]
-        }),
-        |args: serde_json::Value| {
-            Box::pin(async move {
-                let text = args
-                    .get("text")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or_default()
-                    .to_string();
-                Ok(ToolOutput::text(text))
-            })
-        },
-    )
-}
+// /// Tool: echo the provided text back verbatim.
+// pub fn builtin_echo() -> PortableDynamicTool {
+//     PortableDynamicTool::new(
+//         "echo",
+//         "Echo the provided text back verbatim.",
+//         json!({
+//             "type": "object",
+//             "properties": {
+//             "text": { "type": "string", "description": "Text to echo" }
+//             },
+//             "required": ["text"]
+//         }),
+//         |args: serde_json::Value| {
+//             Box::pin(async move {
+//                 let text = args
+//                     .get("text")
+//                     .and_then(|v| v.as_str())
+//                     .unwrap_or_default()
+//                     .to_string();
+//                 Ok(ToolOutput::text(text))
+//             })
+//         },
+//     )
+// }
 
 /// Tool: read a text file from the git repository.
 pub fn builtin_read_file(tree: Arc<SourceTree>) -> PortableDynamicTool {

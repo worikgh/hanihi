@@ -3,8 +3,7 @@
 //! Used to exercise the harness end-to-end:
 //! `hanihi-cli --mcp-command ./target/debug/mcp-echo-server`
 
-use std::future::Future;
-
+use hanihi_core::debug;
 use rmcp::ErrorData;
 use rmcp::handler::server::ServerHandler;
 use rmcp::model::{
@@ -13,31 +12,19 @@ use rmcp::model::{
 };
 use rmcp::service::{MaybeSendFuture, RequestContext, RoleServer, ServiceExt};
 use rmcp::transport;
-
+use std::future::Future;
+mod echo_tool;
 /// Echo server: replies with the `text` argument verbatim.
 #[derive(Debug, Clone, Default)]
-struct EchoServer;
+struct McpServer;
 
-impl ServerHandler for EchoServer {
+impl ServerHandler for McpServer {
     fn list_tools(
         &self,
         _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<ListToolsResult, ErrorData>> + MaybeSendFuture + '_ {
-        std::future::ready(Ok(ListToolsResult::with_all_items(vec![Tool::new(
-            "mcp_echo",
-            "Echo the provided text back verbatim. Served over MCP.",
-            serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "text": { "type": "string", "description": "Text to echo" }
-                },
-                "required": ["text"]
-            })
-            .as_object()
-            .expect("static schema is an object")
-            .clone(),
-        )])))
+        std::future::ready(Ok(ListToolsResult::with_all_items(vec![echo_tool::new()])))
     }
 
     fn call_tool(
@@ -45,14 +32,9 @@ impl ServerHandler for EchoServer {
         request: CallToolRequestParams,
         _context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<CallToolResponse, ErrorData>> + MaybeSendFuture + '_ {
-        let text = request
-            .arguments
-            .and_then(|mut args| args.remove("text"))
-            .and_then(|value| value.as_str().map(String::from))
-            .unwrap_or_default();
-        std::future::ready(Ok(CallToolResponse::from(CallToolResult::success(vec![
-            ContentBlock::text(text),
-        ]))))
+        debug::log_to_file("mcp-serve call_tool: name", &request.name);
+        let request = request.clone();
+        echo_tool::call(request, _context)
     }
 }
 
@@ -90,7 +72,7 @@ impl From<tokio::task::JoinError> for ServerError {
 
 #[tokio::main]
 async fn main() -> Result<(), ServerError> {
-    let service = EchoServer.serve(transport::stdio()).await?;
+    let service = McpServer.serve(transport::stdio()).await?;
     let _reason = service.waiting().await?;
     Ok(())
 }

@@ -26,7 +26,13 @@ pub use mcp::McpClient;
 pub use session::{Session, SessionError, SessionManager};
 pub use source::{Language, MAX_READ_BYTES, SourceError, SourceTree};
 pub use tool::{
-    builtin_echo, builtin_get_time, builtin_grep, builtin_list_dir, builtin_read_file,
-    builtin_read_session_log, builtin_run_command, builtin_run_command_write,
+    //builtin_echo,
+    builtin_get_time,
+    builtin_grep,
+    builtin_list_dir,
+    builtin_read_file,
+    builtin_read_session_log,
+    builtin_run_command,
+    builtin_run_command_write,
 };
 pub use write::{builtin_apply_patch, builtin_write_file};

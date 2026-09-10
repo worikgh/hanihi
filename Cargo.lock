@@ -1361,6 +1361,7 @@ dependencies = [
 name = "mcp-echo-server"
 version = "0.3.0"
 dependencies = [
+ "hanihi-core",
  "rmcp",
  "serde",
  "serde_json",

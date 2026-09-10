@@ -15,9 +15,17 @@ use hanihi_core::connect_chat_model;
 use hanihi_core::session::SessionManager;
 use hanihi_core::session::log::LogEntry;
 use hanihi_core::{
-    SourceTree, builtin_apply_patch, builtin_echo, builtin_get_time, builtin_grep,
-    builtin_list_dir, builtin_read_file, builtin_read_session_log, builtin_run_command,
-    builtin_run_command_write, builtin_write_file,
+    SourceTree,
+    builtin_apply_patch,
+    //builtin_echo,
+    builtin_get_time,
+    builtin_grep,
+    builtin_list_dir,
+    builtin_read_file,
+    builtin_read_session_log,
+    builtin_run_command,
+    builtin_run_command_write,
+    builtin_write_file,
 };
 use serde::Deserialize;
 use tracing_subscriber::EnvFilter;
@@ -662,7 +670,7 @@ async fn run_case(
         connect_chat_model(base_url.to_string(), api_key.to_string(), model.to_string())
             .map_err(|e| format!("connect model: {e}"))?;
     agent.add_tool(builtin_get_time());
-    agent.add_tool(builtin_echo());
+    // agent.add_tool(builtin_echo());
 
     // Source-tree tools bound to the case repo (or cwd when none given).
     let tree = match &repo_dir {
