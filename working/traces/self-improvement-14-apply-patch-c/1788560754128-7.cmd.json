@@ -1,8 +1,0 @@
-{
-  "command": "cargo check -p hanihi-core",
-  "duration_ms": 33060,
-  "exit_code": 0,
-  "stderr": "   Compiling aws-lc-sys v0.44.0\n   Compiling aws-lc-rs v1.18.0\n   Compiling rustls v0.23.43\n    Checking hanihi-core v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-core)\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 33.01s\n",
-  "stdout": "",
-  "ts": "2026-09-04T22:25:54.128114130+00:00"
-}

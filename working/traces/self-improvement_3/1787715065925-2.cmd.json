@@ -1,8 +1,0 @@
-{
-  "command": "cargo build -p hanihi-cli",
-  "duration_ms": 44536,
-  "exit_code": 0,
-  "stderr": "   Compiling tokio-rustls v0.26.4\n   Compiling hyper-rustls v0.27.9\n   Compiling reqwest v0.13.4\n   Compiling rig-core v0.41.0\n   Compiling hanihi-core v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-core)\n   Compiling hanihi-cli v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-cli)\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 44.43s\n",
-  "stdout": "",
-  "ts": "2026-08-26T03:31:05.925541329+00:00"
-}

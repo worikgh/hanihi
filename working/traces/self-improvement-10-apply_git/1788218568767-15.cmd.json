@@ -1,8 +1,0 @@
-{
-  "command": "wc -c crates/hanihi-cli/src/main.rs crates/hanihi-core/src/source.rs crates/hanihi-core/src/tool.rs crates/hanihi-core/src/write.rs",
-  "duration_ms": 3,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": " 26989 crates/hanihi-cli/src/main.rs\n 18055 crates/hanihi-core/src/source.rs\n 47567 crates/hanihi-core/src/tool.rs\n 31351 crates/hanihi-core/src/write.rs\n123962 total\n",
-  "ts": "2026-08-31T23:22:48.767356070+00:00"
-}

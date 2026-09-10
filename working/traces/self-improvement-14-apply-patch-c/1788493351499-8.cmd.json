@@ -1,8 +1,0 @@
-{
-  "command": "cargo test -p hanihi-core --lib debug",
-  "duration_ms": 6278,
-  "exit_code": 0,
-  "stderr": "   Compiling hanihi-core v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-core)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.23s\n     Running unittests src/lib.rs (target/debug/deps/hanihi_core-12c706d7be1a6e4c)\n",
-  "stdout": "\nrunning 3 tests\ntest debug::tests::log_to_file_is_best_effort_on_bad_target ... ok\ntest debug::tests::log_to_file_honours_env_target ... ok\ntest debug::tests::append_creates_file_and_stores_tagged_lines ... ok\n\ntest result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 69 filtered out; finished in 0.00s\n\n",
-  "ts": "2026-09-04T03:42:31.500002633+00:00"
-}

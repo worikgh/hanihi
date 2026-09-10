@@ -1,8 +1,0 @@
-{
-  "command": "cargo test -p hanihi-core --lib write::tests::apply_patch_applies_and_commits write::tests::apply_patch_adds_new_file_on_clean_tree -- --nocapture",
-  "duration_ms": 16,
-  "exit_code": 1,
-  "stderr": "error: unexpected argument 'write::tests::apply_patch_adds_new_file_on_clean_tree' found\n\nUsage: cargo test [OPTIONS] [TESTNAME] [-- [ARGS]...]\n\nFor more information, try '--help'.\n",
-  "stdout": "",
-  "ts": "2026-08-31T03:52:32.532335137+00:00"
-}

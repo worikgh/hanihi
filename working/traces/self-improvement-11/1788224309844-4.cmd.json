@@ -1,8 +1,0 @@
-{
-  "command": "git status --short",
-  "duration_ms": 4,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": " M crates/hanihi-core/src/agent.rs\n?? crates/hanihi-core/applytest.patch\n?? crates/hanihi-core/src/tool.patch\n?? crates/hanihi-core/src/write.diff\n?? crates/hanihi-core/src/write.patch\n?? prompts/self-improvement.md\n?? reports/\n?? working/\n",
-  "ts": "2026-09-01T00:58:29.844417622+00:00"
-}

@@ -1,8 +1,0 @@
-{
-  "command": "cargo test -p hanihi-session --bin analyse",
-  "duration_ms": 1054,
-  "exit_code": 0,
-  "stderr": "   Compiling hanihi-session v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-session)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.98s\n     Running unittests src/bin/analyse.rs (target/debug/deps/analyse-865777cc922dd1db)\n",
-  "stdout": "\nrunning 7 tests\ntest tests::maps_kind_for_parsed_entry ... ok\ntest tests::reports_line_number_for_bad_json ... ok\ntest tests::cli_defaults_to_listing_sessions ... ok\ntest tests::cli_accepts_session_flag ... ok\ntest tests::session_names_empty_without_sessions_dir ... ok\ntest tests::skips_blank_lines_and_parses_valid_entries ... ok\ntest tests::session_names_lists_existing_dirs_sorted ... ok\n\ntest result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n",
-  "ts": "2026-09-01T23:41:34.317883484+00:00"
-}

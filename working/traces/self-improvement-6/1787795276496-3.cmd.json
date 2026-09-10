@@ -1,8 +1,0 @@
-{
-  "command": "cargo check -p hanihi-cli",
-  "duration_ms": 41627,
-  "exit_code": 101,
-  "stderr": "   Compiling aws-lc-sys v0.44.0\n   Compiling aws-lc-rs v1.18.0\n   Compiling rustls v0.23.43\n    Checking rustls-webpki v0.103.13\n    Checking tokio-rustls v0.26.4\n    Checking rustls-platform-verifier v0.7.0\n    Checking hyper-rustls v0.27.9\n    Checking reqwest v0.13.4\n    Checking rig-core v0.41.0\n    Checking hanihi-core v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-core)\n    Checking hanihi-cli v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-cli)\nerror[E0432]: unresolved imports `crate::ui::println_coloured`, `crate::ui::print_coloured`\n  --> crates/hanihi-cli/src/main.rs:26:17\n   |\n26 | use crate::ui::{println_coloured, print_coloured};\n   |                 ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^ no `print_coloured` in `ui`\n   |                 |\n   |                 no `println_coloured` in `ui`\n   |\n   = note: this could be because a macro annotated with `#[macro_export]` will be exported at the root of the crate instead of the module where it is defined\nhelp: a macro with this name exists at the root of the crate\n   |\n26 - use crate::ui::{println_coloured, print_coloured};\n26 + use crate::{println_coloured, ui::{print_coloured}};\n   |\nhelp: a macro with this name exists at the root of the crate\n   |\n26 - use crate::ui::{println_coloured, print_coloured};\n26 + use crate::{print_coloured, ui::{println_coloured}};\n   |\n\nFor more information about this error, try `rustc --explain E0432`.\nerror: could not compile `hanihi-cli` (bin \"hanihi-cli\") due to 1 previous error\n",
-  "stdout": "",
-  "ts": "2026-08-27T01:47:56.496108997+00:00"
-}

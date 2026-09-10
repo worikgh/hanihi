@@ -1,8 +1,0 @@
-{
-  "command": "git diff --cached",
-  "duration_ms": 6,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "diff --git a/crates/hanihi-cli/Cargo.toml b/crates/hanihi-cli/Cargo.toml\nindex 3509bd4..0aebd3b 100644\n--- a/crates/hanihi-cli/Cargo.toml\n+++ b/crates/hanihi-cli/Cargo.toml\n@@ -14,6 +14,7 @@ hanihi-core = { version = \"0.3.0\", path = \"../hanihi-core\" }\n clap = { version = \"4.6.6\", features = [\"derive\", \"env\"] }\n reedline = \"0.49.0\"\n rig = { package = \"rig-core\", version = \"0.41.0\" }\n+nu-ansi-term = \"0.50\"\n serde.workspace = true\n serde_json.workspace = true\n tokio.workspace = true\n",
-  "ts": "2026-08-29T03:53:20.478901531+00:00"
-}

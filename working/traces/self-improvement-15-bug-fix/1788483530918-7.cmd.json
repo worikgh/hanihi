@@ -1,8 +1,0 @@
-{
-  "command": "grep -n '\"kind\":\"llm_response\"' working/sessions/self-improvement-14-apply-patch/events.jsonl",
-  "duration_ms": 3,
-  "exit_code": 1,
-  "stderr": "",
-  "stdout": "",
-  "ts": "2026-09-04T00:58:50.918118010+00:00"
-}

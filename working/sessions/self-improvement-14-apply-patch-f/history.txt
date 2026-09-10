@@ -1,2 +1,0 @@
-add a private function `fn hellow_world() -> String` to `crates/hanihi-core/src/tool.rs` using `apply_patch`.  
-/quit

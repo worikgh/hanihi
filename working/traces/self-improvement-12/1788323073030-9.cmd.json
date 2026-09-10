@@ -1,8 +1,0 @@
-{
-  "command": "cargo check -p hanihi-core",
-  "duration_ms": 202,
-  "exit_code": 0,
-  "stderr": "    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.17s\n",
-  "stdout": "",
-  "ts": "2026-09-02T04:24:33.030991287+00:00"
-}

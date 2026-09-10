@@ -1,8 +1,0 @@
-{
-  "command": "cargo fmt -p hanihi-core -- --check",
-  "duration_ms": 303,
-  "exit_code": 1,
-  "stderr": "",
-  "stdout": "Diff in /home/worik/Documents/2026/hanihi/crates/hanihi-core/tests/replay_streaming.rs:23:\n     let now = Utc::now();\n \n     let history = {\n-        let session = mgr\n-            .create(\"stream\", \"deepseek-chat\", \"p\")\n-            .expect(\"create\");\n+        let session = mgr.create(\"stream\", \"deepseek-chat\", \"p\").expect(\"create\");\n \n         write_log(\n             session.root(),\n",
-  "ts": "2026-09-04T03:22:56.291722504+00:00"
-}

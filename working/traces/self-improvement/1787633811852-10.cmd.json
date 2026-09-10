@@ -1,8 +1,0 @@
-{
-  "command": "git log --oneline -5",
-  "duration_ms": 8,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "0985eb5 Remove the files in working/ from repository\n9c9bb62 Keep working directory out of git repo\nc8c1dc4 Persist --prompt/--prompt-file appends on existing sessions; clean --new-prompt replace semantics\n886bb52 Fix prompt-append CLI: single session open, persist --new-prompt rewrite, correct borrow\neaa40bc Remove unneeded wildcard in pattern (clippy)\n",
-  "ts": "2026-08-25T04:56:51.852070258+00:00"
-}

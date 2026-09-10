@@ -1,6 +1,0 @@
-I am using Qtractor 
-It is version : 1.5.4.  I have a Pure Data instrument I want Qtractor to use.  How do I configure that?
-What was that error about "command 'which'"?
-Audio back end is Jack.  The Pd patch wants MIDI input.  It is a headless environment that I ssh into to configure.  I can export an X session, and I do for Pd.  For now
-WHat if I have two Pd patches running (separate MIDI inputs) and I want two tracks in Qtractor?
-/quit

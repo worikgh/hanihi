@@ -1,8 +1,0 @@
-{
-  "command": "cargo fmt",
-  "duration_ms": 152,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "",
-  "ts": "2026-08-25T08:54:17.850507659+00:00"
-}

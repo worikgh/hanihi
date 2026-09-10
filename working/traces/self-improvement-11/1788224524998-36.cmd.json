@@ -1,8 +1,0 @@
-{
-  "command": "git add -A",
-  "duration_ms": 30,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "",
-  "ts": "2026-09-01T01:02:04.998247828+00:00"
-}

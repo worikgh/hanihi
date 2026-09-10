@@ -1,8 +1,0 @@
-{
-  "command": "git show 1fffcd4 --stat",
-  "duration_ms": 7,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "commit 1fffcd47529c23da97266854cc6e275f153334d4\nAuthor: Worik <5387413+worikgh@users.noreply.github.com>\nDate:   Wed Aug 19 19:39:25 2026 +1200\n\n    Steps 2-4, 6: write tools (apply_patch/write_file, --write flag), grep, read_session_log, task mode (--task/--max-turns), CLI wiring\n\n Cargo.lock                       |  58 ++++++\n crates/hanihi-cli/src/main.rs    |  76 +++++--\n crates/hanihi-core/Cargo.toml    |   2 +\n crates/hanihi-core/src/agent.rs  |  23 ++-\n crates/hanihi-core/src/lib.rs    |   9 +-\n crates/hanihi-core/src/source.rs |  48 ++++-\n crates/hanihi-core/src/tool.rs   | 207 ++++++++++++++++++-\n crates/hanihi-core/src/write.rs  | 423 +++++++++++++++++++++++++++++++++++++++\n 8 files changed, 825 insertions(+), 21 deletions(-)\n",
-  "ts": "2026-08-26T03:54:54.777044560+00:00"
-}

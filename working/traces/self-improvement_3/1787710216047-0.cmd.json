@@ -1,8 +1,0 @@
-{
-  "command": "cargo test -p hanihi-core write",
-  "duration_ms": 53731,
-  "exit_code": 101,
-  "stderr": "   Compiling aws-lc-sys v0.44.0\n   Compiling aws-lc-rs v1.18.0\n   Compiling rustls v0.23.43\n   Compiling rustls-webpki v0.103.13\n   Compiling tokio-rustls v0.26.4\n   Compiling rustls-platform-verifier v0.7.0\n   Compiling hyper-rustls v0.27.9\n   Compiling reqwest v0.13.4\n   Compiling rig-core v0.41.0\n   Compiling hanihi-core v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-core)\nerror[E0277]: the `?` operator can only be applied to values that implement `Try`\n   --> crates/hanihi-core/src/write.rs:150:23\n    |\n150 |     let (stdout, _) = git_run(root, &[\"status\", \"--porcelain\", \"--\"])?;\n    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the `?` operator cannot be applied to type `impl Future<Output = Result<(String, String), String>>`\n    |\n    = help: the nightly-only, unstable trait `Try` is not implemented for `impl Future<Output = Result<(String, String), String>>`\n    = note: the full name for the type has been written to '/home/worik/Documents/2026/hanihi/target/debug/deps/hanihi_core-12c706d7be1a6e4c.long-type-6527578361750023676.txt'\n    = note: consider using `--verbose` to print the full type name to the console\nhelp: consider `await`ing on the `Future`\n    |\n150 |     let (stdout, _) = git_run(root, &[\"status\", \"--porcelain\", \"--\"]).await?;\n    |                                                                      ++++++\n\nFor more information about this error, try `rustc --explain E0277`.\nerror: could not compile `hanihi-core` (lib test) due to 1 previous error\n",
-  "stdout": "",
-  "ts": "2026-08-26T02:10:16.047154615+00:00"
-}

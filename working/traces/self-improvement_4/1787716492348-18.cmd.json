@@ -1,8 +1,0 @@
-{
-  "command": "git show acbbb8e --stat",
-  "duration_ms": 7,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "commit acbbb8e97891d5fb63fa83143eed8ac5bbd32f90\nAuthor: Worik <5387413+worikgh@users.noreply.github.com>\nDate:   Wed Aug 26 14:25:35 2026 +1200\n\n    Revert --recount; keep dirty-target guard\n\n crates/hanihi-core/src/write.rs | 14 ++++++--------\n 1 file changed, 6 insertions(+), 8 deletions(-)\n",
-  "ts": "2026-08-26T03:54:52.348815550+00:00"
-}

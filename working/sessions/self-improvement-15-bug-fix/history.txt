@@ -1,4 +1,0 @@
-/file ../plans/009-bug-fix.md
-/quit
-Implement the plan
-/quit

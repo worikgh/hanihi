@@ -1,8 +1,0 @@
-{
-  "command": "cargo test -p hanihi-session --bin analyse",
-  "duration_ms": 53868,
-  "exit_code": 0,
-  "stderr": "   Compiling aws-lc-sys v0.44.0\n   Compiling clap_builder v4.6.6\n   Compiling clap v4.6.6\n   Compiling aws-lc-rs v1.18.0\n   Compiling rustls v0.23.43\n   Compiling rustls-webpki v0.103.13\n   Compiling tokio-rustls v0.26.4\n   Compiling rustls-platform-verifier v0.7.0\n   Compiling hyper-rustls v0.27.9\n   Compiling reqwest v0.13.4\n   Compiling rig-core v0.41.0\n   Compiling hanihi-core v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-core)\n   Compiling hanihi-session v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-session)\nwarning: unused import: `clap::Parser`\n   --> crates/hanihi-session/src/bin/analyse.rs:102:9\n    |\n102 |     use clap::Parser as _;\n    |         ^^^^^^^^^^^^\n    |\n    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default\n\nwarning: `hanihi-session` (bin \"analyse\" test) generated 1 warning\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 53.80s\n     Running unittests src/bin/analyse.rs (target/debug/deps/analyse-865777cc922dd1db)\n",
-  "stdout": "\nrunning 7 tests\ntest tests::maps_kind_for_parsed_entry ... ok\ntest tests::reports_line_number_for_bad_json ... ok\ntest tests::cli_defaults_to_listing_sessions ... ok\ntest tests::cli_accepts_session_flag ... ok\ntest tests::session_names_empty_without_sessions_dir ... ok\ntest tests::skips_blank_lines_and_parses_valid_entries ... ok\ntest tests::session_names_lists_existing_dirs_sorted ... ok\n\ntest result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n",
-  "ts": "2026-09-01T23:41:05.127379652+00:00"
-}

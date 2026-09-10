@@ -1,8 +1,0 @@
-{
-  "command": "git diff -- .gitignore README.md",
-  "duration_ms": 0,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "",
-  "ts": "2026-09-04T22:49:57.674674163+00:00"
-}

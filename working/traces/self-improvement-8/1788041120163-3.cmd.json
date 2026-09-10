@@ -1,8 +1,0 @@
-{
-  "command": "cargo check -p hanihi-cli",
-  "duration_ms": 1246,
-  "exit_code": 0,
-  "stderr": "    Blocking waiting for file lock on package cache\n    Blocking waiting for file lock on package cache\n    Blocking waiting for file lock on package cache\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.15s\n",
-  "stdout": "",
-  "ts": "2026-08-29T22:05:20.164001400+00:00"
-}

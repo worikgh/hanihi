@@ -1,3 +1,0 @@
-/file ../plans/009-bug-fix-b.md
-Continue using only allowed commands.
-/quit

@@ -1,8 +1,0 @@
-{
-  "command": "grep -n \"reedline\" Cargo.lock",
-  "duration_ms": 2,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "876: \"reedline\",\n1736:name = \"reedline\"\n",
-  "ts": "2026-08-29T03:58:48.427194246+00:00"
-}

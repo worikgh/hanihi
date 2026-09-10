@@ -1,8 +1,0 @@
-{
-  "command": "git apply --check --3way --recount crates/hanihi-core/src/tool.patch",
-  "duration_ms": 4,
-  "exit_code": 1,
-  "stderr": "error: crates/hanihi-core/src/tool.rs: does not match index\n",
-  "stdout": "",
-  "ts": "2026-08-30T00:36:13.980515873+00:00"
-}

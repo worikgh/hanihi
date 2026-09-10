@@ -1,8 +1,0 @@
-{
-  "command": "cargo check --workspace --all-features",
-  "duration_ms": 999,
-  "exit_code": 0,
-  "stderr": "    Checking hanihi-core v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-core)\n    Checking hanihi-eval v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-eval)\n    Checking hanihi-cli v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-cli)\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.93s\n",
-  "stdout": "",
-  "ts": "2026-08-25T01:46:43.183249171+00:00"
-}
