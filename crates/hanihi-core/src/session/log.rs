@@ -527,8 +527,9 @@ impl Display for LogEntry {
                 writeln!(f, "[{ts}] LLM prompt (turn {turn})")?;
                 writeln!(f, "  Provider: {}", data.provider)?;
                 writeln!(f, "  Model: {}", data.model)?;
-                writeln!(f, "  Messages: ")?;
-                write_json_indented(f, &data.messages, "    ")?;
+                let json = serde_json::to_string_pretty(&data.messages).map_err(|_| fmt::Error)?;
+                writeln!(f, "  Messages: {} characters", json.len())?;
+                // write_json_indented(f, &data.messages, "    ")?;
                 writeln!(f)?;
                 writeln!(f, "  Tool definitions:")?;
                 write_json_indented(f, &data.tool_definitions, "    ")
