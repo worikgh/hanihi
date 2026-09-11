@@ -148,6 +148,20 @@ pub struct UsageData {
     pub output_tokens: u32,
 }
 
+impl fmt::Display for UsageData {
+    /// Token counts on one line, e.g. `12 input tokens, 34 output tokens`.
+    ///
+    /// Used by the `LlmResponse` variant of [`LogEntry`] and by report
+    /// renderers that summarise a turn's cost.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} input tokens, {} output tokens",
+            self.input_tokens, self.output_tokens
+        )
+    }
+}
+
 #[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct ToolExecutionData {
     pub tool_call_id: String,
@@ -567,11 +581,7 @@ impl Display for LogEntry {
                     }
                 }
 
-                write!(
-                    f,
-                    "  Usage: {} input tokens, {} output tokens",
-                    data.usage.input_tokens, data.usage.output_tokens
-                )
+                write!(f, "  Usage: {}", data.usage)
             }
 
             Self::ToolExecution { ts, turn, data } => {
@@ -815,6 +825,49 @@ mod tests {
             err.message.contains("integer"),
             "unexpected: {}",
             err.message
+        );
+    }
+
+    #[test]
+    fn usage_display_formats_both_counts() {
+        let usage = UsageData {
+            input_tokens: 12,
+            output_tokens: 34,
+        };
+        assert_eq!(usage.to_string(), "12 input tokens, 34 output tokens");
+    }
+
+    #[test]
+    fn usage_display_formats_zero_counts() {
+        let usage = UsageData {
+            input_tokens: 0,
+            output_tokens: 0,
+        };
+        assert_eq!(usage.to_string(), "0 input tokens, 0 output tokens");
+    }
+
+    #[test]
+    fn llm_response_display_uses_usage_display() {
+        let data = LlmResponseData {
+            message_id: None,
+            text: None,
+            reasoning: None,
+            tool_calls: None,
+            usage: UsageData {
+                input_tokens: 12,
+                output_tokens: 34,
+            },
+        };
+        let entry = LogEntry::LlmResponse {
+            ts: "2026-01-01T00:00:00Z".parse().expect("valid timestamp"),
+            turn: 1,
+            data,
+        };
+        assert!(
+            entry
+                .to_string()
+                .contains("  Usage: 12 input tokens, 34 output tokens"),
+            "unexpected: {entry}"
         );
     }
 }

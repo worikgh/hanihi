@@ -238,7 +238,7 @@ fn prompt_reply(working_dir: &Path, session: &str) -> Result<(), String> {
                 } else {
                     "No data"
                 };
-                println!("Usage: {:?}", data.usage);
+                println!("Usage: {}", data.usage);
                 println!("Reasoning: {reasoning}");
                 println![];
                 println!("Text: {}", text);
