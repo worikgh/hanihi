@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use chrono::{DateTime, Utc};
 use clap::{ArgGroup, Parser};
 use hanihi_core::session::log::read_log_tolerant;
 use hanihi_core::session::{SessionManager, log::LogEntry};
@@ -10,7 +11,7 @@ const DEFAULT_WORKING_DIR: &str = "./working";
 #[derive(Debug, Parser)]
 #[command(group(
     ArgGroup::new("output")
-	.args(["cost", "verbose"])
+	.args(["cost", "verbose", "prompts", ])
 	.multiple(false)
 ))]
 #[command(name = "analyse", about = "Inspect hānihi session logs")]
@@ -27,6 +28,9 @@ struct Args {
 
     #[arg(long="verbose", short='v',  action = clap::ArgAction::SetTrue)]
     verbose: bool,
+
+    #[arg(long="prompts", short='p',  action = clap::ArgAction::SetTrue)]
+    prompts: bool,
 }
 
 enum Action {
@@ -43,13 +47,16 @@ enum Action {
 
     /// Display verbose session information
     Verbose(String),
+
+    /// Display prompt history (prompts and replies)
+    Prompts(String),
 }
 impl Args {
     fn action(&self) -> Result<Action, String> {
         if self.session.is_none() {
             // `self.cost`
             if self.cost || self.verbose {
-                Err(format!("Must specify a session"))
+                Err("Must specify a session".to_string())
             } else {
                 Ok(Action::ListSessions)
             }
@@ -59,6 +66,8 @@ impl Args {
                 Ok(Action::CostOfSession(session))
             } else if self.verbose {
                 Ok(Action::Verbose(session))
+            } else if self.prompts {
+                Ok(Action::Prompts(session))
             } else {
                 Ok(Action::SessionBrief(session))
             }
@@ -97,6 +106,14 @@ fn main() -> ExitCode {
         }
         Ok(Action::Verbose(session)) => {
             if let Err(e) = verbose_session(&working_dir, &session) {
+                eprintln!("{e}");
+                ExitCode::FAILURE
+            } else {
+                ExitCode::SUCCESS
+            }
+        }
+        Ok(Action::Prompts(session)) => {
+            if let Err(e) = prompt_reply(&working_dir, &session) {
                 eprintln!("{e}");
                 ExitCode::FAILURE
             } else {
@@ -175,6 +192,62 @@ fn analyse_session(working_dir: &Path, session: &str) -> Result<(), String> {
             err.message
         );
     }
+    Ok(())
+}
+
+fn prompt_reply(working_dir: &Path, session: &str) -> Result<(), String> {
+    let path = session_events(working_dir, session)?;
+    let logs =
+        read_log_tolerant(&path).map_err(|e| format!("error reading {}: {e}", path.display()))?;
+    let mut last_send_ts: Option<DateTime<Utc>> = None;
+    let get_wait = |ts: &DateTime<Utc>, last_send_ts: &Option<DateTime<Utc>>| -> String {
+        match &last_send_ts {
+            Some(ts_last) => {
+                let diff = *ts - ts_last;
+                match diff.to_std() {
+                    Ok(d) => humantime::format_duration(d).to_string(),
+                    Err(e) => format!("{e}"),
+                }
+            }
+            None => "No time".to_string(),
+        }
+    };
+
+    for entry in &logs.entries {
+        match entry {
+            LogEntry::UserInput { ts, turn, data } => {
+                println!("User Input: {ts} {turn}");
+                println!("{}", data.text);
+                println!("---");
+                last_send_ts = Some(*ts);
+            }
+            LogEntry::LlmPrompt { ts, turn, data } => {
+                let time = get_wait(ts, &last_send_ts);
+                println!("LLM Prompt: {ts} T({turn}) {time} {}", data.model);
+            }
+            LogEntry::LlmResponse { ts, turn, data } => {
+                let time = get_wait(ts, &last_send_ts);
+                println!("LLM Response: {ts} T({turn})  {time}",);
+                let reasoning = if let Some(reasoning) = &data.reasoning {
+                    reasoning
+                } else {
+                    "No reasoning"
+                };
+                let text = if let Some(text) = &data.text {
+                    text
+                } else {
+                    "No data"
+                };
+                println!("Usage: {:?}", data.usage);
+                println!("Reasoning: {reasoning}");
+                println![];
+                println!("Text: {}", text);
+                println!("---");
+            }
+            _ => (),
+        }
+    }
+
     Ok(())
 }
 
