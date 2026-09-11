@@ -24,8 +24,6 @@
 
 - Always write tests.  Write tests for all common cases.  Write tests for all known corner cases.  When fixing bugs write tests to cover the cases that triggered the bug.  Ensure all tests pass.
 
-- Always use {}, even on a one-line "if" statement.
-
 When you write a commit message, follow these 7 rules:
 Rule 0: Sign all commit messages as: "Hānihi"
 Rule 1: Separate the subject line from the body with a single blank line.
@@ -45,20 +43,19 @@ Rule N: Sign all commit messages as: "Hānihi"
 ## Patch tooling (apply_patch / write_file)
 
 - `apply_patch` accepts only unified diffs: `--- a/<path>` / `+++ b/<path>` headers and `@@ -l,c +l,c @@` hunks.
-  Never emit `*** Begin Patch`, `*** Update File:`, or any other patch format.
-- Before producing a diff, read the current contents of every file it
-  touches with `read_file`, or generate it with `git diff`. Copy all
-  context lines and `-` lines verbatim from that output. Never
-  reconstruct context from memory or from an earlier read.
-- Keep multi-file changes consistent and the tree compilable: include all
-  related changes in one patch (or one uninterrupted write sequence), then
-  run the relevant check immediately (`cargo check`, `cargo test`, etc.).
-  Never leave one file referencing a symbol another file does not define.
-- After `apply_patch` fails with "context does not match", do not retry the
-  same diff. Re-read the target file, rebuild the diff from its current
-  contents, then re-apply and verify with the appropriate check.
-- Prefer `apply_patch` for small, surgical edits verified against freshly
-  read content. Prefer `write_file` with complete file contents for large
-  rewrites or when exact context is uncertain.
+- Never emit `*** Begin Patch`, `*** Update File:`, or any other patch format.
+- Before producing a diff, read the current contents of every file it touches with `read_file`, or generate it with `git diff`. Copy all context lines and `-` lines verbatim from that output. Never reconstruct context from memory or from an earlier read.
+- Keep multi-file changes consistent and the tree compilable: include all related changes in one patch (or one uninterrupted write sequence), then run the relevant check immediately (`cargo check`, `cargo test`, etc.). Never leave one file referencing a symbol another file does not define.
+- After `apply_patch` fails with "context does not match", do not retry the same diff. Re-read the target file, rebuild the diff from its current contents, then re-apply and verify with the appropriate check.
+- Prefer `apply_patch` for small, surgical edits verified against freshly read content. Prefer `write_file` with complete file contents for large rewrites or when exact context is uncertain.
 
+## Path Verification Protocol
 
+Before proposing any code changes or file modifications, you must ground your response in the existing file structure. Start your response with a "Path Verification" section:
+
+Path Verification: [Confirmed / Conflict]
+
+    Requested: [List paths mentioned in prompt]
+    Actual: [List corresponding paths found in codebase]
+
+If the requested paths do not exist exactly as written, or if you detect a near-match typo (e.g., hanini vs hanihi), mark the status as Conflict, stop all further work, and ask the user for clarification. Do not attempt to guess the correct path or proceed with the task until the conflict is resolved.
