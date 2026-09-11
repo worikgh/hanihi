@@ -785,37 +785,37 @@ mod tests {
     use super::*;
     use rig::test_utils::{MockCompletionModel, MockTurn};
 
-    // fn echo_agent() -> Agent<MockCompletionModel> {
-    //	let mut agent = Agent::new(MockCompletionModel::text("unused"), "test system");
-    //	agent.add_tool(crate::tool::builtin_echo());
-    //	agent
-    // }
+    fn get_time_agent() -> Agent<MockCompletionModel> {
+        let mut agent = Agent::new(MockCompletionModel::text("unused"), "test system");
+        agent.add_tool(crate::tool::builtin_get_time());
+        agent
+    }
 
-    // #[tokio::test]
-    // async fn test_simple_text_reply() {
-    //	let mut agent = echo_agent();
-    //	let summary = agent.run("hi").await.expect("run succeeds");
-    //	assert_eq!(summary.text, "unused");
-    //	assert_eq!(summary.tool_calls, 0);
-    //	assert_eq!(agent.history().len(), 2);
-    // }
+    #[tokio::test]
+    async fn test_simple_text_reply() {
+        let mut agent = get_time_agent();
+        let summary = agent.run("hi").await.expect("run succeeds");
+        assert_eq!(summary.text, "unused");
+        assert_eq!(summary.tool_calls, 0);
+        assert_eq!(agent.history().len(), 2);
+    }
 
-    // #[tokio::test]
-    // async fn test_tool_call_round_trip() {
-    //	let model = MockCompletionModel::from_turns([
-    //	    MockTurn::tool_call("call_1", "echo", serde_json::json!({"text": "ping"})),
-    //	    MockTurn::text("echoed: ping"),
-    //	]);
-    //	let mut agent = Agent::new(model, "test system");
-    //	agent.add_tool(crate::tool::builtin_echo());
+    #[tokio::test]
+    async fn test_tool_call_round_trip() {
+        let model = MockCompletionModel::from_turns([
+            MockTurn::tool_call("call_1", "get_time", serde_json::json!({})),
+            MockTurn::text("got the time"),
+        ]);
+        let mut agent = Agent::new(model, "test system");
+        agent.add_tool(crate::tool::builtin_get_time());
 
-    //	let summary = agent.run("echo ping").await.expect("run succeeds");
-    //	assert_eq!(summary.text, "echoed: ping");
-    //	assert_eq!(summary.tool_calls, 1);
+        let summary = agent.run("what time is it").await.expect("run succeeds");
+        assert_eq!(summary.text, "got the time");
+        assert_eq!(summary.tool_calls, 1);
 
-    //	let history = agent.history();
-    //	assert_eq!(history.len(), 4);
-    // }
+        let history = agent.history();
+        assert_eq!(history.len(), 4);
+    }
 
     // #[tokio::test]
     // async fn test_max_turns_exceeded() {

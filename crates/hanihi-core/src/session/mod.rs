@@ -1001,7 +1001,7 @@ fn replay_error_tool_result(id: &str) -> Message {
 #[cfg(test)]
 mod tests {
     use super::*;
-    // use rig::test_utils::{MockCompletionModel, MockStreamEvent};
+    use rig::test_utils::{MockCompletionModel, MockStreamEvent};
 
     fn tmp_working_dir() -> PathBuf {
         std::env::temp_dir().join(format!("hanihi-session-test-{}", Uuid::new_v4()))
@@ -1116,65 +1116,65 @@ mod tests {
 
     // ── streaming log fix ──
 
-    // #[tokio::test]
-    // async fn streaming_logs_real_tool_args_and_result() {
-    //	let dir = tmp_working_dir();
-    //	let mut mgr = SessionManager::new(&dir);
-    //	let session = mgr
-    //	    .create("stream-fix", "deepseek-chat", "p")
-    //	    .expect("create");
+    #[tokio::test]
+    async fn streaming_logs_real_tool_args_and_result() {
+        let dir = tmp_working_dir();
+        let mut mgr = SessionManager::new(&dir);
+        let session = mgr
+            .create("stream-fix", "deepseek-chat", "p")
+            .expect("create");
 
-    //	// First streaming turn: a tool call to `echo`. Second: final text.
-    //	let model = MockCompletionModel::from_stream_turns([
-    //	    [
-    //		MockStreamEvent::tool_call(
-    //		    "call_1",
-    //		    "echo",
-    //		    serde_json::json!({ "text": "hello" }),
-    //		),
-    //		MockStreamEvent::final_response_with_default_usage(),
-    //	    ],
-    //	    [
-    //		MockStreamEvent::text("done"),
-    //		MockStreamEvent::final_response_with_default_usage(),
-    //	    ],
-    //	]);
+        // First streaming turn: a tool call to `get_time`. Second: final text.
+        let model = MockCompletionModel::from_stream_turns([
+            [
+                MockStreamEvent::tool_call("call_1", "get_time", serde_json::json!({})),
+                MockStreamEvent::final_response_with_default_usage(),
+            ],
+            [
+                MockStreamEvent::text("done"),
+                MockStreamEvent::final_response_with_default_usage(),
+            ],
+        ]);
 
-    // let mut agent = Agent::new(model, "test system");
-    // agent.add_tool(crate::tool::builtin_echo());
+        let mut agent = Agent::new(model, "test system");
+        agent.add_tool(crate::tool::builtin_get_time());
 
-    // let mut rx = session
-    //     .run_streaming(&mut agent, "p", "m", "echo hello")
-    //     .await
-    //     .expect("run streaming");
-    // while (rx.recv().await).is_some() {}
+        let mut rx = session
+            .run_streaming(&mut agent, "p", "m", "what time is it")
+            .await
+            .expect("run streaming");
+        while (rx.recv().await).is_some() {}
 
-    // let events = session.events().expect("events");
-    // let exec = events
-    //     .iter()
-    //     .find_map(|e| match e {
-    //	LogEntry::ToolExecution { data, .. } => Some(data),
-    //	_ => None,
-    //     })
-    //     .expect("a tool_execution entry");
-    // assert_eq!(exec.arguments, serde_json::json!({ "text": "hello" }));
-    // assert_eq!(exec.result, "hello");
+        let events = session.events().expect("events");
+        let exec = events
+            .iter()
+            .find_map(|e| match e {
+                LogEntry::ToolExecution { data, .. } => Some(data),
+                _ => None,
+            })
+            .expect("a tool_execution entry");
+        assert_eq!(exec.arguments, serde_json::json!({}));
+        assert!(
+            chrono::DateTime::parse_from_rfc3339(&exec.result).is_ok(),
+            "expected an RFC 3339 timestamp, got: {}",
+            exec.result
+        );
 
-    // // Streaming now logs prompt and response events too.
-    // assert!(
-    //     events
-    //	.iter()
-    //	.any(|e| matches!(e, LogEntry::LlmPrompt { .. }))
-    // );
-    // assert!(
-    //     events
-    //	.iter()
-    //	.any(|e| matches!(e, LogEntry::LlmResponse { .. }))
-    // );
+        // Streaming now logs prompt and response events too.
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, LogEntry::LlmPrompt { .. }))
+        );
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, LogEntry::LlmResponse { .. }))
+        );
 
-    // mgr.close("stream-fix").expect("close");
-    // std::fs::remove_dir_all(&dir).unwrap_or(());
-    // }
+        mgr.close("stream-fix").expect("close");
+        std::fs::remove_dir_all(&dir).unwrap_or(());
+    }
 
     // ── replay_history tests ──
 
