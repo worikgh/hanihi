@@ -920,6 +920,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "hanihi-mcp-server"
+version = "0.3.0"
+dependencies = [
+ "hanihi-core",
+ "rmcp",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "hanihi-session"
 version = "0.3.0"
 dependencies = [
@@ -1355,17 +1366,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d1525a2a28c7f4fa0fc98bb91ae755d1e2d1505079e05539e35bc876b5d65ae9"
 dependencies = [
  "regex-automata",
-]
-
-[[package]]
-name = "mcp-echo-server"
-version = "0.3.0"
-dependencies = [
- "hanihi-core",
- "rmcp",
- "serde",
- "serde_json",
- "tokio",
 ]
 
 [[package]]

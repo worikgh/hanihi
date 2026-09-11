@@ -25,7 +25,7 @@ crates/
 ├── hanihi-cli/         # binary: clap CLI + reedline REPL + --once mode
 ├── hanihi-eval/        # binary: eval runner — run test cases against a live
 │                       #   LLM and check assertions against the session log
-└── mcp-echo-server/    # binary: minimal MCP stdio server (demo, one
+└── hanihi-mcp-server/  # binary: minimal MCP stdio server (demo, one
                         #   `mcp_echo` tool)
 evals/
 └── cases/              # eval test cases (TOML + README per case)
@@ -99,7 +99,7 @@ cargo run -p hanihi-cli -- --new-session my-chat
 cargo run -p hanihi-cli -- --session my-chat
 
 # Attach an MCP server and talk interactively
-cargo run -p hanihi-cli -- --mcp-command "./target/debug/mcp-echo-server"
+cargo run -p hanihi-cli -- --mcp-command "./target/debug/hanihi-mcp-server"
 
 # Run the eval suite against DeepSeek
 LLM_API_KEY=*** cargo run -p hanihi-eval -- --cases-dir ./evals/cases
@@ -238,7 +238,7 @@ LLM_API_KEY=*** cargo run -p hanihi-eval -- --case 001-basic-echo
 
 `hanihi-core` and `hanihi-cli` are publishable (both inherit version,
 license, repository, and readme from the workspace). `hanihi-eval` and
-`mcp-echo-server` are not published (`publish = false`).
+`hanihi-mcp-server` are not published (`publish = false`).
 
 Publish order matters: **`hanihi-core` first**, then `hanihi-cli` (it depends
 on the published `hanihi-core`):

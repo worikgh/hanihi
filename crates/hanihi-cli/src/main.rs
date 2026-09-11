@@ -74,7 +74,7 @@ struct Args {
     new_session: Option<String>,
 
     /// MCP stdio server command(s) to attach, e.g.
-    /// `--mcp-command "./target/debug/mcp-echo-server"`. May be repeated.
+    /// `--mcp-command "./target/debug/hanihi-mcp-server"`. May be repeated.
     #[arg(long = "mcp-command", value_name = "CMD")]
     mcp_commands: Vec<String>,
 

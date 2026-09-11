@@ -1,7 +1,7 @@
 //! Minimal MCP stdio server exposing one `echo` tool.
 //!
 //! Used to exercise the harness end-to-end:
-//! `hanihi-cli --mcp-command ./target/debug/mcp-echo-server`
+//! `hanihi-cli --mcp-command ./target/debug/hanihi-mcp-server`
 
 use hanihi_core::debug;
 use rmcp::ErrorData;
