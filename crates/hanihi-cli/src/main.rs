@@ -17,21 +17,9 @@ use hanihi_core::agent::Agent;
 use hanihi_core::error::AgentError;
 use hanihi_core::session::SessionManager;
 use hanihi_core::{
-    McpClient,
-    SourceTree,
-    StreamEvent,
-    builtin_apply_patch,
-    // builtin_echo,
-    builtin_get_time,
-    builtin_grep,
-    builtin_list_dir,
-    builtin_read_file,
-    builtin_read_session_log,
-    builtin_run_command,
-    builtin_run_command_write,
-    builtin_write_file,
-    connect_chat_model_with_prompt,
-    debug,
+    McpClient, SourceTree, StreamEvent, builtin_apply_patch, builtin_get_time, builtin_grep,
+    builtin_list_dir, builtin_read_file, builtin_read_session_log, builtin_run_command,
+    builtin_run_command_write, builtin_write_file, connect_chat_model_with_prompt, debug,
 };
 use nu_ansi_term::Color;
 use reedline::{DefaultPrompt, FileBackedHistory, Reedline, Signal};
@@ -357,7 +345,6 @@ async fn main() -> Result<(), AgentError> {
         DEFAULT_MAX_TURNS
     }));
     agent.add_tool(builtin_get_time());
-    // agent.add_tool(builtin_echo());
 
     // Source-tree tools: read/list/grep/run-command over the enclosing git
     // repository, plus a window into this session's own event log. Ignore
