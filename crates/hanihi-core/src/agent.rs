@@ -905,10 +905,12 @@ mod tests {
             messages_for_log("system", &history, &turn_messages, "now").expect("build messages");
 
         let arr = value.as_array().expect("messages is an array");
-        assert_eq!(arr.len(), 3);
+        assert_eq!(arr.len(), 4);
         assert_eq!(arr[0]["role"], "system");
         assert_eq!(arr[0]["content"], "system");
         assert_eq!(arr[1]["role"], "user");
         assert_eq!(arr[2]["role"], "assistant");
+        assert_eq!(arr[3]["role"], "user");
+        assert_eq!(arr[3]["content"], "now");
     }
 }

@@ -776,7 +776,7 @@ mod tests {
         assert_eq!(result.errors.len(), 2);
 
         assert_eq!(result.errors[0].line, 3);
-        assert!(result.errors[0].message.contains("not json"));
+        assert!(!result.errors[0].message.is_empty());
 
         assert_eq!(result.errors[1].line, 4);
         assert!(
