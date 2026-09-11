@@ -7,8 +7,7 @@ use hanihi_core::debug;
 use rmcp::ErrorData;
 use rmcp::handler::server::ServerHandler;
 use rmcp::model::{
-    CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, ListToolsResult,
-    PaginatedRequestParams, Tool,
+    CallToolRequestParams, CallToolResponse, ListToolsResult, PaginatedRequestParams,
 };
 use rmcp::service::{MaybeSendFuture, RequestContext, RoleServer, ServiceExt};
 use rmcp::transport;

@@ -554,16 +554,16 @@ impl Display for LogEntry {
                     writeln!(f)?;
                 }
 
-                if let Some(tool_calls) = &data.tool_calls {
-                    if !tool_calls.is_empty() {
-                        writeln!(f, "  Tool calls:")?;
+                if let Some(tool_calls) = &data.tool_calls
+                    && !tool_calls.is_empty()
+                {
+                    writeln!(f, "  Tool calls:")?;
 
-                        for call in tool_calls {
-                            writeln!(f, "    - {} ({})", call.name, call.id)?;
-                            writeln!(f, "      Arguments:")?;
-                            write_json_indented(f, &call.arguments, "        ")?;
-                            writeln!(f)?;
-                        }
+                    for call in tool_calls {
+                        writeln!(f, "    - {} ({})", call.name, call.id)?;
+                        writeln!(f, "      Arguments:")?;
+                        write_json_indented(f, &call.arguments, "        ")?;
+                        writeln!(f)?;
                     }
                 }
 

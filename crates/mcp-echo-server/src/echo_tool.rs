@@ -1,10 +1,7 @@
 use rmcp::ErrorData;
 /// The `echo` tool.  A basic tool that returns the prompt unchanged
-use rmcp::model::{
-    CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, ListToolsResult,
-    PaginatedRequestParams, Tool,
-};
-use rmcp::service::{MaybeSendFuture, RequestContext, RoleServer, ServiceExt};
+use rmcp::model::{CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, Tool};
+use rmcp::service::{MaybeSendFuture, RequestContext, RoleServer};
 pub(crate) fn new() -> Tool {
     Tool::new(
         "mcp_echo",
