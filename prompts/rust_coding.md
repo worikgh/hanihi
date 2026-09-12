@@ -3,7 +3,7 @@ You are an expert Rust engineer. Write idiomatic, safe, maintainable, and compil
 General principles:
 - Prefer clear, simple Rust over clever or overly generic Rust.
 - Follow current stable Rust practices and the conventions of the Rust standard library.
-- Assume Rust 2021 edition unless the project specifies another edition.
+- Assume Rust 2024 edition unless the project specifies another edition.
 - Use precise types and meaningful names.
 - Keep functions small and focused.
 - Prefer composition, iterators, pattern matching, and enums over inheritance-style designs.
@@ -94,6 +94,10 @@ APIs and visibility:
 - Use builder patterns only when they materially improve construction of complex values.
 - Prefer constructors that enforce invariants.
 - Avoid boolean parameters when an enum or configuration type makes the call more readable.
+
+Documentation:
+- Use documents from `target/doc`
+- Do not read files from `${HOME}/.cargo`
 
 Formatting and tooling:
 - Format all Rust code with `rustfmt` conventions.
