@@ -11,7 +11,7 @@ const DEFAULT_WORKING_DIR: &str = "./working";
 #[derive(Debug, Parser)]
 #[command(group(
     ArgGroup::new("output")
-	.args(["cost", "verbose", "prompts", ])
+	.args(["cost", "verbose", "prompts", "messages", ])
 	.multiple(false)
 ))]
 #[command(name = "analyse", about = "Inspect hānihi session logs")]
@@ -31,6 +31,9 @@ struct Args {
 
     #[arg(long="prompts", short='p',  action = clap::ArgAction::SetTrue)]
     prompts: bool,
+
+    #[arg(long="messages", short='m',  action = clap::ArgAction::SetTrue)]
+    messages: bool,
 }
 
 enum Action {
@@ -50,6 +53,9 @@ enum Action {
 
     /// Display prompt history (prompts and replies)
     Prompts(String),
+
+    /// Display all the messages sent to the LLM
+    Messages(String),
 }
 impl Args {
     fn action(&self) -> Result<Action, String> {
@@ -68,6 +74,8 @@ impl Args {
                 Ok(Action::Verbose(session))
             } else if self.prompts {
                 Ok(Action::Prompts(session))
+            } else if self.messages {
+                Ok(Action::Messages(session))
             } else {
                 Ok(Action::SessionBrief(session))
             }
@@ -120,6 +128,14 @@ fn main() -> ExitCode {
                 ExitCode::SUCCESS
             }
         }
+        Ok(Action::Messages(session)) => {
+            if let Err(e) = messages(&working_dir, &session) {
+                eprintln!("{e}");
+                ExitCode::FAILURE
+            } else {
+                ExitCode::SUCCESS
+            }
+        }
         Err(error) => {
             eprintln!("{error}");
             ExitCode::FAILURE
@@ -155,12 +171,30 @@ fn session_events(working_dir: &Path, session: &str) -> Result<PathBuf, String> 
         .join("events.jsonl"))
 }
 
-/// A report on the costs (in tokens) of LLM_Prompts
-fn analyse_cost(working_dir: &Path, session: &str) -> Result<(), String> {
+/// Helper function to get time string
+fn get_wait(ts: &DateTime<Utc>, last_send_ts: &Option<DateTime<Utc>>) -> String {
+    match &last_send_ts {
+        Some(ts_last) => {
+            let diff = *ts - ts_last;
+            match diff.to_std() {
+                Ok(d) => humantime::format_duration(d).to_string(),
+                Err(e) => format!("{e}"),
+            }
+        }
+        None => "No time".to_string(),
+    }
+}
+
+/// Helper function to get events
+fn events(working_dir: &Path, session: &str) -> Result<Vec<LogEntry>, String> {
     let path = session_events(working_dir, session)?;
     let logs =
         read_log_tolerant(&path).map_err(|e| format!("error reading {}: {e}", path.display()))?;
-    for entry in &logs.entries {
+    Ok(logs.entries)
+}
+/// A report on the costs (in tokens) of LLM_Prompts
+fn analyse_cost(working_dir: &Path, session: &str) -> Result<(), String> {
+    for entry in &events(working_dir, session)? {
         if let LogEntry::LlmResponse { ts, turn: _, data } = entry {
             println!(
                 "{}\t{}\t{}",
@@ -181,7 +215,7 @@ fn analyse_session(working_dir: &Path, session: &str) -> Result<(), String> {
     let logs =
         read_log_tolerant(&path).map_err(|e| format!("error reading {}: {e}", path.display()))?;
 
-    for entry in &logs.entries {
+    for entry in &events(working_dir, session)? {
         println!("{}\t{}", entry.kind(), entry.ts().to_rfc3339());
     }
     for err in &logs.errors {
@@ -195,28 +229,26 @@ fn analyse_session(working_dir: &Path, session: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn prompt_reply(working_dir: &Path, session: &str) -> Result<(), String> {
-    let path = session_events(working_dir, session)?;
-    let logs =
-        read_log_tolerant(&path).map_err(|e| format!("error reading {}: {e}", path.display()))?;
-    let mut last_send_ts: Option<DateTime<Utc>> = None;
-    let get_wait = |ts: &DateTime<Utc>, last_send_ts: &Option<DateTime<Utc>>| -> String {
-        match &last_send_ts {
-            Some(ts_last) => {
-                let diff = *ts - ts_last;
-                match diff.to_std() {
-                    Ok(d) => humantime::format_duration(d).to_string(),
-                    Err(e) => format!("{e}"),
-                }
-            }
-            None => "No time".to_string(),
+/// `--messages` `-m` The messages send back to the LLM
+fn messages(working_dir: &Path, session: &str) -> Result<(), String> {
+    for event in events(working_dir, session)? {
+        if let LogEntry::LlmPrompt { ts, turn, data } = event {
+            let messages =
+                serde_json::to_string_pretty(&data.messages).map_err(|e| format!("{e}"))?;
+            println!("Messages: {ts} T({turn}) {} characters", messages.len());
+            println!("{messages}");
         }
-    };
+    }
+    Ok(())
+}
 
-    for entry in &logs.entries {
+/// `--prompts` `-p`: The prompts and replies.
+fn prompt_reply(working_dir: &Path, session: &str) -> Result<(), String> {
+    let mut last_send_ts: Option<DateTime<Utc>> = None;
+    for entry in &events(working_dir, session)? {
         match entry {
             LogEntry::UserInput { ts, turn, data } => {
-                println!("User Input: {ts} {turn}");
+                println!("User Input: {ts} T({turn})");
                 println!("{}", data.text);
                 println!("---");
                 last_send_ts = Some(*ts);
@@ -244,6 +276,10 @@ fn prompt_reply(working_dir: &Path, session: &str) -> Result<(), String> {
                 println!("Text: {}", text);
                 println!("---");
             }
+            LogEntry::ToolExecution { ts, turn, data } => {
+                let time = get_wait(ts, &last_send_ts);
+                println!("LLM Tool Execution: {ts} T({turn}) {time} {}", data.name);
+            }
             _ => (),
         }
     }
@@ -253,11 +289,7 @@ fn prompt_reply(working_dir: &Path, session: &str) -> Result<(), String> {
 
 /// Print everything from the session
 fn verbose_session(working_dir: &Path, session: &str) -> Result<(), String> {
-    let path = session_events(working_dir, session)?;
-    let logs =
-        read_log_tolerant(&path).map_err(|e| format!("error reading {}: {e}", path.display()))?;
-
-    for entry in &logs.entries {
+    for entry in &events(working_dir, session)? {
         println!("{}", entry);
     }
     Ok(())
