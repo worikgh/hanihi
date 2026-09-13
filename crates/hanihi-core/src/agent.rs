@@ -131,9 +131,10 @@ impl ContextMessage {
     /// deliberately dropped, matching the historical log format.
     fn to_log_json(&self) -> serde_json::Value {
         let (role, content) = match self {
-            ContextMessage::System(text) => {
-                ("system".to_string(), serde_json::Value::String(text.clone()))
-            }
+            ContextMessage::System(text) => (
+                "system".to_string(),
+                serde_json::Value::String(text.clone()),
+            ),
             ContextMessage::User(text) => {
                 ("user".to_string(), serde_json::Value::String(text.clone()))
             }

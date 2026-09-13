@@ -28,9 +28,7 @@ use self::lock::SessionGuard;
 use self::log::{
     ErrorStage, LlmResponseData, LogEntry, LogWriter, ToolCallData, ToolExecutionData, UsageData,
 };
-use crate::agent::{
-    Agent, StreamEvent, TurnSummary, build_context, context_to_log_json,
-};
+use crate::agent::{Agent, StreamEvent, TurnSummary, build_context, context_to_log_json};
 use crate::error::AgentError;
 
 /// Errors produced by session operations.
