@@ -471,18 +471,18 @@ fn diff_touches_protected(diff: &str) -> Option<String> {
 /// Tool: apply a unified diff to the repository working tree.
 pub fn builtin_apply_patch(tree: Arc<SourceTree>) -> PortableDynamicTool {
     let json = json!({
-        "type": "object",
-        "properties": {
-        "diff": {
-            "type": "string",
-            "description": "Unified diff against the current working tree"
-        },
-        "message": {
-            "type": "string",
-            "description": "Optional commit message"
-        }
-        },
-        "required": ["diff"]
+    "type": "object",
+    "properties": {
+    "diff": {
+        "type": "string",
+        "description": "Unified diff against the current working tree"
+    },
+    "message": {
+        "type": "string",
+        "description": "Optional commit message"
+    }
+    },
+    "required": ["diff"]
     });
     let _call_back = || ();
     PortableDynamicTool::new(
@@ -552,16 +552,16 @@ pub fn builtin_write_file(tree: Arc<SourceTree>) -> PortableDynamicTool {
             "type": "object",
             "properties": {
             "path": {
-                "type": "string",
-                "description": "Path relative to the repo root"
+            "type": "string",
+            "description": "Path relative to the repo root"
             },
             "content": {
-                "type": "string",
-                "description": "Full file contents"
+            "type": "string",
+            "description": "Full file contents"
             },
             "message": {
-                "type": "string",
-                "description": "Optional commit message"
+            "type": "string",
+            "description": "Optional commit message"
             }
             },
             "required": ["path", "content"]
