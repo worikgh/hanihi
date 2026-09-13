@@ -28,7 +28,7 @@ use self::lock::SessionGuard;
 use self::log::{
     ErrorStage, LlmResponseData, LogEntry, LogWriter, ToolCallData, ToolExecutionData, UsageData,
 };
-use crate::agent::{Agent, StreamEvent, TurnSummary, build_context, context_to_log_json};
+use crate::agent::{Agent, StreamEvent, TurnSummary, build_context};
 use crate::error::AgentError;
 
 /// Errors produced by session operations.
@@ -408,7 +408,6 @@ impl Session {
                 &turn_messages,
                 user_input,
             );
-            let messages_json = context_to_log_json(&messages);
             let tools_json =
                 serde_json::to_value(&tools).map_err(|e| AgentError::Rig(e.to_string()))?;
             self.log_entry(&LogEntry::llm_prompt(
@@ -416,7 +415,7 @@ impl Session {
                 self.turn,
                 provider.to_string(),
                 model_name.to_string(),
-                messages_json,
+                messages,
                 tools_json,
             ))
             .map_err(|e| AgentError::Rig(e.to_string()))?;
@@ -652,7 +651,7 @@ impl Session {
                         turn,
                         provider.clone(),
                         model_name.clone(),
-                        context_to_log_json(messages),
+                        messages.clone(),
                         tool_definitions.clone(),
                     )),
                     StreamEvent::CompletionResponse {
@@ -1218,7 +1217,7 @@ mod tests {
                     1,
                     "d".into(),
                     "m".into(),
-                    serde_json::json!([]),
+                    Vec::new(),
                     serde_json::json!([]),
                 ),
                 LogEntry::llm_response(
@@ -1265,7 +1264,7 @@ mod tests {
                     1,
                     "d".into(),
                     "m".into(),
-                    serde_json::json!([]),
+                    Vec::new(),
                     serde_json::json!([]),
                 ),
                 LogEntry::llm_response(
@@ -1288,7 +1287,7 @@ mod tests {
                     2,
                     "d".into(),
                     "m".into(),
-                    serde_json::json!([]),
+                    Vec::new(),
                     serde_json::json!([]),
                 ),
                 LogEntry::llm_response(
@@ -1333,7 +1332,7 @@ mod tests {
                     1,
                     "d".into(),
                     "m".into(),
-                    serde_json::json!([]),
+                    Vec::new(),
                     serde_json::json!([]),
                 ),
                 LogEntry::llm_response(
@@ -1366,7 +1365,7 @@ mod tests {
                     1,
                     "d".into(),
                     "m".into(),
-                    serde_json::json!([]),
+                    Vec::new(),
                     serde_json::json!([]),
                 ),
                 LogEntry::llm_response(
@@ -1420,7 +1419,7 @@ mod tests {
                     1,
                     "d".into(),
                     "m".into(),
-                    serde_json::json!([]),
+                    Vec::new(),
                     serde_json::json!([]),
                 ),
                 LogEntry::llm_response(
@@ -1443,7 +1442,7 @@ mod tests {
                     2,
                     "d".into(),
                     "m".into(),
-                    serde_json::json!([]),
+                    Vec::new(),
                     serde_json::json!([]),
                 ),
                 LogEntry::llm_response(

@@ -15,6 +15,7 @@ use rig::tool::PortableDynamicTool;
 use tokio::sync::mpsc;
 
 use crate::error::AgentError;
+use crate::session::log::ContextMessage;
 
 /// Default system prompt used when none is supplied.
 pub const DEFAULT_SYSTEM_PROMPT: &str = "You are a helpful assistant running in an agent harness. \
@@ -103,48 +104,6 @@ impl ToolCallCache {
         if WRITE_TOOLS.contains(&name) {
             self.reset();
         }
-    }
-}
-
-/// One message in a completion request: the system preamble, a conversation
-/// message, or the current user turn.
-///
-/// Carried as typed data (`Vec<ContextMessage>`) through the agent loop so
-/// the JSON form is only produced at the boundary — when the prompt is
-/// written to the session log or handed to a model client.
-#[derive(Debug, Clone)]
-pub enum ContextMessage {
-    /// System preamble. Not a `rig` `Message`: it travels as `preamble()`.
-    System(String),
-    /// A prior-turn or in-progress-turn message (`rig::completion::Message`).
-    Message(Message),
-    /// The current turn's user input, appended last on every model call.
-    User(String),
-}
-
-impl ContextMessage {
-    /// JSON shape written to the `llm_prompt` log entry: `{role, content}`.
-    ///
-    /// `content` is the plain string for system/user messages and the
-    /// serialized body of the `Message` otherwise. Only `role` and `content`
-    /// are emitted; every other field serde produces for a `Message` is
-    /// deliberately dropped, matching the historical log format.
-    fn to_log_json(&self) -> serde_json::Value {
-        let (role, content) = match self {
-            ContextMessage::System(text) => (
-                "system".to_string(),
-                serde_json::Value::String(text.clone()),
-            ),
-            ContextMessage::User(text) => {
-                ("user".to_string(), serde_json::Value::String(text.clone()))
-            }
-            ContextMessage::Message(msg) => {
-                let value = serde_json::to_value(msg).unwrap_or(serde_json::Value::Null);
-                let role = value["role"].as_str().unwrap_or("unknown").to_string();
-                (role, value["content"].clone())
-            }
-        };
-        serde_json::json!({ "role": role, "content": content })
     }
 }
 
@@ -489,8 +448,8 @@ impl<M: CompletionModel> Agent<M> {
 /// Build the typed message list for one completion request.
 ///
 /// Order is the order the model sees: system preamble, persistent history,
-/// in-progress turn messages, then the current user input. This cannot fail;
-/// serialization is deferred to [`context_to_log_json`].
+/// in-progress turn messages, then the current user input. Serialization is
+/// deferred to the log writer; see [`ContextMessage`].
 pub(crate) fn build_context(
     system_prompt: &str,
     history: &[Message],
@@ -510,11 +469,6 @@ pub(crate) fn build_context(
     msgs.push(ContextMessage::User(user_input.to_string()));
 
     msgs
-}
-
-/// Render a typed message list for the `llm_prompt` log entry.
-pub(crate) fn context_to_log_json(messages: &[ContextMessage]) -> serde_json::Value {
-    serde_json::Value::Array(messages.iter().map(ContextMessage::to_log_json).collect())
 }
 
 /// Execute one tool call, reusing cached results for repeated identical
@@ -913,71 +867,18 @@ mod tests {
     }
 
     #[test]
-    fn context_has_system_history_and_user() {
+    fn build_context_carries_system_history_and_user() {
         let history = vec![Message::user("earlier")];
         let turn_messages = vec![Message::assistant("partial")];
         let messages = build_context("system", &history, &turn_messages, "now");
-        let value = context_to_log_json(&messages);
 
-        let arr = value.as_array().expect("messages is an array");
-        assert_eq!(arr.len(), 4);
-        assert_eq!(arr[0]["role"], "system");
-        assert_eq!(arr[0]["content"], "system");
-        assert_eq!(arr[1]["role"], "user");
-        // A `rig::Message` carries content as a typed block array, not a
-        // bare string — only `ContextMessage::{System, User}` are plain.
-        assert_eq!(arr[1]["content"][0]["type"], "text");
-        assert_eq!(arr[1]["content"][0]["text"], "earlier");
-        assert_eq!(arr[2]["role"], "assistant");
-        assert_eq!(arr[2]["content"][0]["type"], "text");
-        assert_eq!(arr[2]["content"][0]["text"], "partial");
-        assert_eq!(arr[3]["role"], "user");
-        assert_eq!(arr[3]["content"], "now");
-    }
-
-    /// The log format is frozen: a tool call round trip must render exactly
-    /// as it did before the typed context existed — role + content only, with
-    /// the tool result carried as a `user` message.
-    #[test]
-    fn context_log_json_preserves_tool_call_shape() {
-        let call = ToolCall::new(
-            "call_1".to_string(),
-            rig::completion::message::ToolFunction {
-                name: "get_time".to_string(),
-                arguments: serde_json::json!({}),
-            },
+        assert_eq!(messages.len(), 4);
+        assert_eq!(messages[0], ContextMessage::System("system".into()));
+        assert_eq!(messages[1], ContextMessage::Message(history[0].clone()));
+        assert_eq!(
+            messages[2],
+            ContextMessage::Message(turn_messages[0].clone())
         );
-        let history = vec![
-            Message::user("what time is it"),
-            Message::Assistant {
-                id: Some("msg_1".to_string()),
-                content: rig::OneOrMany::one(AssistantContent::ToolCall(call)),
-            },
-        ];
-        let turn_messages = vec![Message::tool_result_with_call_id(
-            "call_1".to_string(),
-            None,
-            "12:00:00",
-        )];
-
-        let value = context_to_log_json(&build_context(
-            "system",
-            &history,
-            &turn_messages,
-            "and now?",
-        ));
-        let arr = value.as_array().expect("messages is an array");
-
-        assert_eq!(arr.len(), 5);
-        assert_eq!(arr[1]["role"], "user");
-        assert_eq!(arr[2]["role"], "assistant");
-        // A tool call serializes as `{type: "toolcall", function: {…}}` —
-        // rig's wire spelling of the variant, not "tool_call".
-        assert_eq!(arr[2]["content"][0]["type"], "toolcall");
-        assert_eq!(arr[2]["content"][0]["function"]["name"], "get_time");
-        // A tool result serializes as a `user` message, not a `tool` role.
-        assert_eq!(arr[3]["role"], "user");
-        assert_eq!(arr[4]["role"], "user");
-        assert_eq!(arr[4]["content"], "and now?");
+        assert_eq!(messages[3], ContextMessage::User("now".into()));
     }
 }

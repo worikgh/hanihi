@@ -10,7 +10,8 @@ use std::io::{BufWriter, Write};
 use std::path::Path;
 
 use chrono::{DateTime, Utc};
-use serde::Serialize;
+use rig::completion::Message;
+use serde::{Deserialize, Serialize};
 
 /// Current log-line schema version.
 ///
@@ -19,8 +20,114 @@ use serde::Serialize;
 /// and add a migration in [`migrate`].
 pub const SCHEMA_VERSION: u32 = 1;
 
+/// One message in a logged completion request.
+///
+/// The three variants are carried as typed data through the agent loop so the
+/// JSON form is only produced when the prompt leaves the process — written to
+/// the log, or handed to a model client. The wire shape is
+/// `{"role": <role>, "content": <content>}` on both sides of the round trip.
+///
+/// Note on round-tripping: a `rig` tool-result message also renders as
+/// `role: "user"` with a *string* content, so a re-read log line cannot
+/// distinguish it from a plain [`ContextMessage::User`]. That ambiguity is
+/// accepted: `llm_prompt` entries are log-only, and [`crate::session::Session::replay_history`]
+/// rebuilds transcripts from `llm_response`/`tool_execution`, never from
+/// `llm_prompt`.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ContextMessage {
+    /// System preamble. Not a `rig` `Message`: it travels as `preamble()`.
+    System(String),
+    /// A prior-turn or in-progress-turn message (`rig::completion::Message`).
+    Message(Message),
+    /// The current turn's user input, appended last on every model call.
+    User(String),
+}
+
+impl ContextMessage {
+    /// JSON shape written to the `llm_prompt` log entry: `{role, content}`.
+    ///
+    /// `content` is the plain string for system/user messages and the
+    /// serialized body of the `Message` otherwise. Only `role` and `content`
+    /// are emitted; every other field serde produces for a `Message` is
+    /// deliberately dropped, matching the historical log format.
+    pub(crate) fn to_log_json(&self) -> serde_json::Value {
+        let (role, content) = match self {
+            ContextMessage::System(text) => (
+                "system".to_string(),
+                serde_json::Value::String(text.clone()),
+            ),
+            ContextMessage::User(text) => {
+                ("user".to_string(), serde_json::Value::String(text.clone()))
+            }
+            ContextMessage::Message(msg) => {
+                let value = serde_json::to_value(msg).unwrap_or(serde_json::Value::Null);
+                let role = value["role"].as_str().unwrap_or("unknown").to_string();
+                (role, value["content"].clone())
+            }
+        };
+        serde_json::json!({ "role": role, "content": content })
+    }
+
+    /// Rebuild a `ContextMessage` from its `{role, content}` log shape.
+    ///
+    /// A `system` role is always the preamble; a `user` role is the plain
+    /// current-turn input when `content` is a string, and otherwise a
+    /// serialized `rig` message (the ambiguous tool-result case — see the
+    /// type-level note).
+    fn from_log_json(value: serde_json::Value) -> Result<Self, String> {
+        let role = value
+            .get("role")
+            .and_then(|r| r.as_str())
+            .ok_or_else(|| "context message is missing a string 'role'".to_string())?;
+        let content = value
+            .get("content")
+            .cloned()
+            .ok_or_else(|| "context message is missing 'content'".to_string())?;
+
+        match role {
+            "system" => match content {
+                serde_json::Value::String(text) => Ok(ContextMessage::System(text)),
+                other => Ok(ContextMessage::Message(
+                    serde_json::from_value(rebuild_message_json("system", other))
+                        .map_err(|e| e.to_string())?,
+                )),
+            },
+            "user" => match content {
+                serde_json::Value::String(text) => Ok(ContextMessage::User(text)),
+                other => Ok(ContextMessage::Message(
+                    serde_json::from_value(rebuild_message_json("user", other))
+                        .map_err(|e| e.to_string())?,
+                )),
+            },
+            other => Ok(ContextMessage::Message(
+                serde_json::from_value(rebuild_message_json(other, content))
+                    .map_err(|e| e.to_string())?,
+            )),
+        }
+    }
+}
+
+/// Reassemble the `rig` `Message` JSON from a split `role`/`content` pair, as
+/// [`ContextMessage::to_log_json`] strips everything but those two fields.
+fn rebuild_message_json(role: &str, content: serde_json::Value) -> serde_json::Value {
+    serde_json::json!({ "role": role, "content": content })
+}
+
+impl Serialize for ContextMessage {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.to_log_json().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for ContextMessage {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        Self::from_log_json(value).map_err(serde::de::Error::custom)
+    }
+}
+
 /// One entry in the session event log.
-#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq)]
 #[serde(tag = "kind")]
 pub enum LogEntry {
     /// Session directory first created.
@@ -115,11 +222,11 @@ pub struct UserInputData {
     pub text: String,
 }
 
-#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq)]
 pub struct LlmPromptData {
     pub provider: String,
     pub model: String,
-    pub messages: serde_json::Value,
+    pub messages: Vec<ContextMessage>,
     pub tool_definitions: serde_json::Value,
 }
 
@@ -243,7 +350,7 @@ impl LogEntry {
         turn: u64,
         provider: String,
         model: String,
-        messages: serde_json::Value,
+        messages: Vec<ContextMessage>,
         tool_definitions: serde_json::Value,
     ) -> Self {
         LogEntry::LlmPrompt {
@@ -416,7 +523,7 @@ impl fmt::Display for LogReadError {
 impl std::error::Error for LogReadError {}
 
 /// Outcome of a tolerant log read: valid entries plus any bad lines.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct LogReadResult {
     /// Entries from lines that parsed successfully.
     pub entries: Vec<LogEntry>,
@@ -543,7 +650,6 @@ impl Display for LogEntry {
                 writeln!(f, "  Model: {}", data.model)?;
                 let json = serde_json::to_string_pretty(&data.messages).map_err(|_| fmt::Error)?;
                 writeln!(f, "  Messages: {} characters", json.len())?;
-                // write_json_indented(f, &data.messages, "    ")?;
                 writeln!(f)?;
                 writeln!(f, "  Tool definitions:")?;
                 write_json_indented(f, &data.tool_definitions, "    ")
@@ -869,5 +975,158 @@ mod tests {
                 .contains("  Usage: 12 input tokens, 34 output tokens"),
             "unexpected: {entry}"
         );
+    }
+
+    /// The on-disk shape of a prompt is frozen: writing a typed context list
+    /// and reading it back must reproduce the same JSON a pre-typed log had —
+    /// `[{role, content}, …]`, with no extra fields.
+    #[test]
+    fn llm_prompt_messages_serialize_to_role_and_content() {
+        let data = LlmPromptData {
+            provider: "deepseek".into(),
+            model: "deepseek-chat".into(),
+            messages: vec![
+                ContextMessage::System("sys".into()),
+                ContextMessage::Message(Message::user("earlier")),
+                ContextMessage::Message(Message::assistant("partial")),
+                ContextMessage::User("now".into()),
+            ],
+            tool_definitions: serde_json::json!([]),
+        };
+
+        let value = serde_json::to_value(&data).expect("serialize");
+        let messages = value["messages"].as_array().expect("messages is an array");
+
+        assert_eq!(messages.len(), 4);
+        // Only `role` and `content` are emitted — no extra `Message` fields.
+        assert_eq!(messages[0].as_object().expect("object").len(), 2);
+        assert_eq!(messages[0]["role"], "system");
+        assert_eq!(messages[0]["content"], "sys");
+        // A `rig::Message` carries content as a typed block array, not as a
+        // bare string — only `ContextMessage::{System, User}` are plain.
+        assert_eq!(messages[1]["role"], "user");
+        assert_eq!(messages[1]["content"][0]["type"], "text");
+        assert_eq!(messages[1]["content"][0]["text"], "earlier");
+        assert_eq!(messages[2]["role"], "assistant");
+        assert_eq!(messages[3]["role"], "user");
+        assert_eq!(messages[3]["content"], "now");
+    }
+
+    /// A prompt round-trips through JSON, so the log stays parseable by the
+    /// writer that produced it.
+    ///
+    /// The round trip is *shape*-preserving, not lossless: `to_log_json`
+    /// keeps only `role` + `content`, so a `Message::Assistant`'s `id` is
+    /// dropped. This is the pre-existing log format — the test pins it so a
+    /// future change to `ContextMessage` cannot silently widen the wire form.
+    #[test]
+    fn llm_prompt_messages_round_trip() {
+        let call = rig::completion::message::ToolCall::new(
+            "call_1".to_string(),
+            rig::completion::message::ToolFunction {
+                name: "get_time".to_string(),
+                arguments: serde_json::json!({}),
+            },
+        );
+        let messages = vec![
+            ContextMessage::System("sys".into()),
+            ContextMessage::Message(Message::Assistant {
+                id: None,
+                content: rig::OneOrMany::one(rig::completion::AssistantContent::ToolCall(call)),
+            }),
+            ContextMessage::User("now".into()),
+        ];
+        let entry = LogEntry::llm_prompt(
+            "2026-01-01T00:00:00Z".parse().expect("valid timestamp"),
+            1,
+            "deepseek".into(),
+            "deepseek-chat".into(),
+            messages.clone(),
+            serde_json::json!([]),
+        );
+
+        let line = serde_json::to_string(&entry).expect("serialize");
+        let parsed: LogEntry = serde_json::from_str(&line).expect("parse");
+        assert_eq!(parsed, entry);
+
+        // The tool call survives as a `Message`, not as a plain user string.
+        match &parsed {
+            LogEntry::LlmPrompt { data, .. } => {
+                assert_eq!(data.messages, messages);
+                assert!(matches!(data.messages[1], ContextMessage::Message(_)));
+            }
+            other => panic!("expected LlmPrompt, got {other:?}"),
+        }
+    }
+
+    /// A log line written before the typed context existed must still parse:
+    /// string content means the plain system/user variants.
+    #[test]
+    fn llm_prompt_parses_legacy_role_content_lines() {
+        // One physical line: `parse_log_strict` is line-oriented.
+        let legacy = r#"{"schema":1,"kind":"llm_prompt","ts":"2026-01-01T00:00:00Z","turn":1,"data":{"provider":"d","model":"m","tool_definitions":[],"messages":[{"role":"system","content":"sys"},{"role":"user","content":"hi"}]}}"#;
+        let entry = parse_log_strict(legacy).expect("legacy line must parse");
+
+        match &entry[0] {
+            LogEntry::LlmPrompt { data, .. } => {
+                assert_eq!(
+                    data.messages,
+                    vec![
+                        ContextMessage::System("sys".into()),
+                        ContextMessage::User("hi".into()),
+                    ]
+                );
+            }
+            other => panic!("expected LlmPrompt, got {other:?}"),
+        }
+    }
+
+    /// The `id` a `Message::Assistant` carries is not part of the wire form,
+    /// so it does not survive the round trip. Documented, not a bug: the log
+    /// is a rendering of the prompt, not a serialization of the transcript.
+    #[test]
+    fn llm_prompt_round_trip_drops_message_id() {
+        let original = Message::Assistant {
+            id: Some("msg_1".to_string()),
+            content: rig::OneOrMany::one(rig::completion::AssistantContent::Text(
+                rig::completion::message::Text::new("hello"),
+            )),
+        };
+        let entry = LogEntry::llm_prompt(
+            "2026-01-01T00:00:00Z".parse().expect("valid timestamp"),
+            1,
+            "d".into(),
+            "m".into(),
+            vec![ContextMessage::Message(original)],
+            serde_json::json!([]),
+        );
+
+        let parsed: LogEntry =
+            serde_json::from_str(&serde_json::to_string(&entry).expect("serialize"))
+                .expect("parse");
+
+        match &parsed {
+            LogEntry::LlmPrompt { data, .. } => match &data.messages[0] {
+                ContextMessage::Message(Message::Assistant { id, .. }) => assert_eq!(*id, None),
+                other => panic!("expected an assistant message, got {other:?}"),
+            },
+            other => panic!("expected LlmPrompt, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn llm_prompt_display_counts_serialized_messages() {
+        let entry = LogEntry::llm_prompt(
+            "2026-01-01T00:00:00Z".parse().expect("valid timestamp"),
+            1,
+            "deepseek".into(),
+            "deepseek-chat".into(),
+            vec![ContextMessage::System("sys".into())],
+            serde_json::json!([]),
+        );
+
+        let rendered = entry.to_string();
+        assert!(rendered.contains("  Messages: "), "got: {rendered}");
+        assert!(rendered.contains(" characters"), "got: {rendered}");
     }
 }

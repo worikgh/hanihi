@@ -34,7 +34,7 @@ fn replay_streaming_order_reconstructs_canonical_history() {
                     1,
                     "d".into(),
                     "m".into(),
-                    serde_json::json!([]),
+                    Vec::new(),
                     serde_json::json!([]),
                 ),
                 // Streaming order: tool results are emitted before the
@@ -85,7 +85,7 @@ fn replay_streaming_order_reconstructs_canonical_history() {
                     1,
                     "d".into(),
                     "m".into(),
-                    serde_json::json!([]),
+                    Vec::new(),
                     serde_json::json!([]),
                 ),
                 LogEntry::tool_execution(
@@ -118,7 +118,7 @@ fn replay_streaming_order_reconstructs_canonical_history() {
                     1,
                     "d".into(),
                     "m".into(),
-                    serde_json::json!([]),
+                    Vec::new(),
                     serde_json::json!([]),
                 ),
                 LogEntry::llm_response(
