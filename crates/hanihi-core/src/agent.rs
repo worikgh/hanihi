@@ -136,8 +136,8 @@ impl ContextMessage {
             ContextMessage::User(text) => ("user", serde_json::Value::String(text.clone())),
             ContextMessage::Message(msg) => {
                 let value = serde_json::to_value(msg).unwrap_or(serde_json::Value::Null);
-                let role = value["role"].as_str().unwrap_or("unknown");
-                (role, value["content"].clone())
+                let role = value["role"].as_str().unwrap_or("unknown").to_string();
+                (role.as_str(), value["content"].clone())
             }
         };
         serde_json::json!({ "role": role, "content": content })
@@ -587,7 +587,7 @@ where
         let _ = tx
             .send(StreamEvent::CompletionRequest {
                 ts: Utc::now(),
-                messages: messages_json,
+                messages,
                 tool_definitions: tool_definitions_json,
             })
             .await;
