@@ -10,6 +10,7 @@ mkdir -p "$bin_dir"
 declare -A binaries=(
   [analyse]="hānihi-analyse"
   [hanihi-cli]="hānihi-cli"
+  [hanihi-mcp-server]="hānihi-mcp-server"
 )
 
 for source_name in "${!binaries[@]}"; do
