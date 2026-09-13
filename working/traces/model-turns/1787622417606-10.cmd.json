@@ -1,0 +1,8 @@
+{
+  "command": "git log --oneline -8",
+  "duration_ms": 6,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "886bb52 Fix prompt-append CLI: single session open, persist --new-prompt rewrite, correct borrow\neaa40bc Remove unneeded wildcard in pattern (clippy)\n88cf902 Fold session prompt resolution into a single expression (clippy)\n3a98cf4 Add --prompt/--prompt-file appends and --new-prompt to CLI\nd453bbe Fix a `mut` bug\nb55ebc6 Formatted with `cargo fmt`\n4a8f20c Raise default max_turns to 1000 and display turn count in run/session metadata\nfaae0ec Steps 5, 7: eval repo/write_tools/fixture fields + build/test/clippy/no_diff assertions, cases 003-self-build & 004-self-patch; scripts/self-improve.sh driver; README + plan 005 status\n",
+  "ts": "2026-08-25T01:46:57.606355788+00:00"
+}

@@ -1,0 +1,8 @@
+{
+  "command": "git show HEAD -- README.md",
+  "duration_ms": 8,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "commit f4720df772c8a3c00c1215648b0ab079d439f68c\nAuthor: Worik <5387413+worikgh@users.noreply.github.com>\nDate:   Mon Sep 7 12:51:32 2026 +1200\n\n    Repair diff syntax markdown bullet\n\ndiff --git a/README.md b/README.md\nindex 198712c..e4198c8 100644\n--- a/README.md\n+++ b/README.md\n@@ -200,7 +200,10 @@ type = \"no_error\"\n The runner creates a temp session, runs the prompt against a live LLM, then\n checks each assertion against the `events.jsonl` log. Assertion types:\n `tool_called`, `tool_not_called`, `text_contains`, `text_not_contains`,\n-`text_regex`, `no_error`, `max_turns`, `latency_ms`, `token_budget`.\n+`text_regex`, `no_error`, `max_turns`, `latency_ms`, `token_budget`,\n+`build_succeeds`, `tests_pass`, `clippy_clean`, `no_diff`.\n+The last four run `cargo`/`git` gates in the case's repo and need a `repo`\n+(or `fixture`) field in `case.toml`.\n \n Tools are rig `PortableDynamicTool`s: name + description + JSON schema + an\n async callback over raw `serde_json::Value`. MCP tools get wrapped into this\n",
+  "ts": "2026-09-07T00:52:04.835619305+00:00"
+}

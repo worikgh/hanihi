@@ -1,0 +1,9 @@
+Grant write-mode git housekeeping to run_command
+
+Allow git add, restore --staged, rm --cached, commit, and bounded
+commit --amend only when write tools are active. Read-only mode keeps
+its existing allowlist. Bounds amend to HEAD-only and rejects
+author/date/fixup flags. Wire hanihi-cli --write and hanihi-eval
+write_tools to the write variant.
+
+Hānihi

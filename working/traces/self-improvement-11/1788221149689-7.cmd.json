@@ -1,0 +1,8 @@
+{
+  "command": "git diff -w -- crates/hanihi-cli/src/main.rs | grep -n \"eprintln\\|run_turn\\|@@\\|Event\"",
+  "duration_ms": 4,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "diff --git a/crates/hanihi-cli/src/main.rs b/crates/hanihi-cli/src/main.rs\nindex b4342d1..b9c7ca9 100644\n--- a/crates/hanihi-cli/src/main.rs\n+++ b/crates/hanihi-cli/src/main.rs\n@@ -156,6 +156,7 @@ fn read_prompt_file(base: &Path, path: &str) -> Result<String, AgentError> {\n     } else {\n \tbase.join(path)\n     };\n+    eprintln!(\"{}:{}: Path to resolve: {resolved:?}\", file!(), line!());\n     if !resolved.is_file() {\n \treturn Err(AgentError::Io(std::io::Error::new(\n \t    std::io::ErrorKind::NotFound,\n@@ -439,13 +440,17 @@ async fn main() -> Result<(), AgentError> {\n \t    .run_streaming(&mut agent, provider, &args.model, &prompt)\n \t    .await\n \t    .map_err(|e| AgentError::Rig(e.to_string()))?;\n-\n \twhile let Some(event) = rx.recv().await {\n+\t    eprintln!(\"{}:{}: Event: {:?}\", file!(), line!(), event);\n \t    match event {\n \t\tStreamEvent::TextDelta { text } => print_coloured!(\"{text}\"),\n-                StreamEvent::ToolCallStart { name, .. } => print_coloured!(\"\\n[🔧 {name}\"),\n-                StreamEvent::ToolCallArgs { .. } => {}\n-                StreamEvent::ToolCallReady { .. } => {}\n+\t\tStreamEvent::ToolCallStart { id: _id, name } => {\n+\t\t    print_coloured!(\"\\n[🔧 {}\", name);\n+\t\t}\n+\t\tStreamEvent::ToolCallArgs { .. } => {\n+\t\t}\n+\t\tStreamEvent::ToolCallReady { .. } => {\n+\t\t}\n \t\tStreamEvent::ToolResult { .. } => println_coloured!(\" ✅]\"),\n \t\tStreamEvent::TurnComplete { summary } => {\n \t\t    println!();\n",
+  "ts": "2026-09-01T00:05:49.689210570+00:00"
+}

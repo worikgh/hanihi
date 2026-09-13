@@ -28,7 +28,9 @@ use self::lock::SessionGuard;
 use self::log::{
     ErrorStage, LlmResponseData, LogEntry, LogWriter, ToolCallData, ToolExecutionData, UsageData,
 };
-use crate::agent::{Agent, StreamEvent, TurnSummary, messages_for_log};
+use crate::agent::{
+    Agent, StreamEvent, TurnSummary, build_context, context_to_log_json,
+};
 use crate::error::AgentError;
 
 /// Errors produced by session operations.
@@ -402,12 +404,13 @@ impl Session {
         for _ in 0..agent.max_turns() {
             // Build and log the prompt.
             let tools = agent.tool_definitions();
-            let messages_json = messages_for_log(
+            let messages = build_context(
                 agent.system_prompt(),
                 agent.history(),
                 &turn_messages,
                 user_input,
-            )?;
+            );
+            let messages_json = context_to_log_json(&messages);
             let tools_json =
                 serde_json::to_value(&tools).map_err(|e| AgentError::Rig(e.to_string()))?;
             self.log_entry(&LogEntry::llm_prompt(
@@ -651,7 +654,7 @@ impl Session {
                         turn,
                         provider.clone(),
                         model_name.clone(),
-                        messages.clone(),
+                        context_to_log_json(messages),
                         tool_definitions.clone(),
                     )),
                     StreamEvent::CompletionResponse {

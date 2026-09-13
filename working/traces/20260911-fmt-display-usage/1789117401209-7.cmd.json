@@ -1,0 +1,8 @@
+{
+  "command": "cargo clippy --workspace --all-targets -- -D warnings",
+  "duration_ms": 2972,
+  "exit_code": 0,
+  "stderr": "    Checking hanihi-core v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-core)\n    Checking hanihi-eval v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-eval)\n    Checking hanihi-session v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-session)\n    Checking hanihi-mcp-server v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-mcp-server)\n    Checking hanihi-cli v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-cli)\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.86s\n",
+  "stdout": "",
+  "ts": "2026-09-11T09:03:21.209805535+00:00"
+}

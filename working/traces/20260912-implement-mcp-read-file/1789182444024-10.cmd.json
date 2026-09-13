@@ -1,0 +1,8 @@
+{
+  "command": "grep -n \"CallToolResult\" target/doc/src/rmcp/model/mrtr.rs.html",
+  "duration_ms": 0,
+  "exit_code": 1,
+  "stderr": "",
+  "stdout": "",
+  "ts": "2026-09-12T03:07:24.024380491+00:00"
+}

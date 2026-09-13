@@ -1,0 +1,8 @@
+{
+  "command": "git status --porcelain=v1 --untracked-files=all -- plans/010-write-flag-fail-fast.md",
+  "duration_ms": 12,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "?? plans/010-write-flag-fail-fast.md\n",
+  "ts": "2026-09-08T00:58:21.878912926+00:00"
+}

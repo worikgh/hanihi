@@ -1,0 +1,8 @@
+{
+  "command": "git diff -- crates/hanihi-core/src/agent.rs",
+  "duration_ms": 3,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "",
+  "ts": "2026-09-04T03:22:37.077373872+00:00"
+}

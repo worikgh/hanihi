@@ -1,0 +1,8 @@
+{
+  "command": "find /home/worik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rmcp-3.1.2/src -name \"*.rs\"",
+  "duration_ms": 5,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "",
+  "ts": "2026-09-11T23:17:20.208200314+00:00"
+}

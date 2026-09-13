@@ -1,0 +1,2 @@
+examine the seesion in `/tmp/working/sessions/testing/`  I am going to ask you about what happened during that session
+/quit

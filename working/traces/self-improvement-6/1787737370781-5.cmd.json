@@ -1,0 +1,8 @@
+{
+  "command": "git log --oneline -5",
+  "duration_ms": 10,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "2418c69 Fix dead_code warning by allowing it on diff_already_applied\nd215e4a Formatting.  Whitespace changes\n15dea7c Allow `hash-object` if no `-w` flag\nd03e958 Apply patches with --3way so dirty-tree patching works\ncfbcc0d Replace preemptive dirty-target guard with precise git apply --check diagnostics\n",
+  "ts": "2026-08-26T09:42:50.781482576+00:00"
+}

@@ -1,0 +1,12 @@
+/help
+Update the README.md and add a section on the commands: /help /tools /clear /session /file /quit
+what went wrong?
+Why did you get it wrong?
+Three questions:  Why are you writing bad patches?  Where are theys stored on the file system? Why did `read_file` just go wrong?
+Why are you trying to grep `crates/hanihi-core/src/tools.rs`?  It does not exist
+The `apply_patch` command is failing a lot.  Fix it
+should `rev-parse` be allowed for `run_command git`?
+yes 
+Where is the failed patch?
+`apply_patch` is failing a lot.  Do not use it.  Edit the README.md as you suggest.  Do not use `apply_patch`
+/quit

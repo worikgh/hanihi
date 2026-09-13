@@ -1,0 +1,24 @@
+/file /tmp/prompt.md
+/quit
+The cargo subcommand 'metadata' is allowed now
+/tools
+/session
+/quit
+/session
+How is it possible to set defaults for `reedline`?  
+How do I exempt `target/doc` in gitignore?
+Done.  Continue.  How to change reedline defaults
+/quit
+Continue
+What is this tool `log_analysis`?
+Yes please.  Output it here, do not edit code
+now create `crates/hanihi-cli/src/highlight.rs` with that content
+Wire it in
+/quit
+The colours are better now
+what was that error?
+Why did you do it?
+/quit
+/session
+Describe this session so far
+/quit

@@ -1,0 +1,8 @@
+{
+  "command": "git blame -L 200,210 README.md",
+  "duration_ms": 57,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "5cc9c93b (Worik       2026-08-12 17:30:22 +1200 200) The runner creates a temp session, runs the prompt against a live LLM, then\n5cc9c93b (Worik       2026-08-12 17:30:22 +1200 201) checks each assertion against the `events.jsonl` log. Assertion types:\n5cc9c93b (Worik       2026-08-12 17:30:22 +1200 202) `tool_called`, `tool_not_called`, `text_contains`, `text_not_contains`,\nf4720df7 (Worik       2026-09-07 12:51:32 +1200 203) `text_regex`, `no_error`, `max_turns`, `latency_ms`, `token_budget`,\nf4720df7 (Worik       2026-09-07 12:51:32 +1200 204) `build_succeeds`, `tests_pass`, `clippy_clean`, `no_diff`.\nf4720df7 (Worik       2026-09-07 12:51:32 +1200 205) The last four run `cargo`/`git` gates in the case's repo and need a `repo`\nf4720df7 (Worik       2026-09-07 12:51:32 +1200 206) (or `fixture`) field in `case.toml`.\n5cc9c93b (Worik       2026-08-12 17:30:22 +1200 207) \n^da02c82 (Deepthought 2026-08-10 15:40:43 +1200 208) Tools are rig `PortableDynamicTool`s: name + description + JSON schema + an\n^da02c82 (Deepthought 2026-08-10 15:40:43 +1200 209) async callback over raw `serde_json::Value`. MCP tools get wrapped into this\n^da02c82 (Deepthought 2026-08-10 15:40:43 +1200 210) shape, dispatching over `tools/call` on the connected service.\n",
+  "ts": "2026-09-07T00:54:06.867412407+00:00"
+}

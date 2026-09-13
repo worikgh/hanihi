@@ -1,0 +1,8 @@
+{
+  "command": "sed -n '425,440p' crates/hanihi-core/src/write.rs",
+  "duration_ms": 2,
+  "exit_code": 1,
+  "stderr": "sed: -e expression #1, char 1: unknown command: `''\n",
+  "stdout": "",
+  "ts": "2026-08-30T22:47:51.153381231+00:00"
+}

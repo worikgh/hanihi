@@ -1,0 +1,8 @@
+/quit
+/file /tmp/prompt.md
+continue
+rewrite your patch and retry apply_patch
+continue
+/quit
+What is taking you so long?  Are the tests implemented?
+/quit

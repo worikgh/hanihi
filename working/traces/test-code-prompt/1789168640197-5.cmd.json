@@ -1,0 +1,8 @@
+{
+  "command": "grep -rn \"pub struct CallToolResult\\|impl CallToolResult\\|pub fn success\\|pub fn error\\|is_error\" /home/worik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rmcp-3.1.2/src",
+  "duration_ms": 13,
+  "exit_code": 2,
+  "stderr": "grep: struct: No such file or directory\ngrep: CallToolResult\\|impl: No such file or directory\ngrep: CallToolResult\\|pub: No such file or directory\ngrep: fn: No such file or directory\ngrep: success\\|pub: No such file or directory\ngrep: fn: No such file or directory\ngrep: error\\|is_error\": No such file or directory\n",
+  "stdout": "",
+  "ts": "2026-09-11T23:17:20.197974918+00:00"
+}

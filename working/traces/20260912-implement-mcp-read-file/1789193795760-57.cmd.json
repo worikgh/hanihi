@@ -1,0 +1,8 @@
+{
+  "command": "cargo test -p hanihi-mcp-server",
+  "duration_ms": 28331,
+  "exit_code": 0,
+  "stderr": "   Compiling aws-lc-sys v0.44.0\n   Compiling aws-lc-rs v1.18.0\n   Compiling rustls-webpki v0.103.13\n   Compiling rustls v0.23.43\n   Compiling tokio-rustls v0.26.4\n   Compiling rustls-platform-verifier v0.7.0\n   Compiling hyper-rustls v0.27.9\n   Compiling reqwest v0.13.4\n   Compiling rig-core v0.41.0\n   Compiling hanihi-core v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-core)\n   Compiling hanihi-mcp-server v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-mcp-server)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 28.28s\n     Running unittests src/main.rs (target/debug/deps/hanihi_mcp_server-4bf7fdcc951633f7)\n",
+  "stdout": "\nrunning 7 tests\ntest read_file_tool::tests::path_arg_extracts_and_rejects ... ok\ntest read_file_tool::tests::new_reports_read_file_schema ... ok\ntest read_file_tool::tests::read_reports_missing ... ok\ntest read_file_tool::tests::read_rejects_ignored ... ok\ntest read_file_tool::tests::read_returns_file_contents ... ok\ntest read_file_tool::tests::read_rejects_escape ... ok\ntest read_file_tool::tests::unavailable_reports_no_repo ... ok\n\ntest result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s\n\n",
+  "ts": "2026-09-12T06:16:35.760223898+00:00"
+}

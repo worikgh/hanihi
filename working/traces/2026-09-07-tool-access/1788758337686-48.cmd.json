@@ -1,0 +1,8 @@
+{
+  "command": "git diff -- crates/hanihi-core/hanihi-debug.log",
+  "duration_ms": 4,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "",
+  "ts": "2026-09-07T05:18:57.686741625+00:00"
+}

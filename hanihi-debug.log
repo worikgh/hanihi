@@ -1,0 +1,91 @@
+[2026-09-04T04:17:55.533159096+00:00] get_time tool constructed: builtin_get_time called
+
+[2026-09-04T22:24:03.604061489+00:00] get_time tool constructed: builtin_get_time called
+
+[2026-09-04T22:24:42.411468524+00:00] get_time tool constructed: builtin_get_time called
+
+[2026-09-04T22:47:03.573236127+00:00] get_time tool constructed: builtin_get_time called
+
+[2026-09-04T23:05:33.146963041+00:00] get_time tool constructed: builtin_get_time called
+
+[2026-09-04T23:10:37.092861309+00:00] get_time tool constructed: builtin_get_time called
+
+[2026-09-07T00:18:23.067048215+00:00] apply_patch on non-diff: @@
+-- **Agent loop** — system preamble + persistent history + tool definitions,
+-  tool-call dispatch, `max_turns` guard (default 10), per-turn usage tracking
++- **Agent loop** — system preamble + persistent history + tool definitions,
++  tool-call dispatch, `max_turns` guard, per-turn usage tracking
+@@
+-- **Task mode (`--task`)** — one long-horizon turn with a system prompt
+-  encoding the workflow gates (`cargo fmt` → `cargo test` → `cargo build`
+-  → `cargo clippy -- -D warnings` → commit). `--max-turns N` (default 50 in
+-  task mode). `scripts/self-improve.sh` drives the full loop: task mode →
+-  rebuild → eval gate.
++- **Task mode (`--task`)** — one long-horizon turn with a system prompt
++  encoding the workflow gates (`cargo fmt` → `cargo test` → `cargo build`
++  → `cargo clippy -- -D warnings` → commit). `--max-turns N` raises the
++  per-turn cap. `scripts/self-improve.sh` drives the full loop: task mode →
++  rebuild → eval gate.
+@@
+-Configuration — every flag has an environment variable:
+-
+-| Flag | Env | Default |
+-|---|---|---|
+-| `--base-url` | `LLM_BASE_URL` | `https://api.deepseek.com/v1` |
+-| `--api-key` | `LLM_API_KEY` | — (required) |
+-| `--model` | `LLM_MODEL` | `deepseek-chat` |
+-| `--session NAME` | — | `default-session` |
+-| `--new-session NAME` | — | none (auto-creates `default-session` on first run) |
+-| `--working-dir DIR` | `HANIHI_WORKING_DIR` | `./working` |
+-| `--mcp-command CMD` | — | none (repeatable) |
+-| `--once PROMPT` | — | none |
+-| `--write` | — | write tools NOT registered |
+-| `--task PROMPT` | — | none (takes precedence over `--once`) |
+-| `--max-turns N` | — | 10 (50 in task mode) |
++Flags (env variables supply a value where noted):
++
++| Flag | Env | Default |
++|---|---|---|
++| `--base-url` | `LLM_BASE_URL` | `https://api.deepseek.com/v1` |
++| `--api-key` | `LLM_API_KEY` | — (required) |
++| `--model` | `LLM_MODEL` | `deepseek-chat` |
++| `--session NAME` | — | `default-session` |
++| `--new-session NAME` | — | none (auto-creates `default-session` on first run) |
++| `--prompt TEXT` | — | none (repeatable; appends to the system prompt) |
++| `--prompt-file PATH` | — | none (repeatable; appends file contents to the system prompt) |
++| `--new-prompt` | — | replace the system prompt entirely (no base prompt prepended) |
++| `--working-dir DIR` | `HANIHI_WORKING_DIR` | `./working` |
++| `--mcp-command CMD` | — | none (repeatable) |
++| `--once PROMPT` | — | none |
++| `--write` | — | write tools NOT registered |
++| `--task PROMPT` | — | none (takes precedence over `--once`) |
++| `--max-turns N` | — | `1000` (normal and task mode; a sane value is a TODO) |
+@@
+-4. `max_turns` (default 10) guards runaway tool-call loops.
++4. `max_turns` guards runaway tool-call loops.
+@@
+-The runner creates a temp session, runs the prompt against a live LLM, then
+-checks each assertion against the `events.jsonl` log. Assertion types:
+-`tool_called`, `tool_not_called`, `text_contains`, `text_not_contains`,
+-`text_regex`, `no_error`, `max_turns`, `latency_ms`, `token_budget`.
++The runner creates a temp session, runs the prompt against a live LLM, then
++checks each assertion against the `events.jsonl` log. Assertion types:
++`tool_called`, `tool_not_called`, `text_contains`, `text_not_contains`,
++`text_regex`, `no_error`, `max_turns`, `latency_ms`, `token_budget`, plus the
++repo-backed `build_succeeds`, `tests_pass`, `clippy_clean`, and `no_diff`.
+
+
+[2026-09-07T00:30:35.264799613+00:00] apply_patch on non-diff: *** Begin Patch
+*** Update File: README.md
+@@
+ ├── hanihi-eval/        # binary: eval runner — run test cases against a live
+ │                       #   LLM and check assertions against the session log
+-├── hanihi-session/     #
++├── hanihi-session/     # read-only session introspection: print /session summaries
++│                       #   from session.json + events.jsonl, no model needed; also
++│                       #   an `analyse` binary to list sessions / dump log entries
+ └── mcp-echo-server/    # binary: minimal MCP stdio server (demo, one
+                         #   `mcp_echo` tool)
+ evals/
+*** End Patch
+

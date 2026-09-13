@@ -1,0 +1,8 @@
+{
+  "command": "cargo clippy --workspace --all-targets --all-features -- -D warnings",
+  "duration_ms": 322,
+  "exit_code": 0,
+  "stderr": "    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.23s\n",
+  "stdout": "",
+  "ts": "2026-08-25T02:01:02.857066869+00:00"
+}

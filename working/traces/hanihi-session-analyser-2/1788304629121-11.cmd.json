@@ -1,0 +1,8 @@
+{
+  "command": "cargo test -p hanihi-session --bin analyse",
+  "duration_ms": 73599,
+  "exit_code": 0,
+  "stderr": "   Compiling aws-lc-sys v0.44.0\n   Compiling aws-lc-rs v1.18.0\n   Compiling rustls v0.23.43\n   Compiling rustls-webpki v0.103.13\n   Compiling tokio-rustls v0.26.4\n   Compiling rustls-platform-verifier v0.7.0\n   Compiling hyper-rustls v0.27.9\n   Compiling reqwest v0.13.4\n   Compiling rig-core v0.41.0\n   Compiling hanihi-core v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-core)\n   Compiling hanihi-session v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-session)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 13s\n     Running unittests src/bin/analyse.rs (target/debug/deps/analyse-f007e3cc1ff8d173)\n",
+  "stdout": "\nrunning 3 tests\ntest tests::maps_kind_for_parsed_entry ... ok\ntest tests::reports_line_number_for_bad_json ... ok\ntest tests::skips_blank_lines_and_parses_valid_entries ... ok\n\ntest result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n",
+  "ts": "2026-09-01T23:17:09.121614323+00:00"
+}

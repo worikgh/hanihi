@@ -1,0 +1,8 @@
+{
+  "command": "cargo check -p hanihi-cli",
+  "duration_ms": 598,
+  "exit_code": 0,
+  "stderr": "    Checking hanihi-cli v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-cli)\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.54s\n",
+  "stdout": "",
+  "ts": "2026-08-29T22:04:56.846278894+00:00"
+}

@@ -1,0 +1,8 @@
+{
+  "command": "cargo check -p hanihi-mcp-server",
+  "duration_ms": 631,
+  "exit_code": 0,
+  "stderr": "    Checking hanihi-mcp-server v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-mcp-server)\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.56s\n",
+  "stdout": "",
+  "ts": "2026-09-12T04:46:42.776349620+00:00"
+}

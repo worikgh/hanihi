@@ -1,0 +1,16 @@
+Summerise this session so far
+/quit
+Can I redirect the std error from a Hānihi session?
+/quit
+Summerise this session so far
+The `dbg!` macros then must be converted into some nechanism that will send the output to a file.  Implement a solution and let me know what it is.
+/quit
+summerise the session so far
+Commit this work
+tell me what `git reset` you want
+/quit
+I have committed the outstanding files in your repository.  Continue
+I removed the `hanihi-debug.log` from git.  Do not modify `.gitignore`, and do not use `apply_patch` yet.  When planning to use `apply_patch` write the patch file to disc in `working` and let me know. I will apply it
+summerise session so far
+Explain how the new debugging facilities work
+/quit

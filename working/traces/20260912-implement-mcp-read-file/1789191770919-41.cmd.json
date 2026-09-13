@@ -1,0 +1,8 @@
+{
+  "command": "git diff -- crates/hanihi-session/src/bin/analyse.rs prompts/code_generation.md prompts/rust_coding.md",
+  "duration_ms": 0,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "",
+  "ts": "2026-09-12T05:42:50.919697761+00:00"
+}

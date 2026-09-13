@@ -1,0 +1,8 @@
+{
+  "command": "git log --oneline --all -- crates/hanihi-mcp-server",
+  "duration_ms": 122,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "e645a15 Rename mcp-echo-server crate to hanihi-mcp-server\n",
+  "ts": "2026-09-11T09:29:21.733199841+00:00"
+}

@@ -1,0 +1,8 @@
+{
+  "command": "git log --oneline --all -- crates/hanihi-mcp-server/src/read_file_tool.rs crates/hanihi-mcp-server/src/hanihi_tool_trait.rs",
+  "duration_ms": 13,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "",
+  "ts": "2026-09-11T09:29:21.776560872+00:00"
+}

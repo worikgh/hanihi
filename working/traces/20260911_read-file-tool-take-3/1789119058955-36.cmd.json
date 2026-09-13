@@ -1,0 +1,8 @@
+{
+  "command": "git grep -n \"name = \\\"rmcp\\\"\" -- Cargo.lock",
+  "duration_ms": 1,
+  "exit_code": 128,
+  "stderr": "fatal: unable to resolve revision: =\n",
+  "stdout": "",
+  "ts": "2026-09-11T09:30:58.955132945+00:00"
+}

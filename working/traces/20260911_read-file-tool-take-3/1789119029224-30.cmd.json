@@ -1,0 +1,8 @@
+{
+  "command": "git grep -n \"MCP\\|mcp\" -- plans",
+  "duration_ms": 3,
+  "exit_code": 1,
+  "stderr": "",
+  "stdout": "",
+  "ts": "2026-09-11T09:30:29.224349627+00:00"
+}

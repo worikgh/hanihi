@@ -1,0 +1,8 @@
+{
+  "command": "git diff -w -- crates/hanihi-core/src/tool.rs",
+  "duration_ms": 11,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "diff --git a/crates/hanihi-core/src/tool.rs b/crates/hanihi-core/src/tool.rs\nindex fdd5774..16b3338 100644\n--- a/crates/hanihi-core/src/tool.rs\n+++ b/crates/hanihi-core/src/tool.rs\n@@ -498,7 +498,9 @@ fn check_command_argv(argv: &[String]) -> Result<(), String> {\n                         if args.is_empty() || args.iter().any(|a| read_only.contains(&a.as_str())) {\n                             Ok(())\n                         } else {\n-\t\t\t    Err(format!(\"git config is restricted to read operations: {args:?}\"))\n+                            Err(format!(\n+                                \"git config is restricted to read operations: {args:?}\"\n+                            ))\n                         }\n                     }\n                     \"add\" | \"commit\" => Ok(()),\n",
+  "ts": "2026-09-01T00:04:16.154838430+00:00"
+}

@@ -1,0 +1,8 @@
+{
+  "command": "git show --stat --oneline ae5deb2",
+  "duration_ms": 10,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "ae5deb2 Add REPL commands section and include /file in command lists\n README.md | 24 +++++++++++++++++++++---\n 1 file changed, 21 insertions(+), 3 deletions(-)\n",
+  "ts": "2026-08-26T04:05:17.557209889+00:00"
+}

@@ -1,0 +1,12 @@
+/quit
+/file /tmp/prompt.md
+Continue
+`crates/mcp-echo-server/src/main.rs` has moved to `crates/hanini-mcp-server/src/main.rs`.  Continue
+`crates/mcp-echo-server` has been deleted.  The directory to look in is `crates/hanini-mcp-server`
+`crates/hanini-mcp-server` exists.  Continue
+`hanihi-mcp-server` exists.  Continue
+Use `git` with `run_command`.  Continue
+/session
+Do you think you can complete this task?
+summerise this session so far
+/quit

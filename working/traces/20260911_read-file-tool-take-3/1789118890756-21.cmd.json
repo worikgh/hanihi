@@ -1,0 +1,8 @@
+{
+  "command": "git grep -n \"open_at\\|SourceTree::\\|MAX_READ_BYTES\\|fn read\" -- crates/hanihi-core/src/source.rs crates/hanihi-core/src/lib.rs",
+  "duration_ms": 4,
+  "exit_code": 128,
+  "stderr": "fatal: unable to resolve revision: read\"\n",
+  "stdout": "",
+  "ts": "2026-09-11T09:28:10.756434419+00:00"
+}

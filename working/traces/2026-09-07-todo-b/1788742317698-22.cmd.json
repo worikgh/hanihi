@@ -1,0 +1,8 @@
+{
+  "command": "git show b8aee0b",
+  "duration_ms": 8,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "commit b8aee0bcd7c8c3a964b39ee7e14781cb1031cf1a\nAuthor: Worik <5387413+worikgh@users.noreply.github.com>\nDate:   Mon Sep 7 12:11:34 2026 +1200\n\n    Add AI disclaimer to README\n\ndiff --git a/README.md b/README.md\nindex 57b4e5e..198712c 100644\n--- a/README.md\n+++ b/README.md\n@@ -2,6 +2,8 @@\n \n A  tool-calling agent harness in Rust. Built on:\n \n+** A lot of the documents and code herein are written using AI and other algorithmic systems**\n+\n - **rig** (`rig-core` 0.41) — OpenAI-compatible chat completions client, tool\n   definitions, completion loop\n - **rmcp** (3.1) — Model Context Protocol client: attach tools from MCP stdio\n",
+  "ts": "2026-09-07T00:51:57.698655358+00:00"
+}

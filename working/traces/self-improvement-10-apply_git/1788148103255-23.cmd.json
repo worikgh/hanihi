@@ -1,0 +1,8 @@
+{
+  "command": "git apply --verbose --recount --check working/applytest/p3.patch",
+  "duration_ms": 21,
+  "exit_code": 1,
+  "stderr": "Checking patch working/applytest/main.rs...\nerror: while searching for:\nfn main() {}\n\nerror: patch failed: working/applytest/main.rs:1\nerror: working/applytest/main.rs: patch does not apply\n",
+  "stdout": "",
+  "ts": "2026-08-31T03:48:23.255378754+00:00"
+}

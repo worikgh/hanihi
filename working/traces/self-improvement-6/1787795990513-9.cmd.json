@@ -1,0 +1,8 @@
+{
+  "command": "cargo fmt --check",
+  "duration_ms": 156,
+  "exit_code": 1,
+  "stderr": "",
+  "stdout": "Diff in /home/worik/Documents/2026/hanihi/crates/hanihi-cli/src/main.rs:23:\n use rig::completion::CompletionModel;\n use tracing_subscriber::EnvFilter;\n \n-use crate::ui::{println_coloured, print_coloured};\n+use crate::ui::{print_coloured, println_coloured};\n \n const DEFAULT_WORKING_DIR: &str = \"./working\";\n /// Default cap on model turns per request. Effectively unlimited: a sane\n",
+  "ts": "2026-08-27T01:59:50.513520598+00:00"
+}

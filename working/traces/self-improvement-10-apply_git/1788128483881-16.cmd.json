@@ -1,0 +1,8 @@
+{
+  "command": "git status --porcelain=v1 -- crates/hanihi-core/src/write.rs",
+  "duration_ms": 6,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "",
+  "ts": "2026-08-30T22:21:23.881476148+00:00"
+}

@@ -1,0 +1,8 @@
+{
+  "command": "git status --short",
+  "duration_ms": 17,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "M  crates/hanihi-cli/src/main.rs\nM  crates/hanihi-core/src/lib.rs\nM  crates/hanihi-core/src/tool.rs\nM  crates/hanihi-eval/src/main.rs\n M working/sessions/2026-09-07-todo-b/events.jsonl\n M working/sessions/2026-09-07-todo-b/history.txt\n",
+  "ts": "2026-09-07T21:18:00.927214875+00:00"
+}

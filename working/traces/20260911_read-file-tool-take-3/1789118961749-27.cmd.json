@@ -1,0 +1,8 @@
+{
+  "command": "git grep -n \"CallToolResult::error\\|is_error\\|structured_content\" -- crates plans reports prompts README.md",
+  "duration_ms": 11,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "crates/hanihi-core/src/mcp.rs:69:                if result.is_error == Some(true) {\n",
+  "ts": "2026-09-11T09:29:21.749869639+00:00"
+}

@@ -1,0 +1,4 @@
+Add a hello world function to hanihi-core/src/tool.rs using `apply_patch`.
+Why did you stop? 
+Report on the failure
+/quit

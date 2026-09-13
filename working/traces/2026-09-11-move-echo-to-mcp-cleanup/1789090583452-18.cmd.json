@@ -1,0 +1,8 @@
+{
+  "command": "git show HEAD:crates/hanihi-core/src/session/log.rs | grep -n \"not json\"",
+  "duration_ms": 8,
+  "exit_code": 128,
+  "stderr": "fatal: ambiguous argument '|': unknown revision or path not in the working tree.\nUse '--' to separate paths from revisions, like this:\n'git <command> [<revision>...] -- [<file>...]'\n",
+  "stdout": "",
+  "ts": "2026-09-11T01:36:23.452906243+00:00"
+}

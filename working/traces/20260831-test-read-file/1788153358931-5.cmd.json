@@ -1,0 +1,8 @@
+{
+  "command": "git show 2418c69 --stat",
+  "duration_ms": 8,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "commit 2418c69b08d0ef120a088bb5f55e53e2b72be126\nAuthor: Worik <5387413+worikgh@users.noreply.github.com>\nDate:   Wed Aug 26 21:38:02 2026 +1200\n\n    Fix dead_code warning by allowing it on diff_already_applied\n\n crates/hanihi-core/src/write.rs | 1 +\n 1 file changed, 1 insertion(+)\n",
+  "ts": "2026-08-31T05:15:58.931044081+00:00"
+}

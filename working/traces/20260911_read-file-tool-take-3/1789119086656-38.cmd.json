@@ -1,0 +1,8 @@
+{
+  "command": "ls /home/worik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rmcp-3.1.2/src",
+  "duration_ms": 1,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "error.rs\nhandler\nhandler.rs\nlib.rs\nmodel\nmodel.rs\nservice\nservice.rs\ntask_manager.rs\ntransport\ntransport.rs\n",
+  "ts": "2026-09-11T09:31:26.656188431+00:00"
+}

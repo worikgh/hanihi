@@ -1,0 +1,8 @@
+{
+  "command": "git show daab065",
+  "duration_ms": 10,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "commit daab0656b58bf11bfb95cbc484bee6e30d8cf8c9\nAuthor: Worik <5387413+worikgh@users.noreply.github.com>\nDate:   Sat Aug 29 19:40:23 2026 +1200\n\n    Allow `working/` and `target/doc` in gitignore\n\ndiff --git a/.gitignore b/.gitignore\nindex b987015..17ed7e1 100644\n--- a/.gitignore\n+++ b/.gitignore\n@@ -1,5 +1,6 @@\n target/\n-working/\n+target/doc/\n+!target/doc/\n # Emacs working files\n *~\n .#*\n",
+  "ts": "2026-08-30T01:24:03.375619322+00:00"
+}

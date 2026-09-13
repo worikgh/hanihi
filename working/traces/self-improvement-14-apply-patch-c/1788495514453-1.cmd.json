@@ -1,0 +1,8 @@
+{
+  "command": "git log -1 --format=%B",
+  "duration_ms": 3,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "Fix the bug in session replay that broke resumed sessions\n\n",
+  "ts": "2026-09-04T04:18:34.453606309+00:00"
+}

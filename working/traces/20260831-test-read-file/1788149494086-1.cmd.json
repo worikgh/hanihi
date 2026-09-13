@@ -1,0 +1,8 @@
+{
+  "command": "git log --oneline -20 -- crates/hanihi-core/src/write.rs",
+  "duration_ms": 166,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "2418c69 Fix dead_code warning by allowing it on diff_already_applied\nd215e4a Formatting.  Whitespace changes\nd03e958 Apply patches with --3way so dirty-tree patching works\ncfbcc0d Replace preemptive dirty-target guard with precise git apply --check diagnostics\nacbbb8e Revert --recount; keep dirty-target guard\n5ea9522 Add --recount to git apply for tolerance to count drift\n6052c97 Include 'failed' in parse error for bad diffs\n7be7a28 Fix diff_targets to parse minimal markers\n1a2d782 Await git_run in dirty_targets\nb074c99 Reject apply_patch when target files are dirty\n1fffcd4 Steps 2-4, 6: write tools (apply_patch/write_file, --write flag), grep, read_session_log, task mode (--task/--max-turns), CLI wiring\n",
+  "ts": "2026-08-31T04:11:34.086411694+00:00"
+}

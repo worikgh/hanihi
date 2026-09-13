@@ -1,0 +1,8 @@
+{
+  "command": "git diff -- Cargo.toml",
+  "duration_ms": 7,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "diff --git a/Cargo.toml b/Cargo.toml\nindex eeaff93..6ba8ddf 100644\n--- a/Cargo.toml\n+++ b/Cargo.toml\n@@ -1,6 +1,6 @@\n [workspace]\n resolver = \"2\"\n-members = [\"crates/hanihi-core\", \"crates/hanihi-cli\", \"crates/hanihi-eval\", \"crates/mcp-echo-server\", \"crates/hanihi-session\"]\n+members = [\"crates/hanihi-core\", \"crates/hanihi-cli\", \"crates/hanihi-eval\", \"crates/mcp-echo-server\", \"crates/hanihi-session\", \"crates/hanihi-session-analyser\"]\n \n [workspace.package]\n version = \"0.3.0\"\n",
+  "ts": "2026-09-01T03:19:18.807508551+00:00"
+}

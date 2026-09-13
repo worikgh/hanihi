@@ -1,0 +1,8 @@
+{
+  "command": "git show HEAD:crates/hanihi-core/hanihi-debug.log",
+  "duration_ms": 5,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "[2026-09-04T03:42:34.595605074+00:00] apply_patch on non-diff: not a diff at all\n\n",
+  "ts": "2026-09-07T05:14:01.997540478+00:00"
+}

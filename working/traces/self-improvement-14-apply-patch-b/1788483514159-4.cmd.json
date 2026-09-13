@@ -1,0 +1,8 @@
+{
+  "command": "git log --oneline -10",
+  "duration_ms": 6,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "5ab651d Remove patching artifacts from repository\ndd998d2 Add a method to get the kind of a `LogEntry`\n39ab113 Add summary to `analyse`\na8ca132 Use the `hanihi-session` structures that were written to the log to read the log\nef99eb8 Make a plan to improve logs\n35ac4cf List all tool call kind\nc30ffae Add analyse binary\n6a2e6e6 Remove working/ from repo\ndf65f3e Update-session-log-and-traces\n0853486 Update-session-log-and-traces\n",
+  "ts": "2026-09-04T00:58:34.159825404+00:00"
+}

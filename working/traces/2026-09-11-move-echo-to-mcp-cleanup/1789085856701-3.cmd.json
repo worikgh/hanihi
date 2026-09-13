@@ -1,0 +1,8 @@
+{
+  "command": "grep -n '' crates/hanihi-core/src/session/mod.rs",
+  "duration_ms": 3,
+  "exit_code": 1,
+  "stderr": "",
+  "stdout": "",
+  "ts": "2026-09-11T00:17:36.701275090+00:00"
+}

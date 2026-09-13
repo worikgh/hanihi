@@ -1,0 +1,8 @@
+{
+  "command": "sed -n 1945,1960p Cargo.lock",
+  "duration_ms": 1,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": " \"windows-sys 0.52.0\",\n]\n\n[[package]]\nname = \"rmcp\"\nversion = \"3.3.0\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\nchecksum = \"b88db56b8ae316560e9e868b6b978ea940f27cb883323fc90e07435e44158f5c\"\ndependencies = [\n \"base64 0.23.1\",\n \"chrono\",\n \"futures\",\n \"indexmap\",\n \"pastey\",\n \"pin-project-lite\",\n \"process-wrap\",\n",
+  "ts": "2026-09-12T04:35:44.542225807+00:00"
+}

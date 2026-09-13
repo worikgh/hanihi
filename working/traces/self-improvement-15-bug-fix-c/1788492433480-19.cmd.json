@@ -1,0 +1,8 @@
+{
+  "command": "git status --porcelain=v1 --untracked-files=all -- crates/hanihi-core/tests/replay_streaming.rs",
+  "duration_ms": 2,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "?? crates/hanihi-core/tests/replay_streaming.rs\n",
+  "ts": "2026-09-04T03:27:13.480329768+00:00"
+}

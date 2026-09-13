@@ -1,0 +1,8 @@
+{
+  "command": "git log -S \"not json\" --oneline -- crates/hanihi-core/src/session/log.rs",
+  "duration_ms": 2,
+  "exit_code": 128,
+  "stderr": "fatal: bad revision 'json\"'\n",
+  "stdout": "",
+  "ts": "2026-09-11T02:26:21.826461356+00:00"
+}

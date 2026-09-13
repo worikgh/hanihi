@@ -1,0 +1,8 @@
+{
+  "command": "cargo clippy",
+  "duration_ms": 41044,
+  "exit_code": 0,
+  "stderr": "   Compiling aws-lc-sys v0.44.0\n    Checking mcp-echo-server v0.3.0 (/home/worik/Documents/2026/hanihi/crates/mcp-echo-server)\n   Compiling aws-lc-rs v1.18.0\n   Compiling rustls v0.23.43\n    Checking rustls-webpki v0.103.13\n    Checking tokio-rustls v0.26.4\n    Checking rustls-platform-verifier v0.7.0\n    Checking hyper-rustls v0.27.9\n    Checking reqwest v0.13.4\n    Checking rig-core v0.41.0\n    Checking hanihi-core v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-core)\nwarning: function `diff_already_applied` is never used\n   --> crates/hanihi-core/src/write.rs:127:10\n    |\n127 | async fn diff_already_applied(root: &Path, diff: &str) -> bool {\n    |          ^^^^^^^^^^^^^^^^^^^^\n    |\n    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default\n\nwarning: `hanihi-core` (lib) generated 1 warning\n    Checking hanihi-eval v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-eval)\n    Checking hanihi-cli v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-cli)\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 40.93s\n",
+  "stdout": "",
+  "ts": "2026-08-26T09:27:41.843839887+00:00"
+}

@@ -1,0 +1,8 @@
+{
+  "command": "git commit -m Expand-run_command-allowlist-and-read-only-git-verbs",
+  "duration_ms": 51,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "[main 7eb185a] Expand-run_command-allowlist-and-read-only-git-verbs\n 1 file changed, 921 insertions(+), 709 deletions(-)\n",
+  "ts": "2026-08-30T05:51:40.057457338+00:00"
+}

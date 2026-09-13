@@ -1,0 +1,8 @@
+{
+  "command": "git show HEAD:crates/hanihi-mcp-server/src/echo_tool.rs",
+  "duration_ms": 3,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "use rmcp::ErrorData;\n/// The `echo` tool.  A basic tool that returns the prompt unchanged\nuse rmcp::model::{CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, Tool};\nuse rmcp::service::{MaybeSendFuture, RequestContext, RoleServer};\npub(crate) fn new() -> Tool {\n    Tool::new(\n        \"mcp_echo\",\n        \"Echo the provided text back verbatim. Served over MCP.\",\n        serde_json::json!({\n            \"type\": \"object\",\n            \"properties\": {\n            \"text\": { \"type\": \"string\", \"description\": \"Text to echo\" }\n            },\n            \"required\": [\"text\"]\n        })\n        .as_object()\n        .expect(\"static schema is an object\")\n        .clone(),\n    )\n}\n\npub(crate) fn call<'a>(\n    request: CallToolRequestParams,\n    _context: RequestContext<RoleServer>,\n) -> impl Future<Output = Result<CallToolResponse, ErrorData>> + MaybeSendFuture + 'a {\n    let text = request\n        .arguments\n        .clone()\n        .and_then(|mut args| args.remove(\"text\"))\n        .and_then(|value| value.as_str().map(String::from))\n        .unwrap_or_default();\n    let ret = std::future::ready(Ok(CallToolResponse::from(CallToolResult::success(vec![\n        ContentBlock::text(text),\n    ]))));\n    ret.clone()\n}\n",
+  "ts": "2026-09-11T09:27:41.894264450+00:00"
+}

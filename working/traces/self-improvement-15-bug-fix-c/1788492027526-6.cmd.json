@@ -1,0 +1,8 @@
+{
+  "command": "cargo test -p hanihi-core --test replay_streaming",
+  "duration_ms": 7101,
+  "exit_code": 0,
+  "stderr": "   Compiling hanihi-core v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-core)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.04s\n     Running tests/replay_streaming.rs (target/debug/deps/replay_streaming-b16c7a1ad08ac422)\n",
+  "stdout": "\nrunning 1 test\ntest replay_streaming_order_reconstructs_canonical_history ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n",
+  "ts": "2026-09-04T03:20:27.526569815+00:00"
+}

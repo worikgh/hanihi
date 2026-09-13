@@ -1,0 +1,8 @@
+{
+  "command": "cargo clippy -p hanihi-cli",
+  "duration_ms": 501,
+  "exit_code": 0,
+  "stderr": "    Checking hanihi-cli v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-cli)\nwarning: variant `Plain` is never constructed\n  --> crates/hanihi-cli/src/ui.rs:24:5\n   |\n20 | pub enum Colour {\n   |          ------ variant in this enum\n...\n24 |     Plain,\n   |     ^^^^^\n   |\n   = note: `Colour` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis\n   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default\n\nwarning: function `set_default_colour` is never used\n  --> crates/hanihi-cli/src/ui.rs:53:8\n   |\n53 | pub fn set_default_colour(colour: Colour) {\n   |        ^^^^^^^^^^^^^^^^^^\n\nwarning: `hanihi-cli` (bin \"hanihi-cli\") generated 2 warnings\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.40s\n",
+  "stdout": "",
+  "ts": "2026-08-27T01:59:03.460204105+00:00"
+}

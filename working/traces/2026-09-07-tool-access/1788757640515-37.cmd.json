@@ -1,0 +1,8 @@
+{
+  "command": "cargo clippy -p hanihi-core --all-targets",
+  "duration_ms": 15454,
+  "exit_code": 0,
+  "stderr": "    Checking rig-core v0.41.0\n    Checking hanihi-core v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-core)\nwarning: unused import: `crate::debug`\n  --> crates/hanihi-core/src/tool.rs:19:5\n   |\n19 | use crate::debug;\n   |     ^^^^^^^^^^^^\n   |\n   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default\n\nwarning: this function has too many arguments (8/7)\n   --> crates/hanihi-core/src/agent.rs:538:1\n    |\n538 | / async fn run_streaming_loop<M: CompletionModel>(\n539 | |     model: M,\n540 | |     tools: Arc<Vec<PortableDynamicTool>>,\n541 | |     history: &mut Vec<Message>,\n...   |\n548 | | where\n549 | |     M::StreamingResponse: Send,\n    | |_______________________________^\n    |\n    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#too_many_arguments\n    = note: `#[warn(clippy::too_many_arguments)]` on by default\n\nwarning: `hanihi-core` (lib) generated 2 warnings (run `cargo clippy --fix --lib -p hanihi-core -- ` to apply 1 suggestion)\nwarning: `hanihi-core` (lib test) generated 2 warnings (2 duplicates)\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 15.36s\n",
+  "stdout": "",
+  "ts": "2026-09-07T05:07:20.515339984+00:00"
+}

@@ -1,0 +1,8 @@
+{
+  "command": "git log -S \"Current user message\" --oneline -- crates/hanihi-core/src/agent.rs",
+  "duration_ms": 4,
+  "exit_code": 128,
+  "stderr": "fatal: bad revision 'user'\n",
+  "stdout": "",
+  "ts": "2026-09-11T02:29:13.621812282+00:00"
+}

@@ -1,0 +1,8 @@
+{
+  "command": "git log -5 --format=%s",
+  "duration_ms": 10,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "Use `cargo clippy` and fix all errors\nUpdate tests\nMake the deploy script executable\nRemove debug logs from git repo\nHack the `fmt::Display` for `LLMPrompt` to not output all messages.\n",
+  "ts": "2026-09-11T07:44:41.086770525+00:00"
+}

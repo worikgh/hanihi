@@ -1,0 +1,7 @@
+/quit
+Examine your logging system and make a table of the data that is logged
+Write that table to: report.md
+Create the file: report.md
+/quit
+summerise session so far
+/quit

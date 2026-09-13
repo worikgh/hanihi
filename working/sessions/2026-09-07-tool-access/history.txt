@@ -1,0 +1,7 @@
+/file ../plans/010-tool-access.md
+continue, without `git stash`
+/session
+/quit
+/session
+Commmit all code changes.  Do not commit modifications in `working/`.  Those will be ignored in the future
+/quit

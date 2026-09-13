@@ -1,0 +1,8 @@
+{
+  "command": "git diff",
+  "duration_ms": 2,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "diff --git a/prompts/code_generation.md b/prompts/code_generation.md\nindex 728e4d0..87d83a9 100644\n--- a/prompts/code_generation.md\n+++ b/prompts/code_generation.md\n@@ -22,6 +22,8 @@\n \n - Strictly adhere to the layered boundary hierarchy: each layer may only communicate with its immediate neighbor directly below it. Never \"punch holes\" through layers (e.g., controllers or UI components must never directly call database queries, raw hardware drivers, or low-level network clients; always route through the intermediate service/abstraction layer).\n \n+- Always write tests.  Write tests for all common cases.  Write tests for all known corner cases.  When fixing bugs write tests to cover the cases that triggered the bug.  Ensure all tests pass.\n+\n - Always use {}, even on a one-line \"if\" statement.\n \n When you write a commit message, follow these 7 rules:\n",
+  "ts": "2026-08-26T00:52:11.192044975+00:00"
+}

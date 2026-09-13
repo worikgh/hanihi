@@ -1,0 +1,8 @@
+{
+  "command": "git grep -n \"builtin_read_file\\|list_tools\\|call_tool\" -- crates",
+  "duration_ms": 13,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "crates/hanihi-core/src/mcp.rs:37:        let result = self.service.list_tools(None).await?;\ncrates/hanihi-mcp-server/src/main.rs:21:    fn list_tools(\n",
+  "ts": "2026-09-11T09:27:35.582556642+00:00"
+}

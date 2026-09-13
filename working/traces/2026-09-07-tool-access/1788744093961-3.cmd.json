@@ -1,0 +1,8 @@
+{
+  "command": "grep -n \"Run an allowlisted command inside\" crates/hanihi-core/src/tool.rs",
+  "duration_ms": 2,
+  "exit_code": 2,
+  "stderr": "grep: an: No such file or directory\ngrep: allowlisted: No such file or directory\ngrep: command: No such file or directory\ngrep: inside\": No such file or directory\n",
+  "stdout": "crates/hanihi-core/src/tool.rs:687:        \"Run an allowlisted command inside the repository root. No shell: the command is \\\n",
+  "ts": "2026-09-07T01:21:33.961250265+00:00"
+}

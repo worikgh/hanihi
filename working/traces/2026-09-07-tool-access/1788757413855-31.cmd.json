@@ -1,0 +1,8 @@
+{
+  "command": "git grep -n debug -- crates/hanihi-core/src/lib.rs",
+  "duration_ms": 4,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "crates/hanihi-core/src/lib.rs:13:pub mod debug;\n",
+  "ts": "2026-09-07T05:03:33.855672749+00:00"
+}

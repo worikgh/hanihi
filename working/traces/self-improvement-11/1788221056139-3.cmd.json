@@ -1,0 +1,8 @@
+{
+  "command": "git diff -w -- crates/hanihi-core/src/source.rs",
+  "duration_ms": 7,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "diff --git a/crates/hanihi-core/src/source.rs b/crates/hanihi-core/src/source.rs\nindex 3db6e7d..0e79a85 100644\n--- a/crates/hanihi-core/src/source.rs\n+++ b/crates/hanihi-core/src/source.rs\n@@ -364,6 +364,7 @@ pub(crate) mod testutil {\n     use std::sync::Arc;\n \n     /// Throwaway git repo with an ignored `target/` dir.\n+    #[derive(Debug)]\n     pub(crate) struct Fixture {\n         pub(crate) dir: PathBuf,\n     }\n",
+  "ts": "2026-09-01T00:04:16.139824091+00:00"
+}

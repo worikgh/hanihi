@@ -1,0 +1,8 @@
+{
+  "command": "cargo check --workspace",
+  "duration_ms": 20348,
+  "exit_code": 0,
+  "stderr": "    Checking tokio-rustls v0.26.4\n    Checking rustls-platform-verifier v0.7.0\n    Checking hyper-rustls v0.27.9\n    Checking reqwest v0.13.4\n    Checking rig-core v0.41.0\n    Checking hanihi-core v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-core)\n    Checking hanihi-eval v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-eval)\n    Checking hanihi-session v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-session)\n    Checking hanihi-cli v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-cli)\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 20.24s\n",
+  "stdout": "",
+  "ts": "2026-09-02T04:28:53.096493356+00:00"
+}

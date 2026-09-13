@@ -1,0 +1,8 @@
+{
+  "command": "git grep -n debug HEAD -- crates/hanihi-core/src/tool.rs",
+  "duration_ms": 11,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "HEAD:crates/hanihi-core/src/tool.rs:19:use crate::debug;\nHEAD:crates/hanihi-core/src/tool.rs:970:            .execute(serde_json::json!({ \"path\": \"target/debug/junk.rs\" }))\n",
+  "ts": "2026-09-07T05:03:33.838184714+00:00"
+}

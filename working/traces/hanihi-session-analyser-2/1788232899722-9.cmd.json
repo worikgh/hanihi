@@ -1,0 +1,8 @@
+{
+  "command": "git show --stat HEAD",
+  "duration_ms": 3,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "commit c30ffae398b4a369f3eee656367225f04bcf0fa3\nAuthor: Worik <5387413+worikgh@users.noreply.github.com>\nDate:   Tue Sep 1 15:19:46 2026 +1200\n\n    Add analyse binary\n    \n    Stub that prints \"Hello, world!\" on stdout.\n    \n    Hānihi\n\n crates/hanihi-session/src/bin/analyse.rs | 3 +++\n 1 file changed, 3 insertions(+)\n",
+  "ts": "2026-09-01T03:21:39.722494369+00:00"
+}

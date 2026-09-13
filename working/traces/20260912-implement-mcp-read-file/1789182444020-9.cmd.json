@@ -1,0 +1,8 @@
+{
+  "command": "grep -n \"pub fn new\" target/doc/src/rmcp/model/tool.rs.html",
+  "duration_ms": 0,
+  "exit_code": 2,
+  "stderr": "grep: fn: No such file or directory\ngrep: new\": No such file or directory\n",
+  "stdout": "",
+  "ts": "2026-09-12T03:07:24.020229383+00:00"
+}

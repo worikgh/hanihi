@@ -1,0 +1,8 @@
+{
+  "command": "find /home/worik/.cargo/registry/src -maxdepth 2 -type d -name \"rmcp-*\"",
+  "duration_ms": 12,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "",
+  "ts": "2026-09-11T23:14:40.688693016+00:00"
+}

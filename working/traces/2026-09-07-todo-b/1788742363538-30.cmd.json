@@ -1,0 +1,8 @@
+{
+  "command": "git show 478c95a",
+  "duration_ms": 7,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "commit 478c95a30efa439c783b70fe1cb27af0949a290b\nAuthor: Worik <5387413+worikgh@users.noreply.github.com>\nDate:   Mon Sep 7 10:36:42 2026 +1200\n\n    Minor improvements to  README\n\ndiff --git a/README.md b/README.md\nindex e7d62c2..57b4e5e 100644\n--- a/README.md\n+++ b/README.md\n@@ -1,7 +1,6 @@\n # hānihi\n \n-A minimal tool-calling agent harness in Rust — the core of a future coding\n-agent. Built on:\n+A  tool-calling agent harness in Rust. Built on:\n \n - **rig** (`rig-core` 0.41) — OpenAI-compatible chat completions client, tool\n   definitions, completion loop\n@@ -25,7 +24,7 @@ crates/\n ├── hanihi-eval/        # binary: eval runner — run test cases against a live\n │                       #   LLM and check assertions against the session log\n └── mcp-echo-server/    # binary: minimal MCP stdio server (demo, one\n-                        #   `mcp_echo` tool; not published)\n+                        #   `mcp_echo` tool)\n evals/\n └── cases/              # eval test cases (TOML + README per case)\n ```\n",
+  "ts": "2026-09-07T00:52:43.538368024+00:00"
+}

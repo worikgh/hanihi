@@ -1,0 +1,6 @@
+You need tools to search the Internet.  Examine yourself, and brifly outline how you can add tools to your code for Internet access.  Also will this allow you to look up local business listings in Dunedin New Zealand?
+What `run_command` things do you need?  Clearly `ls`.  What else?
+Yes
+/quit
+Implement the changes
+/quit

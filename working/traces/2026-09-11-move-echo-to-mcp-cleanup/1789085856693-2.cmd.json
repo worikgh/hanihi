@@ -1,0 +1,8 @@
+{
+  "command": "grep -n '' crates/hanihi-core/src/agent.rs",
+  "duration_ms": 2,
+  "exit_code": 1,
+  "stderr": "",
+  "stdout": "",
+  "ts": "2026-09-11T00:17:36.693131335+00:00"
+}

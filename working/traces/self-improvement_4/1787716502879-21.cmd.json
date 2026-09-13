@@ -1,0 +1,8 @@
+{
+  "command": "git log --oneline --all | head -40",
+  "duration_ms": 10,
+  "exit_code": 128,
+  "stderr": "fatal: ambiguous argument '|': unknown revision or path not in the working tree.\nUse '--' to separate paths from revisions, like this:\n'git <command> [<revision>...] -- [<file>...]'\n",
+  "stdout": "",
+  "ts": "2026-08-26T03:55:02.879890091+00:00"
+}

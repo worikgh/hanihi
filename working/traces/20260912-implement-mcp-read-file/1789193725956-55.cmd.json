@@ -1,0 +1,8 @@
+{
+  "command": "cargo fmt --check -p hanihi-mcp-server",
+  "duration_ms": 84,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "",
+  "ts": "2026-09-12T06:15:25.956920119+00:00"
+}

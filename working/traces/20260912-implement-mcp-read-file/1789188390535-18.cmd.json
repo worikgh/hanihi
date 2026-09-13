@@ -1,0 +1,8 @@
+{
+  "command": "cargo check -p hanihi-mcp-server",
+  "duration_ms": 22783,
+  "exit_code": 101,
+  "stderr": "    Checking rig-core v0.41.0\n    Checking hanihi-core v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-core)\n    Checking hanihi-mcp-server v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-mcp-server)\nerror[E0106]: missing lifetime specifier\n  --> crates/hanihi-mcp-server/src/read_file_tool.rs:35:84\n   |\n35 | ) -> impl Future<Output = Result<CallToolResponse, ErrorData>> + MaybeSendFuture + '_ {\n   |                                                                                    ^^ expected named lifetime parameter\n   |\n   = help: this function's return type contains a borrowed value, but there is no value for it to be borrowed from\nhelp: consider using the `'static` lifetime, but this is uncommon unless you're returning a borrowed value from a `const` or a `static`, or if you will only have owned values\n   |\n35 - ) -> impl Future<Output = Result<CallToolResponse, ErrorData>> + MaybeSendFuture + '_ {\n35 + ) -> impl Future<Output = Result<CallToolResponse, ErrorData>> + MaybeSendFuture + 'static {\n   |\nhelp: instead, you are more likely to want to change one of the arguments to be borrowed\n   |\n32 ~     request: &CallToolRequestParams,\n33 ~     tree: &Arc<SourceTree>,\n34 ~     _context: &RequestContext<RoleServer>,\n   |\n\nFor more information about this error, try `rustc --explain E0106`.\nerror: could not compile `hanihi-mcp-server` (bin \"hanihi-mcp-server\") due to 1 previous error\n",
+  "stdout": "",
+  "ts": "2026-09-12T04:46:30.535139942+00:00"
+}

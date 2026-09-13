@@ -1,0 +1,8 @@
+{
+  "command": "git status --porcelain=v1 --untracked-files=all -- crates/hanihi-mcp-server Cargo.lock crates/hanihi-session/src/bin/analyse.rs prompts",
+  "duration_ms": 4,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": " M Cargo.lock\n M crates/hanihi-mcp-server/src/main.rs\n M crates/hanihi-session/src/bin/analyse.rs\n M prompts/code_generation.md\n M prompts/rust_coding.md\n?? crates/hanihi-mcp-server/src/hanihi_tool_trait.rs\n?? crates/hanihi-mcp-server/src/read_file_tool.rs\n",
+  "ts": "2026-09-12T06:18:00.008738955+00:00"
+}

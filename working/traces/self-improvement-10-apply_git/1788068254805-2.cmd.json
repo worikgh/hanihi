@@ -1,0 +1,8 @@
+{
+  "command": "git status --porcelain=v1",
+  "duration_ms": 6,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "M  Cargo.lock\nM  Cargo.toml\n M crates/hanihi-core/src/tool.rs\nA  crates/hanihi-session/Cargo.toml\nA  crates/hanihi-session/src/main.rs\n?? crates/hanihi-core/src/tool.patch\n?? plans/wts_compaction.md\n?? prompts/self-improvement.md\n?? working/\n",
+  "ts": "2026-08-30T05:37:34.805517116+00:00"
+}

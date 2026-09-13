@@ -1,0 +1,2 @@
+/file /tmp/prompt.md
+/quit

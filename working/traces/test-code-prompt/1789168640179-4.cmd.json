@@ -1,0 +1,8 @@
+{
+  "command": "grep -rn \"pub struct ErrorData\\|impl ErrorData\\|pub fn new\\|method_not_found\\|invalid_request\" /home/worik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rmcp-3.1.2/src",
+  "duration_ms": 11,
+  "exit_code": 2,
+  "stderr": "grep: struct: No such file or directory\ngrep: ErrorData\\|impl: No such file or directory\ngrep: ErrorData\\|pub: No such file or directory\ngrep: fn: No such file or directory\ngrep: new\\|method_not_found\\|invalid_request\": No such file or directory\n",
+  "stdout": "",
+  "ts": "2026-09-11T23:17:20.179643026+00:00"
+}

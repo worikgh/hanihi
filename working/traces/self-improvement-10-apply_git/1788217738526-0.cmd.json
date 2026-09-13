@@ -1,0 +1,8 @@
+{
+  "command": "git apply --recount --check --verbose working/applytest/tracked.patch",
+  "duration_ms": 6,
+  "exit_code": 1,
+  "stderr": "Checking patch crates/hanihi-core/src/write.rs...\nerror: while searching for:\n/// Apply a unified diff to the repo with `git apply --recount`.\n///\n/// The patch is applied directly against the working tree\n\nerror: patch failed: crates/hanihi-core/src/write.rs:97\nerror: crates/hanihi-core/src/write.rs: patch does not apply\n",
+  "stdout": "",
+  "ts": "2026-08-31T23:08:58.526684188+00:00"
+}

@@ -1,0 +1,8 @@
+{
+  "command": "git log --oneline -10 -- crates/hanihi-core/src/agent.rs",
+  "duration_ms": 34,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "ab5beb9 Rewrite echo tests to use builtin_get_time\na80d61c Start the process of moving tools all to MCP server\n9e64a0e Formatting\nd6426af Implement `fmt::Display` for log entries\na05e3bd Extend system prompt to encourage the model to persevere in the face of tool failures\n44c231c Extend logging\nfb695c9 Deduplicate-identical-read-only-tool-calls-per-turn\n96455d9 Fix bug introduced by LLM\neaa40bc Remove unneeded wildcard in pattern (clippy)\n1fffcd4 Steps 2-4, 6: write tools (apply_patch/write_file, --write flag), grep, read_session_log, task mode (--task/--max-turns), CLI wiring\n",
+  "ts": "2026-09-11T02:25:50.432438314+00:00"
+}

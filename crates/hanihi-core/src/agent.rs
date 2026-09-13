@@ -107,6 +107,43 @@ impl ToolCallCache {
     }
 }
 
+/// One message in a completion request: the system preamble, a conversation
+/// message, or the current user turn.
+///
+/// Carried as typed data (`Vec<ContextMessage>`) through the agent loop so
+/// the JSON form is only produced at the boundary — when the prompt is
+/// written to the session log or handed to a model client.
+#[derive(Debug, Clone)]
+pub enum ContextMessage {
+    /// System preamble. Not a `rig` `Message`: it travels as `preamble()`.
+    System(String),
+    /// A prior-turn or in-progress-turn message (`rig::completion::Message`).
+    Message(Message),
+    /// The current turn's user input, appended last on every model call.
+    User(String),
+}
+
+impl ContextMessage {
+    /// JSON shape written to the `llm_prompt` log entry: `{role, content}`.
+    ///
+    /// `content` is the plain string for system/user messages and the
+    /// serialized body of the `Message` otherwise. Only `role` and `content`
+    /// are emitted; every other field serde produces for a `Message` is
+    /// deliberately dropped, matching the historical log format.
+    fn to_log_json(&self) -> serde_json::Value {
+        let (role, content) = match self {
+            ContextMessage::System(text) => ("system", serde_json::Value::String(text.clone())),
+            ContextMessage::User(text) => ("user", serde_json::Value::String(text.clone())),
+            ContextMessage::Message(msg) => {
+                let value = serde_json::to_value(msg).unwrap_or(serde_json::Value::Null);
+                let role = value["role"].as_str().unwrap_or("unknown");
+                (role, value["content"].clone())
+            }
+        };
+        serde_json::json!({ "role": role, "content": content })
+    }
+}
+
 /// Result of one `Agent::run` invocation.
 #[derive(Debug, Clone)]
 pub struct TurnSummary {
@@ -156,7 +193,7 @@ pub enum StreamEvent {
     /// A completion request was assembled and is about to be sent.
     CompletionRequest {
         ts: chrono::DateTime<Utc>,
-        messages: serde_json::Value,
+        messages: Vec<ContextMessage>,
         tool_definitions: serde_json::Value,
     },
     /// A streaming completion response finished.
@@ -445,47 +482,35 @@ impl<M: CompletionModel> Agent<M> {
     }
 }
 
-/// Build the JSON message list sent to the model, for `llm_prompt` log entries.
-pub(crate) fn messages_for_log(
+/// Build the typed message list for one completion request.
+///
+/// Order is the order the model sees: system preamble, persistent history,
+/// in-progress turn messages, then the current user input. This cannot fail;
+/// serialization is deferred to [`context_to_log_json`].
+pub(crate) fn build_context(
     system_prompt: &str,
     history: &[Message],
     turn_messages: &[Message],
     user_input: &str,
-) -> Result<serde_json::Value, AgentError> {
-    #[derive(Serialize)]
-    struct LogMessage {
-        role: String,
-        content: serde_json::Value,
-    }
-
-    let mut msgs: Vec<LogMessage> = Vec::new();
+) -> Vec<ContextMessage> {
+    let mut msgs: Vec<ContextMessage> = Vec::new();
 
     // System preamble.
-    msgs.push(LogMessage {
-        role: "system".into(),
-        content: serde_json::Value::String(system_prompt.to_string()),
-    });
-
-    // Serialize each message via serde.
-    fn msg_to_value(msg: &Message) -> Result<LogMessage, AgentError> {
-        let v = serde_json::to_value(msg).map_err(|e| AgentError::Rig(e.to_string()))?;
-        let role = v["role"].as_str().unwrap_or("unknown").to_string();
-        Ok(LogMessage {
-            role,
-            content: v["content"].clone(),
-        })
-    }
+    msgs.push(ContextMessage::System(system_prompt.to_string()));
 
     for m in history.iter().chain(turn_messages.iter()) {
-        msgs.push(msg_to_value(m)?);
+        msgs.push(ContextMessage::Message(m.clone()));
     }
-    // Current user message.
-    msgs.push(LogMessage {
-        role: "user".into(),
-        content: serde_json::Value::String(user_input.to_string()),
-    });
 
-    serde_json::to_value(&msgs).map_err(|e| AgentError::Rig(e.to_string()))
+    // Current user message.
+    msgs.push(ContextMessage::User(user_input.to_string()));
+
+    msgs
+}
+
+/// Render a typed message list for the `llm_prompt` log entry.
+pub(crate) fn context_to_log_json(messages: &[ContextMessage]) -> serde_json::Value {
+    serde_json::Value::Array(messages.iter().map(ContextMessage::to_log_json).collect())
 }
 
 /// Execute one tool call, reusing cached results for repeated identical
@@ -557,7 +582,7 @@ where
     for _turn in 0..max_turns {
         // Build the request and report it before sending.
         let tool_definitions = tools.iter().map(|t| t.definition()).collect::<Vec<_>>();
-        let messages_json = messages_for_log(&system_prompt, history, &turn_messages, &user_input)?;
+        let messages = build_context(&system_prompt, history, &turn_messages, &user_input);
         let tool_definitions_json = serde_json::to_value(&tool_definitions)?;
         let _ = tx
             .send(StreamEvent::CompletionRequest {
@@ -898,19 +923,65 @@ mod tests {
     }
 
     #[test]
-    fn messages_for_log_includes_system_history_and_user() {
+    fn context_has_system_history_and_user() {
         let history = vec![Message::user("earlier")];
         let turn_messages = vec![Message::assistant("partial")];
-        let value =
-            messages_for_log("system", &history, &turn_messages, "now").expect("build messages");
+        let messages = build_context("system", &history, &turn_messages, "now");
+        let value = context_to_log_json(&messages);
 
         let arr = value.as_array().expect("messages is an array");
         assert_eq!(arr.len(), 4);
         assert_eq!(arr[0]["role"], "system");
         assert_eq!(arr[0]["content"], "system");
         assert_eq!(arr[1]["role"], "user");
+        assert_eq!(arr[1]["content"], "earlier");
         assert_eq!(arr[2]["role"], "assistant");
+        assert_eq!(arr[2]["content"], "partial");
         assert_eq!(arr[3]["role"], "user");
         assert_eq!(arr[3]["content"], "now");
+    }
+
+    /// The log format is frozen: a tool call round trip must render exactly
+    /// as it did before the typed context existed — role + content only, with
+    /// the tool result carried as a `user` message.
+    #[test]
+    fn context_log_json_preserves_tool_call_shape() {
+        let call = ToolCall::new(
+            "call_1".to_string(),
+            rig::completion::message::ToolFunction {
+                name: "get_time".to_string(),
+                arguments: serde_json::json!({}),
+            },
+        );
+        let history = vec![
+            Message::user("what time is it"),
+            Message::Assistant {
+                id: Some("msg_1".to_string()),
+                content: rig::OneOrMany::one(AssistantContent::ToolCall(call)),
+            },
+        ];
+        let turn_messages = vec![Message::tool_result_with_call_id(
+            "call_1".to_string(),
+            None,
+            "12:00:00",
+        )];
+
+        let value = context_to_log_json(&build_context(
+            "system",
+            &history,
+            &turn_messages,
+            "and now?",
+        ));
+        let arr = value.as_array().expect("messages is an array");
+
+        assert_eq!(arr.len(), 5);
+        assert_eq!(arr[1]["role"], "user");
+        assert_eq!(arr[2]["role"], "assistant");
+        assert_eq!(arr[2]["content"][0]["type"], "tool_call");
+        assert_eq!(arr[2]["content"][0]["function"]["name"], "get_time");
+        // A tool result serializes as a `user` message, not a `tool` role.
+        assert_eq!(arr[3]["role"], "user");
+        assert_eq!(arr[4]["role"], "user");
+        assert_eq!(arr[4]["content"], "and now?");
     }
 }

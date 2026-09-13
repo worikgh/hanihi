@@ -1,0 +1,14 @@
+In `hanihi/crates` there is a crate `mcp-echo-server`.  Change its name to hanihi-mcp-server.  Rename the crate directory.
+Look again `crates` is in `../crates`
+What is your current working directory?
+Yes.  `crates` is off your working directory.  Continue
+`plans` is off your working directory.  Continue
+In `crates` there is a crate `mcp-echo-server`.  Change its name to hanihi-mcp-server.  Rename the crate directory.
+Remember you have not changed the name of the crate directory yet.  Continue
+/file .p.md
+Remember you have not changed the name of the crate directory yet.  Continue
+/quit
+Crate only: `mcp-echo-server` -> `hanihi-mcp-server`
+/quit
+continue
+/quit

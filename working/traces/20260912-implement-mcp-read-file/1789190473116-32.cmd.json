@@ -1,0 +1,8 @@
+{
+  "command": "cargo test -p hanihi-mcp-server",
+  "duration_ms": 3038,
+  "exit_code": 0,
+  "stderr": "    Blocking waiting for file lock on package cache\n    Blocking waiting for file lock on package cache\n    Blocking waiting for file lock on package cache\n   Compiling hanihi-mcp-server v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-mcp-server)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.89s\n     Running unittests src/main.rs (target/debug/deps/hanihi_mcp_server-4bf7fdcc951633f7)\n",
+  "stdout": "\nrunning 7 tests\ntest read_file_tool::tests::new_reports_read_file_schema ... ok\ntest read_file_tool::tests::path_arg_extracts_and_rejects ... ok\ntest read_file_tool::tests::read_reports_missing ... ok\ntest read_file_tool::tests::read_returns_file_contents ... ok\ntest read_file_tool::tests::read_rejects_ignored ... ok\ntest read_file_tool::tests::unavailable_reports_no_repo ... ok\ntest read_file_tool::tests::read_rejects_escape ... ok\n\ntest result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s\n\n",
+  "ts": "2026-09-12T05:21:13.116055640+00:00"
+}

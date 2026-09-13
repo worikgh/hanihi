@@ -1,0 +1,8 @@
+{
+  "command": "git status --short",
+  "duration_ms": 17,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": " M working/sessions/2026-09-07-todo-b/events.jsonl\n M working/sessions/2026-09-07-todo-b/history.txt\n M working/sessions/self-improvement-14-apply-patch-h/events.jsonl\n",
+  "ts": "2026-09-08T00:56:58.320480504+00:00"
+}

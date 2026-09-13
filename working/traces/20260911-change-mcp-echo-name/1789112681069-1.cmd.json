@@ -1,0 +1,8 @@
+{
+  "command": "git status --porcelain=v1",
+  "duration_ms": 6,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": " M Cargo.lock\n M Cargo.toml\n M README.md\n M crates/hanihi-cli/src/main.rs\n D crates/mcp-echo-server/Cargo.toml\n D crates/mcp-echo-server/src/echo_tool.rs\n D crates/mcp-echo-server/src/main.rs\n",
+  "ts": "2026-09-11T07:44:41.069626269+00:00"
+}

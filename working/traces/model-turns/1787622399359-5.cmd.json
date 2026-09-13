@@ -1,0 +1,8 @@
+{
+  "command": "git show --stat HEAD",
+  "duration_ms": 8,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "commit 886bb529466507c0fb0f78e3ff946743913fce4b\nAuthor: Worik <5387413+worikgh@users.noreply.github.com>\nDate:   Tue Aug 25 13:46:36 2026 +1200\n\n    Fix prompt-append CLI: single session open, persist --new-prompt rewrite, correct borrow\n\n crates/hanihi-cli/src/main.rs | 115 ++++++++++++++++++++++++++++--------------\n 1 file changed, 78 insertions(+), 37 deletions(-)\n",
+  "ts": "2026-08-25T01:46:39.360005565+00:00"
+}

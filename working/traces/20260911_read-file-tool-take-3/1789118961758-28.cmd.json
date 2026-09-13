@@ -1,0 +1,8 @@
+{
+  "command": "git grep -n \"read_file_tool\\|mcp_read_file\\|read_file\" -- plans reports prompts README.md evals crates/hanihi-mcp-server",
+  "duration_ms": 4,
+  "exit_code": 1,
+  "stderr": "",
+  "stdout": "",
+  "ts": "2026-09-11T09:29:21.758805198+00:00"
+}

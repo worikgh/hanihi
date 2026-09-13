@@ -1,0 +1,3 @@
+/file /tmp/prompt.md
+A mistake in the prompt: The file is in the crate `hanini-core`.  Continue
+/quit

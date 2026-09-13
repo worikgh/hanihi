@@ -1,0 +1,8 @@
+{
+  "command": "cargo fmt -p hanihi-core",
+  "duration_ms": 223,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "",
+  "ts": "2026-09-04T03:22:59.937639226+00:00"
+}
