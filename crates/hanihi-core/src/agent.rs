@@ -12,7 +12,6 @@ use rig::completion::{
 };
 use rig::providers::openai;
 use rig::tool::PortableDynamicTool;
-use serde::Serialize;
 use tokio::sync::mpsc;
 
 use crate::error::AgentError;
@@ -132,12 +131,16 @@ impl ContextMessage {
     /// deliberately dropped, matching the historical log format.
     fn to_log_json(&self) -> serde_json::Value {
         let (role, content) = match self {
-            ContextMessage::System(text) => ("system", serde_json::Value::String(text.clone())),
-            ContextMessage::User(text) => ("user", serde_json::Value::String(text.clone())),
+            ContextMessage::System(text) => {
+                ("system".to_string(), serde_json::Value::String(text.clone()))
+            }
+            ContextMessage::User(text) => {
+                ("user".to_string(), serde_json::Value::String(text.clone()))
+            }
             ContextMessage::Message(msg) => {
                 let value = serde_json::to_value(msg).unwrap_or(serde_json::Value::Null);
                 let role = value["role"].as_str().unwrap_or("unknown").to_string();
-                (role.as_str(), value["content"].clone())
+                (role, value["content"].clone())
             }
         };
         serde_json::json!({ "role": role, "content": content })
@@ -923,6 +926,37 @@ mod tests {
     }
 
     #[test]
+    fn probe_shapes() {
+        let call = ToolCall::new(
+            "call_1".to_string(),
+            rig::completion::message::ToolFunction {
+                name: "get_time".to_string(),
+                arguments: serde_json::json!({}),
+            },
+        );
+        let history = vec![
+            Message::user("earlier"),
+            Message::assistant("partial"),
+            Message::Assistant {
+                id: Some("msg_1".to_string()),
+                content: rig::OneOrMany::one(AssistantContent::ToolCall(call)),
+            },
+        ];
+        let turn_messages = vec![Message::tool_result_with_call_id(
+            "call_1".to_string(),
+            None,
+            "12:00:00",
+        )];
+        let value = context_to_log_json(&build_context(
+            "system",
+            &history,
+            &turn_messages,
+            "now",
+        ));
+        println!("{}", serde_json::to_string_pretty(&value).unwrap());
+    }
+
+    #[test]
     fn context_has_system_history_and_user() {
         let history = vec![Message::user("earlier")];
         let turn_messages = vec![Message::assistant("partial")];
@@ -934,9 +968,13 @@ mod tests {
         assert_eq!(arr[0]["role"], "system");
         assert_eq!(arr[0]["content"], "system");
         assert_eq!(arr[1]["role"], "user");
-        assert_eq!(arr[1]["content"], "earlier");
+        // A `rig::Message` carries content as a typed block array, not a
+        // bare string — only `ContextMessage::{System, User}` are plain.
+        assert_eq!(arr[1]["content"][0]["type"], "text");
+        assert_eq!(arr[1]["content"][0]["text"], "earlier");
         assert_eq!(arr[2]["role"], "assistant");
-        assert_eq!(arr[2]["content"], "partial");
+        assert_eq!(arr[2]["content"][0]["type"], "text");
+        assert_eq!(arr[2]["content"][0]["text"], "partial");
         assert_eq!(arr[3]["role"], "user");
         assert_eq!(arr[3]["content"], "now");
     }
@@ -977,7 +1015,9 @@ mod tests {
         assert_eq!(arr.len(), 5);
         assert_eq!(arr[1]["role"], "user");
         assert_eq!(arr[2]["role"], "assistant");
-        assert_eq!(arr[2]["content"][0]["type"], "tool_call");
+        // A tool call serializes as `{type: "toolcall", function: {…}}` —
+        // rig's wire spelling of the variant, not "tool_call".
+        assert_eq!(arr[2]["content"][0]["type"], "toolcall");
         assert_eq!(arr[2]["content"][0]["function"]["name"], "get_time");
         // A tool result serializes as a `user` message, not a `tool` role.
         assert_eq!(arr[3]["role"], "user");
