@@ -1,3 +1,0 @@
-I do not need to commit all files in `working` to git.  But I want you to be able to read all files in working.  You cannot read files that are ignored in .gitignore.  Is there any way to excluding directories from git whilst still lettng you reaad and write files from there.
-Ok.  Following your recomendation, is there any way to stop the untracked files cluttering up `git status`?
-/quit

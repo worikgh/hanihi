@@ -1,8 +1,0 @@
-{
-  "command": "du -sh working plans prompts crates/hanihi-core/src/tool.patch",
-  "duration_ms": 21,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "23M\tworking\n104K\tplans\n24K\tprompts\n8.0K\tcrates/hanihi-core/src/tool.patch\n",
-  "ts": "2026-08-30T05:49:07.561665092+00:00"
-}

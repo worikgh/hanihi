@@ -1,8 +1,0 @@
-{
-  "command": "grep -n \"streaming log fix\\|replay_history tests\\|streaming_logs_real_tool_args_and_result\\|replay_empty_session_returns_empty\" crates/hanihi-core/src/session/mod.rs",
-  "duration_ms": 0,
-  "exit_code": 2,
-  "stderr": "grep: log: No such file or directory\ngrep: fix\\|replay_history: No such file or directory\ngrep: tests\\|streaming_logs_real_tool_args_and_result\\|replay_empty_session_returns_empty\": No such file or directory\n",
-  "stdout": "",
-  "ts": "2026-09-11T00:22:14.925131631+00:00"
-}

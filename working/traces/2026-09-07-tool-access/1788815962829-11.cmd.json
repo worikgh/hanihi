@@ -1,8 +1,0 @@
-{
-  "command": "git show --stat --oneline HEAD",
-  "duration_ms": 7,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "ac44988 Grant write-mode git housekeeping to run_command\n crates/hanihi-cli/src/main.rs  |   9 +-\n crates/hanihi-core/src/lib.rs  |   2 +-\n crates/hanihi-core/src/tool.rs | 271 +++++++++++++++++++++++++++++++++++++++--\n crates/hanihi-eval/src/main.rs |   8 +-\n 4 files changed, 278 insertions(+), 12 deletions(-)\n",
-  "ts": "2026-09-07T21:19:22.829233357+00:00"
-}

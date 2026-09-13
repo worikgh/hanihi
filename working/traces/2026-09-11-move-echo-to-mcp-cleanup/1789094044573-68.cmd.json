@@ -1,8 +1,0 @@
-{
-  "command": "git show --stat b69eb1c",
-  "duration_ms": 3,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "commit b69eb1ca3d14ba9fce6e54a619c84dd16da4b3f0\nAuthor: Worik <5387413+worikgh@users.noreply.github.com>\nDate:   Fri Sep 11 14:26:07 2026 +1200\n\n    Add a deploy script to install the agent\n\n deploy.sh | 31 +++++++++++++++++++++++++++++++\n 1 file changed, 31 insertions(+)\n",
-  "ts": "2026-09-11T02:34:04.573914525+00:00"
-}

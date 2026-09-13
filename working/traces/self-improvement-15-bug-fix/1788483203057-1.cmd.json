@@ -1,8 +1,0 @@
-{
-  "command": "grep -c invalid_request_error working/sessions/self-improvement-14-apply-patch/events.jsonl",
-  "duration_ms": 5,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "2\n",
-  "ts": "2026-09-04T00:53:23.057093191+00:00"
-}

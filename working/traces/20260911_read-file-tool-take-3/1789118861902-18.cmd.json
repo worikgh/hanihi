@@ -1,8 +1,0 @@
-{
-  "command": "git show HEAD:crates/hanihi-mcp-server/Cargo.toml",
-  "duration_ms": 1,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "[package]\nname = \"hanihi-mcp-server\"\nversion.workspace = true\nedition.workspace = true\nlicense.workspace = true\npublish = false\n\n[dependencies]\nhanihi-core = {  path = \"../hanihi-core\" }\nrmcp = { version = \"3.1.2\", features = [\"transport-io\"] }\nserde.workspace = true\nserde_json.workspace = true\ntokio.workspace = true\n",
-  "ts": "2026-09-11T09:27:41.902825226+00:00"
-}

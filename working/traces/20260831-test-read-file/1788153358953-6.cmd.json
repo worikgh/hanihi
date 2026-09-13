@@ -1,8 +1,0 @@
-{
-  "command": "git show d215e4a --stat",
-  "duration_ms": 19,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "commit d215e4a6f4ad93668f70bebcd0fe3a3eb3d0a2a9\nAuthor: Worik <5387413+worikgh@users.noreply.github.com>\nDate:   Wed Aug 26 21:12:23 2026 +1200\n\n    Formatting.  Whitespace changes\n\n crates/hanihi-cli/src/main.rs   |    7 +-\n crates/hanihi-core/src/tool.rs  | 1308 +++++++++++++++++++--------------------\n crates/hanihi-core/src/write.rs |   12 +-\n 3 files changed, 665 insertions(+), 662 deletions(-)\n",
-  "ts": "2026-08-31T05:15:58.953487014+00:00"
-}

@@ -1,7 +1,0 @@
-/file .p.md
-Rewrite your patch and continue
-continue
-/quit
-continue
-/session
-/quit

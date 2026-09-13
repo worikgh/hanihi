@@ -1,8 +1,0 @@
-{
-  "command": "git log --oneline --all --grep=\"assertion\" -i",
-  "duration_ms": 68,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "",
-  "ts": "2026-09-07T00:51:49.999963437+00:00"
-}

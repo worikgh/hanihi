@@ -1,8 +1,0 @@
-{
-  "command": "git ls-files crates/mcp-echo-server crates/hanihi-mcp-server",
-  "duration_ms": 4,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "crates/hanihi-mcp-server/Cargo.toml\ncrates/hanihi-mcp-server/src/echo_tool.rs\ncrates/hanihi-mcp-server/src/main.rs\n",
-  "ts": "2026-09-11T09:17:19.776169134+00:00"
-}

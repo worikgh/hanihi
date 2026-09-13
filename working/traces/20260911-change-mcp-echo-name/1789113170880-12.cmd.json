@@ -1,8 +1,0 @@
-{
-  "command": "git grep -n mcp-echo-server",
-  "duration_ms": 15,
-  "exit_code": 1,
-  "stderr": "",
-  "stdout": "",
-  "ts": "2026-09-11T07:52:50.881034457+00:00"
-}

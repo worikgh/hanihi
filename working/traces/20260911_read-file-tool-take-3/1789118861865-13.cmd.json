@@ -1,8 +1,0 @@
-{
-  "command": "git grep -n \"builtin_read_file\" -- crates/hanihi-core/src",
-  "duration_ms": 10,
-  "exit_code": 1,
-  "stderr": "",
-  "stdout": "",
-  "ts": "2026-09-11T09:27:41.865664791+00:00"
-}

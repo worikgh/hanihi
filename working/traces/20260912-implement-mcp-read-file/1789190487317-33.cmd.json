@@ -1,8 +1,0 @@
-{
-  "command": "git status",
-  "duration_ms": 3,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "On branch main\nYour branch is ahead of 'origin/main' by 1 commit.\n  (use \"git push\" to publish your local commits)\n\nChanges not staged for commit:\n  (use \"git add <file>...\" to update what will be committed)\n  (use \"git restore <file>...\" to discard changes in working directory)\n\tmodified:   Cargo.lock\n\tmodified:   crates/hanihi-mcp-server/src/main.rs\n\tmodified:   crates/hanihi-session/src/bin/analyse.rs\n\tmodified:   prompts/code_generation.md\n\tmodified:   prompts/rust_coding.md\n\nno changes added to commit (use \"git add\" and/or \"git commit -a\")\n",
-  "ts": "2026-09-12T05:21:27.317279298+00:00"
-}

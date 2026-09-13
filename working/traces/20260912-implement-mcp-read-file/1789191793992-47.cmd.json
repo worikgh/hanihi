@@ -1,8 +1,0 @@
-{
-  "command": "git diff HEAD -- crates/hanihi-mcp-server/src/main.rs Cargo.lock",
-  "duration_ms": 3,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "",
-  "ts": "2026-09-12T05:43:13.992370449+00:00"
-}

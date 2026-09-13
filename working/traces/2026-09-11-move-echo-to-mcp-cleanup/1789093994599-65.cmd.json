@@ -1,8 +1,0 @@
-{
-  "command": "git show --stat ab5beb9",
-  "duration_ms": 12,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "commit ab5beb9332a5beddfa2b3270b94d27a17969bfcf\nAuthor: Worik <5387413+worikgh@users.noreply.github.com>\nDate:   Fri Sep 11 14:22:52 2026 +1200\n\n    Rewrite echo tests to use builtin_get_time\n    \n    The commented-out tests still referenced builtin_echo, which was\n    removed in favour of an MCP server. Point them at builtin_get_time\n    so they compile and exercise a real tool again.\n    \n    Hānihi\n\n crates/hanihi-core/src/agent.rs       |  58 ++++++++--------\n crates/hanihi-core/src/session/mod.rs | 120 +++++++++++++++++-----------------\n 2 files changed, 89 insertions(+), 89 deletions(-)\n",
-  "ts": "2026-09-11T02:33:14.599340125+00:00"
-}

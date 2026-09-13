@@ -1,8 +1,0 @@
-{
-  "command": "git status --porcelain=v1 --untracked-files=normal",
-  "duration_ms": 7,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "?? crates/hanihi-core/hanihi-debug.log\n?? crates/hanihi-mcp-server/src/hanihi_tool_trait.rs\n?? crates/hanihi-mcp-server/src/read_file_tool.rs\n?? hanihi-debug.log\n?? plans/010-tool-access.md\n?? plans/011-mcp-read-file-tool.md\n?? working/\n",
-  "ts": "2026-09-12T05:43:41.590017999+00:00"
-}

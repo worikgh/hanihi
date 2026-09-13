@@ -1,8 +1,0 @@
-{
-  "command": "git add crates/hanihi-core/applytest.patch crates/hanihi-core/src/tool.patch crates/hanihi-core/src/write.diff crates/hanihi-core/src/write.patch",
-  "duration_ms": 13,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "",
-  "ts": "2026-09-01T01:00:54.098425457+00:00"
-}

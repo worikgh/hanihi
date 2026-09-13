@@ -1,8 +1,0 @@
-{
-  "command": "git log --oneline -8",
-  "duration_ms": 6,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "26efbe4 Add prompts for file system checks\ncf36060 Implement `fmt::Display` for the `Usage` type\n13791a2 Implement `analyse` report on prompts: `--prompts`\ne645a15 Rename mcp-echo-server crate to hanihi-mcp-server\n8a5f7b6 Use `cargo clippy` and fix all errors\n0244f32 Update tests\n0e8aa77 Make the deploy script executable\nbbd511e Remove debug logs from git repo\n",
-  "ts": "2026-09-12T05:42:50.936696516+00:00"
-}

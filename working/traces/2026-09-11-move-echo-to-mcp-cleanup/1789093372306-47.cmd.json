@@ -1,8 +1,0 @@
-{
-  "command": "git commit -F working/commit-msg.txt",
-  "duration_ms": 33,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "[main ab5beb9] Rewrite echo tests to use builtin_get_time\n 2 files changed, 89 insertions(+), 89 deletions(-)\n",
-  "ts": "2026-09-11T02:22:52.306716689+00:00"
-}

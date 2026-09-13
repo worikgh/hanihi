@@ -1,8 +1,0 @@
-{
-  "command": "git show HEAD:Cargo.lock | sed -n 1930,1985p",
-  "duration_ms": 0,
-  "exit_code": 128,
-  "stderr": "fatal: ambiguous argument '|': unknown revision or path not in the working tree.\nUse '--' to separate paths from revisions, like this:\n'git <command> [<revision>...] -- [<file>...]'\n",
-  "stdout": "",
-  "ts": "2026-09-12T04:39:28.822587936+00:00"
-}

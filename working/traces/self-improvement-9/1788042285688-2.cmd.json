@@ -1,8 +1,0 @@
-{
-  "command": "git log --oneline --all -10",
-  "duration_ms": 2,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "22191d8 Use Cyan for font colour echoing interactive prompt\n656fa87 Allow changing colour of text in prompt\ndaab065 Allow `working/` and `target/doc` in gitignore\n1117843 Add custom reedline MonoHighlighter for input colouring\nf25511f A guid for programming Rust\n0878046 Add tools\n96455d9 Fix bug introduced by LLM\n9121bf3 Allow git grep in run_command allowlist\ne149195 Add ui tests covering declared colours and set_default_colour\n3f81801 Wire colour helpers into streamed agent output\n",
-  "ts": "2026-08-29T22:24:45.688310910+00:00"
-}

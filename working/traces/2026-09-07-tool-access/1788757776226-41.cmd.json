@@ -1,8 +1,0 @@
-{
-  "command": "git diff --name-only",
-  "duration_ms": 3,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "crates/hanihi-cli/src/main.rs\ncrates/hanihi-core/hanihi-debug.log\ncrates/hanihi-core/src/lib.rs\ncrates/hanihi-core/src/tool.rs\ncrates/hanihi-eval/src/main.rs\nworking/sessions/2026-09-07-todo-b/events.jsonl\nworking/sessions/2026-09-07-todo-b/history.txt\n",
-  "ts": "2026-09-07T05:09:36.226871882+00:00"
-}

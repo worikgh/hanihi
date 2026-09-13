@@ -1,8 +1,0 @@
-{
-  "command": "git show --stat 173007a",
-  "duration_ms": 8,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "commit 173007a26cfd0644799b57d9bb43eeb6c1cc5b23\nAuthor: Worik <5387413+worikgh@users.noreply.github.com>\nDate:   Sat Sep 5 10:17:55 2026 +1200\n\n    Implement debug logging\n\n crates/hanihi-core/hanihi-debug.log          |   2 +\n crates/hanihi-core/src/debug.rs              |  86 +++++++++++++++\n crates/hanihi-core/src/lib.rs                |   1 +\n crates/hanihi-core/src/tool.rs               |   2 +\n crates/hanihi-core/src/write.rs              |  45 ++++----\n crates/hanihi-core/tests/replay_streaming.rs | 150 +++++++++++++++++++++++++++\n plans/009-bug-fix-b.md                       |  66 ++++++++++++\n plans/009-bug-fix.md                         | 114 ++++++++++++++++++++\n report.md                                    |  66 ++++++++++++\n 9 files changed, 513 insertions(+), 19 deletions(-)\n",
-  "ts": "2026-09-04T22:25:14.177265643+00:00"
-}

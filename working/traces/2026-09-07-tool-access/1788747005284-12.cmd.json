@@ -1,8 +1,0 @@
-{
-  "command": "git diff --stat",
-  "duration_ms": 447,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": " crates/hanihi-core/src/tool.rs                  | 130 +++++++++++++++\n working/sessions/2026-09-07-todo-b/events.jsonl | 207 ++++++++++++++++++++++++\n working/sessions/2026-09-07-todo-b/history.txt  |  14 ++\n 3 files changed, 351 insertions(+)\n",
-  "ts": "2026-09-07T02:10:05.284185496+00:00"
-}

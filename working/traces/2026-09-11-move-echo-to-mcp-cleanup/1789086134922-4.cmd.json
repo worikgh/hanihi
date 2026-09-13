@@ -1,8 +1,0 @@
-{
-  "command": "grep -n \"echo_agent\\|test_unknown_tool_fails\\|test_simple_text_reply\\|test_tool_call_round_trip\\|test_max_turns_exceeded\" crates/hanihi-core/src/agent.rs",
-  "duration_ms": 3,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "795:    // async fn test_simple_text_reply() {\n804:    // async fn test_tool_call_round_trip() {\n835:    async fn test_unknown_tool_fails() {\n",
-  "ts": "2026-09-11T00:22:14.922857927+00:00"
-}

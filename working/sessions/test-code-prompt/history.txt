@@ -1,5 +1,0 @@
-/file /tmp/prompt.md
-Use the `target/doc` documents created by `cargo doc` (since your last interaction with me) to confirm rmcp API details
-`target/doc/rmcp/model/type.ServerInfo.html`  is the file you want, I think
-continue
-/quit

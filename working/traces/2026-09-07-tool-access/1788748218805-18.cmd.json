@@ -1,8 +1,0 @@
-{
-  "command": "git grep -n \"add.*commit.*=> Ok\" HEAD -- crates/hanihi-core/src/tool.rs",
-  "duration_ms": 1,
-  "exit_code": 128,
-  "stderr": "fatal: unable to resolve revision: Ok\"\n",
-  "stdout": "",
-  "ts": "2026-09-07T02:30:18.805308006+00:00"
-}

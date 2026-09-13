@@ -1,8 +1,0 @@
-{
-  "command": "git show b8aee0b --stat && git show b8aee0b~1 --stat",
-  "duration_ms": 5,
-  "exit_code": 128,
-  "stderr": "fatal: ambiguous argument '&&': unknown revision or path not in the working tree.\nUse '--' to separate paths from revisions, like this:\n'git <command> [<revision>...] -- [<file>...]'\n",
-  "stdout": "",
-  "ts": "2026-09-07T00:53:25.784857386+00:00"
-}

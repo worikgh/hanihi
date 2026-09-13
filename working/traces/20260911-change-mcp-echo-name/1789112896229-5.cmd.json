@@ -1,8 +1,0 @@
-{
-  "command": "git diff --cached --stat",
-  "duration_ms": 21,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": " Cargo.lock                                         | 22 +++++++++++-----------\n Cargo.toml                                         |  2 +-\n README.md                                          |  6 +++---\n crates/hanihi-cli/src/main.rs                      |  2 +-\n .../Cargo.toml                                     |  2 +-\n .../src/echo_tool.rs                               |  0\n .../src/main.rs                                    |  2 +-\n 7 files changed, 18 insertions(+), 18 deletions(-)\n",
-  "ts": "2026-09-11T07:48:16.229713897+00:00"
-}

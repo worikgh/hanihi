@@ -1,8 +1,0 @@
-{
-  "command": "cargo clippy -p hanihi-mcp-server --all-targets -- -D warnings",
-  "duration_ms": 1604,
-  "exit_code": 0,
-  "stderr": "    Checking hanihi-core v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-core)\n    Checking hanihi-mcp-server v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-mcp-server)\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.53s\n",
-  "stdout": "",
-  "ts": "2026-09-12T06:16:37.369954984+00:00"
-}

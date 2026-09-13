@@ -1,8 +1,0 @@
-{
-  "command": "git diff --stat",
-  "duration_ms": 10,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": " crates/hanihi-core/src/lib.rs   |  1 +\n crates/hanihi-core/src/tool.rs  |  2 ++\n crates/hanihi-core/src/write.rs | 45 ++++++++++++++++++++++++-----------------\n 3 files changed, 29 insertions(+), 19 deletions(-)\n",
-  "ts": "2026-09-04T04:18:34.469504972+00:00"
-}

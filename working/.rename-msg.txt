@@ -1,8 +1,0 @@
-Rename mcp-echo-server crate to hanihi-mcp-server
-
-The MCP stdio server crate and its directory move from
-mcp-echo-server to hanihi-mcp-server to match the workspace
-naming scheme. Update the workspace members list, Cargo.lock,
-README, and the hanihi-cli --mcp-command example.
-
-Hānihi

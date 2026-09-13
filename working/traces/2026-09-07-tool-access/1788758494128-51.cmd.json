@@ -1,8 +1,0 @@
-{
-  "command": "cargo test -p hanihi-core tool::tests::command_allowlist tool::tests::run_command_tool",
-  "duration_ms": 13,
-  "exit_code": 1,
-  "stderr": "error: unexpected argument 'tool::tests::run_command_tool' found\n\nUsage: cargo test [OPTIONS] [TESTNAME] [-- [ARGS]...]\n\nFor more information, try '--help'.\n",
-  "stdout": "",
-  "ts": "2026-09-07T05:21:34.128943957+00:00"
-}

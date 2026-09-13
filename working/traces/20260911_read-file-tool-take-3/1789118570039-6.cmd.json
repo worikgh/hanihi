@@ -1,8 +1,0 @@
-{
-  "command": "git status",
-  "duration_ms": 9,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "On branch main\nYour branch is up to date with 'origin/main'.\n\nnothing to commit (use -u to show untracked files)\n",
-  "ts": "2026-09-11T09:22:50.039046304+00:00"
-}

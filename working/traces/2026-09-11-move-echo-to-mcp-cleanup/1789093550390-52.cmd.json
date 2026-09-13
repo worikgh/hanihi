@@ -1,8 +1,0 @@
-{
-  "command": "git log --oneline -10 -- crates/hanihi-core/src/session/log.rs",
-  "duration_ms": 86,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "d6426af Implement `fmt::Display` for log entries\n44c231c Extend logging\ndd998d2 Add a method to get the kind of a `LogEntry`\n5cc9c93 Bump to 0.3.0 — streaming, durable execution, eval harness\n87b1dc5 Step 1: session storage foundation (LogEntry, LogWriter, Session, SessionManager, lock)\n",
-  "ts": "2026-09-11T02:25:50.390698001+00:00"
-}

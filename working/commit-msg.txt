@@ -1,7 +1,0 @@
-Rewrite echo tests to use builtin_get_time
-
-The commented-out tests still referenced builtin_echo, which was
-removed in favour of an MCP server. Point them at builtin_get_time
-so they compile and exercise a real tool again.
-
-Hānihi

@@ -1,8 +1,0 @@
-{
-  "command": "cat Cargo.toml",
-  "duration_ms": 1,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "[workspace]\nresolver = \"2\"\nmembers = [\"crates/hanihi-core\", \"crates/hanihi-cli\", \"crates/hanihi-eval\", \"crates/mcp-echo-server\"]\n\n[workspace.package]\nversion = \"0.3.0\"\nedition = \"2024\"\nlicense = \"MIT OR Apache-2.0\"\nrepository = \"https://github.com/worikgh/hanihi\"\nreadme = \"README.md\"\n\n[workspace.dependencies]\nignore = \"0.4\"\ntokio = { version = \"1\", features = [\"rt-multi-thread\", \"macros\", \"process\", \"io-util\", \"sync\", \"time\", \"signal\"] }\nserde = { version = \"1\", features = [\"derive\"] }\nserde_json = \"1\"\ntracing = \"0.1\"\ntracing-subscriber = { version = \"0.3\", features = [\"env-filter\"] }\n",
-  "ts": "2026-08-30T01:24:03.381473679+00:00"
-}

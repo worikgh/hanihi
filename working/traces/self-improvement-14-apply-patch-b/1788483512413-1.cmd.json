@@ -1,8 +1,0 @@
-{
-  "command": "git diff --stat",
-  "duration_ms": 26,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": " crates/hanihi-cli/src/main.rs            |   10 +-\n crates/hanihi-core/src/agent.rs          |  160 ++++-\n crates/hanihi-core/src/session/log.rs    |  270 +++++++-\n crates/hanihi-core/src/session/mod.rs    |  198 +++---\n crates/hanihi-core/src/tool.rs           |    1 +\n crates/hanihi-core/src/write.rs          | 1030 +++++++++++++++---------------\n crates/hanihi-session/src/bin/analyse.rs |   54 +-\n 7 files changed, 1070 insertions(+), 653 deletions(-)\n",
-  "ts": "2026-09-04T00:58:32.413558651+00:00"
-}

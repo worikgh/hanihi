@@ -1,7 +1,0 @@
-What model is this using?
-What sort of models is `togther.ai` useful for?
-I have credit there.  I am interested in using it.  Have they any Helios models?
-The models thatthe Raspberry Pi AI Hat 2 uses
-I want to try models that I might run on the Pi Hat on a cloud provider.,  I have credit at that cloud provider.
-q/quit
-/quit

@@ -1,8 +1,0 @@
-{
-  "command": "cargo clippy",
-  "duration_ms": 1355,
-  "exit_code": 0,
-  "stderr": "    Checking hanihi-core v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-core)\nwarning: this pattern is unneeded as the `..` pattern can match that element\n   --> crates/hanihi-core/src/agent.rs:472:21\n    |\n472 | /                     reasoning: _,\n473 | |                     ..\n    | |____________________^ help: remove it\n    |\n    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#unneeded_wildcard_pattern\n    = note: `#[warn(clippy::unneeded_wildcard_pattern)]` on by default\n\nwarning: `hanihi-core` (lib) generated 1 warning (run `cargo clippy --fix --lib -p hanihi-core -- ` to apply 1 suggestion)\n    Checking hanihi-eval v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-eval)\n    Checking hanihi-cli v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-cli)\nwarning: this expression creates a reference which is immediately dereferenced by the compiler\n   --> crates/hanihi-cli/src/main.rs:298:10\n    |\n298 |     repl(&mut session, agent, provider, &args.model).await?;\n    |          ^^^^^^^^^^^^ help: change this to: `session`\n    |\n    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_borrow\n    = note: `#[warn(clippy::needless_borrow)]` on by default\n\nwarning: `hanihi-cli` (bin \"hanihi-cli\") generated 1 warning (run `cargo clippy --fix --bin \"hanihi-cli\" -p hanihi-cli -- ` to apply 1 suggestion)\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.26s\n",
-  "stdout": "",
-  "ts": "2026-08-24T22:21:56.508073261+00:00"
-}

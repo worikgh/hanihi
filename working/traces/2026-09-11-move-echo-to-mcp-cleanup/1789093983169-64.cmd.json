@@ -1,8 +1,0 @@
-{
-  "command": "git diff --cached",
-  "duration_ms": 1,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "",
-  "ts": "2026-09-11T02:33:03.169372733+00:00"
-}

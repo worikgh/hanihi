@@ -1,8 +1,0 @@
-{
-  "command": "git log -1 --format=\"%s\"",
-  "duration_ms": 5,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "\"Add a deploy script to install the agent\"\n",
-  "ts": "2026-09-11T02:42:58.755766309+00:00"
-}

@@ -1,8 +1,0 @@
-{
-  "command": "git grep -n \"log_to_file\\|crate::debug\\|debug::\" -- crates/hanihi-core/src",
-  "duration_ms": 11,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "crates/hanihi-core/src/tool.rs:19:use crate::debug;\ncrates/hanihi-core/src/write.rs:16:use crate::debug;\n",
-  "ts": "2026-09-07T05:04:08.598841356+00:00"
-}

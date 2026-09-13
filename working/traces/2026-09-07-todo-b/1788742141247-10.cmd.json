@@ -1,8 +1,0 @@
-{
-  "command": "git diff --stat && git status",
-  "duration_ms": 4,
-  "exit_code": 128,
-  "stderr": "fatal: ambiguous argument '&&': unknown revision or path not in the working tree.\nUse '--' to separate paths from revisions, like this:\n'git <command> [<revision>...] -- [<file>...]'\n",
-  "stdout": "",
-  "ts": "2026-09-07T00:49:01.247109223+00:00"
-}

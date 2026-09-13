@@ -1,8 +1,0 @@
-{
-  "command": "git status --short -- plans/010-write-flag-fail-fast.md",
-  "duration_ms": 3,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "",
-  "ts": "2026-09-08T00:58:52.954321567+00:00"
-}

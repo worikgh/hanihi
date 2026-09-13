@@ -1,8 +1,0 @@
-{
-  "command": "cargo test -p hanihi-core session::log",
-  "duration_ms": 31280,
-  "exit_code": 0,
-  "stderr": "   Compiling tokio-rustls v0.26.4\n   Compiling rustls-platform-verifier v0.7.0\n   Compiling hyper-rustls v0.27.9\n   Compiling reqwest v0.13.4\n   Compiling rig-core v0.41.0\n   Compiling hanihi-core v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-core)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 31.13s\n     Running unittests src/lib.rs (target/debug/deps/hanihi_core-12c706d7be1a6e4c)\n     Running tests/replay_streaming.rs (target/debug/deps/replay_streaming-b16c7a1ad08ac422)\n",
-  "stdout": "\nrunning 12 tests\ntest session::log::tests::llm_response_display_uses_usage_display ... ok\ntest session::log::tests::strict_rejects_non_integer_schema ... ok\ntest session::log::tests::strict_parses_schema_and_legacy_lines ... ok\ntest session::log::tests::strict_reports_first_error_with_line_number ... ok\ntest session::log::tests::multiple_entries_are_lines ... ok\ntest session::log::tests::usage_display_formats_both_counts ... ok\ntest session::log::tests::tolerant_empty_input ... ok\ntest session::log::tests::strict_reports_future_schema ... ok\ntest session::log::tests::tolerant_collects_valid_and_reports_bad_lines ... ok\ntest session::log::tests::usage_display_formats_zero_counts ... ok\ntest session::log::tests::writer_injects_schema ... ok\ntest session::log::tests::write_and_read_back ... ok\n\ntest result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 67 filtered out; finished in 0.00s\n\n\nrunning 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s\n\n",
-  "ts": "2026-09-11T09:02:54.481675005+00:00"
-}

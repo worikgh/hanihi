@@ -1,8 +1,0 @@
-{
-  "command": "git diff --stat",
-  "duration_ms": 147,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": " working/sessions/2026-09-07-todo-b/events.jsonl | 38 +++++++++++++++++++++++++\n 1 file changed, 38 insertions(+)\n",
-  "ts": "2026-09-07T00:52:17.405066800+00:00"
-}

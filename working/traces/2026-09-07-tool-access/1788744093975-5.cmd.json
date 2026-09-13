@@ -1,8 +1,0 @@
-{
-  "command": "grep -n \"fn check_command_argv\" crates/hanihi-core/src/tool.rs",
-  "duration_ms": 3,
-  "exit_code": 2,
-  "stderr": "grep: check_command_argv\": No such file or directory\n",
-  "stdout": "crates/hanihi-core/src/tool.rs:962:        assert!(out.render().contains(\"fn main\"));\ncrates/hanihi-core/src/tool.rs:1039:            .execute(serde_json::json!({ \"pattern\": \"fn main\" }))\ncrates/hanihi-core/src/tool.rs:1138:            argv(&[\"git\", \"grep\", \"fn main\"]),\ncrates/hanihi-core/src/tool.rs:1209:        std::fs::write(dir.join(\"src/main.rs\"), \"fn main() {}\\n\").unwrap();\n",
-  "ts": "2026-09-07T01:21:33.975859222+00:00"
-}

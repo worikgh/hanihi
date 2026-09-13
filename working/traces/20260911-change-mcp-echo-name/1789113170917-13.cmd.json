@@ -1,8 +1,0 @@
-{
-  "command": "git log -1 --stat",
-  "duration_ms": 21,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "commit e645a15b7f376434b2945320327afbd62a93ca69\nAuthor: Worik <5387413+worikgh@users.noreply.github.com>\nDate:   Fri Sep 11 19:52:15 2026 +1200\n\n    Rename mcp-echo-server crate to hanihi-mcp-server\n    \n    The MCP stdio server crate and its directory move from\n    mcp-echo-server to hanihi-mcp-server to match the workspace\n    naming scheme. Update the workspace members list, Cargo.lock,\n    README, and the hanihi-cli --mcp-command example.\n    \n    Hānihi\n\n Cargo.lock                                         | 22 +++++++++++-----------\n Cargo.toml                                         |  2 +-\n README.md                                          |  6 +++---\n crates/hanihi-cli/src/main.rs                      |  2 +-\n .../Cargo.toml                                     |  2 +-\n .../src/echo_tool.rs                               |  0\n .../src/main.rs                                    |  2 +-\n 7 files changed, 18 insertions(+), 18 deletions(-)\n",
-  "ts": "2026-09-11T07:52:50.917870504+00:00"
-}

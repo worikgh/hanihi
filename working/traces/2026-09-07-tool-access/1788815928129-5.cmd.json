@@ -1,8 +1,0 @@
-{
-  "command": "git commit -F working/.commit-msg",
-  "duration_ms": 47,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "[main ac44988] Grant write-mode git housekeeping to run_command\n 4 files changed, 278 insertions(+), 12 deletions(-)\n",
-  "ts": "2026-09-07T21:18:48.129959179+00:00"
-}

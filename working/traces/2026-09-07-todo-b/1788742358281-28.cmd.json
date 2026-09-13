@@ -1,8 +1,0 @@
-{
-  "command": "git log --oneline -15 HEAD",
-  "duration_ms": 7,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "f4720df Repair diff syntax markdown bullet\nb8aee0b Add AI disclaimer to README\n5ad2f67 Add advice on using apply_patch\n478c95a Minor improvements to  README\nb4e88e6 emove debugging test code\nf90baa8 Remove untracked file from repo\n173007a Implement debug logging\n9a9c3cd Fix the bug in session replay that broke resumed sessions\na05e3bd Extend system prompt to encourage the model to persevere in the face of tool failures\n44c231c Extend logging\n5ab651d Remove patching artifacts from repository\ndd998d2 Add a method to get the kind of a `LogEntry`\n39ab113 Add summary to `analyse`\na8ca132 Use the `hanihi-session` structures that were written to the log to read the log\nef99eb8 Make a plan to improve logs\n",
-  "ts": "2026-09-07T00:52:38.281973506+00:00"
-}

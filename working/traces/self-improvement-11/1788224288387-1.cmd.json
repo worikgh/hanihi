@@ -1,8 +1,0 @@
-{
-  "command": "cargo test -p hanihi-core test_duplicate_read_only_tool_call_is_deduplicated",
-  "duration_ms": 1723,
-  "exit_code": 0,
-  "stderr": "   Compiling hanihi-core v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-core)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.66s\n     Running unittests src/lib.rs (target/debug/deps/hanihi_core-12c706d7be1a6e4c)\n",
-  "stdout": "\nrunning 1 test\ntest agent::tests::test_duplicate_read_only_tool_call_is_deduplicated ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 60 filtered out; finished in 0.00s\n\n",
-  "ts": "2026-09-01T00:58:08.387390659+00:00"
-}

@@ -1,8 +1,0 @@
-{
-  "command": "cargo fmt --check",
-  "duration_ms": 193,
-  "exit_code": 1,
-  "stderr": "",
-  "stdout": "Diff in /home/worik/Documents/2026/hanihi/crates/hanihi-core/src/session/log.rs:864:\n             data,\n         };\n         assert!(\n-            entry.to_string().contains(\"  Usage: 12 input tokens, 34 output tokens\"),\n+            entry\n+                .to_string()\n+                .contains(\"  Usage: 12 input tokens, 34 output tokens\"),\n             \"unexpected: {entry}\"\n         );\n     }\n",
-  "ts": "2026-09-11T09:02:16.644553240+00:00"
-}

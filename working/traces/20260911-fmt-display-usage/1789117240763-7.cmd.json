@@ -1,8 +1,0 @@
-{
-  "command": "git log --oneline -3 -- crates/hanihi-core/src/session/mod.rs",
-  "duration_ms": 74,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "ab5beb9 Rewrite echo tests to use builtin_get_time\na80d61c Start the process of moving tools all to MCP server\n9a9c3cd Fix the bug in session replay that broke resumed sessions\n",
-  "ts": "2026-09-11T09:00:40.763338511+00:00"
-}

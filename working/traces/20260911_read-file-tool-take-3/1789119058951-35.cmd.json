@@ -1,8 +1,0 @@
-{
-  "command": "ls /home/worik/.cargo/registry/src",
-  "duration_ms": 0,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "index.crates.io-1949cf8c6b5b557f\n",
-  "ts": "2026-09-11T09:30:58.951814502+00:00"
-}

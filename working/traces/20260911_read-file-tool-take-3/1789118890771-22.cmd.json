@@ -1,8 +1,0 @@
-{
-  "command": "git grep -n \"mcp-command\\|mcp_command\\|current_dir\\|MCP\" -- crates/hanihi-cli crates/hanihi-core/src/mcp.rs",
-  "duration_ms": 8,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "crates/hanihi-cli/src/main.rs:78:    #[arg(long = \"mcp-command\", value_name = \"CMD\")]\ncrates/hanihi-cli/src/main.rs:79:    mcp_commands: Vec<String>,\ncrates/hanihi-cli/src/main.rs:237:        std::env::current_dir()?.join(&args.working_dir)\ncrates/hanihi-cli/src/main.rs:378:    for command in &args.mcp_commands {\ncrates/hanihi-cli/src/main.rs:379:        debug::log_to_file(\"command from args.mcp_commands: \", command);\ncrates/hanihi-cli/src/main.rs:480:    let cwd = std::env::current_dir().map_err(AgentError::Io)?;\n",
-  "ts": "2026-09-11T09:28:10.771227911+00:00"
-}

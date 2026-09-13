@@ -1,8 +1,0 @@
-{
-  "command": "cargo clippy -p hanihi-mcp-server --all-targets -- -D warnings",
-  "duration_ms": 1347,
-  "exit_code": 0,
-  "stderr": "    Blocking waiting for file lock on package cache\n    Blocking waiting for file lock on package cache\n    Blocking waiting for file lock on package cache\n    Checking hanihi-mcp-server v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-mcp-server)\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.26s\n",
-  "stdout": "",
-  "ts": "2026-09-12T05:21:09.971772225+00:00"
-}

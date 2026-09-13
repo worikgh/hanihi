@@ -1,8 +1,0 @@
-{
-  "command": "cargo check -p hanihi-mcp-server",
-  "duration_ms": 50,
-  "exit_code": 101,
-  "stderr": "error: failed to load manifest for workspace member `/home/worik/Documents/2026/hanihi/crates/hanihi-mcp-server-2`\nreferenced by workspace at `/home/worik/Documents/2026/hanihi/Cargo.toml`\n\nCaused by:\n  failed to read `/home/worik/Documents/2026/hanihi/crates/hanihi-mcp-server-2/Cargo.toml`\n\nCaused by:\n  No such file or directory (os error 2)\n",
-  "stdout": "",
-  "ts": "2026-09-12T03:04:34.807894406+00:00"
-}

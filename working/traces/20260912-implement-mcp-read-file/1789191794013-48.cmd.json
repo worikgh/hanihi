@@ -1,8 +1,0 @@
-{
-  "command": "git ls-files --stage -- crates/hanihi-mcp-server/src",
-  "duration_ms": 0,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "100644 bdb1432569361fde132d9525b26119f96984a529 0\tcrates/hanihi-mcp-server/src/echo_tool.rs\n100644 d55626751b5d0fc551807e6b5ff23cd92ef349f5 0\tcrates/hanihi-mcp-server/src/main.rs\n",
-  "ts": "2026-09-12T05:43:14.013462230+00:00"
-}

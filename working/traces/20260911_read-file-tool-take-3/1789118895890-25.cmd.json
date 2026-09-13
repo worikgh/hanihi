@@ -1,8 +1,0 @@
-{
-  "command": "git grep -n \"pub fn read\\|pub fn open_at\\|pub struct SourceTree\\|pub fn walk\" -- crates/hanihi-core/src/source.rs",
-  "duration_ms": 4,
-  "exit_code": 128,
-  "stderr": "fatal: unable to resolve revision: fn\n",
-  "stdout": "",
-  "ts": "2026-09-11T09:28:15.890544608+00:00"
-}

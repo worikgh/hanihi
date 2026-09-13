@@ -1,8 +1,0 @@
-{
-  "command": "git log --oneline -n 10",
-  "duration_ms": 3,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "cf36060 Implement `fmt::Display` for the `Usage` type\n13791a2 Implement `analyse` report on prompts: `--prompts`\ne645a15 Rename mcp-echo-server crate to hanihi-mcp-server\n8a5f7b6 Use `cargo clippy` and fix all errors\n0244f32 Update tests\n0e8aa77 Make the deploy script executable\nbbd511e Remove debug logs from git repo\nd48416e Hack the `fmt::Display` for `LLMPrompt` to not output all messages.\n7bb7400 Tidy up after deprecating `builtin_echo`\nb69eb1c Add a deploy script to install the agent\n",
-  "ts": "2026-09-11T09:27:22.483960866+00:00"
-}

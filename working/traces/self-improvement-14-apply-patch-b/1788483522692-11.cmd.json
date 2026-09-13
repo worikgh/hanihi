@@ -1,8 +1,0 @@
-{
-  "command": "git diff crates/hanihi-core/src/write.rs | head -100",
-  "duration_ms": 4,
-  "exit_code": 128,
-  "stderr": "fatal: |: no such path in the working tree.\nUse 'git <command> -- <path>...' to specify paths that do not exist locally.\n",
-  "stdout": "",
-  "ts": "2026-09-04T00:58:42.692951154+00:00"
-}

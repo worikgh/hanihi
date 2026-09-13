@@ -1,8 +1,0 @@
-{
-  "command": "git log --oneline -4",
-  "duration_ms": 6,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "7eb185a Expand-run_command-allowlist-and-read-only-git-verbs\n206fdcb Add-hanihi-session-read-only-introspector\n85878f4 Finish `/summary`\n3d4ba42 Expand what `/seesion` outputs\n",
-  "ts": "2026-08-30T05:52:38.488112131+00:00"
-}

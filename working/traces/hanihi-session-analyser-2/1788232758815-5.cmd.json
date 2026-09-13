@@ -1,8 +1,0 @@
-{
-  "command": "git status --short --untracked-files=all crates/hanihi-session",
-  "duration_ms": 2,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "?? crates/hanihi-session/src/bin/analyse.rs\n",
-  "ts": "2026-09-01T03:19:18.815789836+00:00"
-}

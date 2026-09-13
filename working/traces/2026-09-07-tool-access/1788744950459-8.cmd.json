@@ -1,8 +1,0 @@
-{
-  "command": "sed -n '683,700l' crates/hanihi-core/src/tool.rs",
-  "duration_ms": 3,
-  "exit_code": 1,
-  "stderr": "sed: -e expression #1, char 1: unknown command: `''\n",
-  "stdout": "",
-  "ts": "2026-09-07T01:35:50.459948298+00:00"
-}

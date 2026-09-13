@@ -1,8 +1,0 @@
-{
-  "command": "git status --short",
-  "duration_ms": 10,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": " M working/sessions/2026-09-07-todo-b/events.jsonl\n M working/sessions/2026-09-07-todo-b/history.txt\n",
-  "ts": "2026-09-07T21:19:42.481706472+00:00"
-}

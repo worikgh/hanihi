@@ -1,8 +1,0 @@
-{
-  "command": "git log -3 --oneline",
-  "duration_ms": 2,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "c30ffae Add analyse binary\n6a2e6e6 Remove working/ from repo\ndf65f3e Update-session-log-and-traces\n",
-  "ts": "2026-09-01T03:19:49.071969478+00:00"
-}

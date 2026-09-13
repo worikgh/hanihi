@@ -1,8 +1,0 @@
-{
-  "command": "git log --oneline -8",
-  "duration_ms": 7,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "ab5beb9 Rewrite echo tests to use builtin_get_time\na80d61c Start the process of moving tools all to MCP server\n9e64a0e Formatting\nb4a0728 Clear files form `working/` from the Git repo\nd6426af Implement `fmt::Display` for log entries\n7b3aa8b Restore default max turns to 10\n03ec6a1 Fix argument logic in `analyse`\n1b6a7b5 Add displaying token use for a session to `analyse`\n",
-  "ts": "2026-09-11T02:23:25.290662888+00:00"
-}

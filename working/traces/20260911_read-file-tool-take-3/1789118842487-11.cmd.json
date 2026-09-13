@@ -1,8 +1,0 @@
-{
-  "command": "git diff",
-  "duration_ms": 1,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "",
-  "ts": "2026-09-11T09:27:22.487358742+00:00"
-}

@@ -1,8 +1,0 @@
-{
-  "command": "git log --oneline -1",
-  "duration_ms": 1,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "3053014 Add fail-fast plan for --write without a repo\n",
-  "ts": "2026-09-08T00:58:52.948660020+00:00"
-}

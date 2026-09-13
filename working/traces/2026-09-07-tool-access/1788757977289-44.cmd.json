@@ -1,8 +1,0 @@
-{
-  "command": "git diff -- crates/hanihi-core/hanihi-debug.log",
-  "duration_ms": 3,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "diff --git a/crates/hanihi-core/hanihi-debug.log b/crates/hanihi-core/hanihi-debug.log\nindex 8b69544..380af59 100644\n--- a/crates/hanihi-core/hanihi-debug.log\n+++ b/crates/hanihi-core/hanihi-debug.log\n@@ -1,2 +1,4 @@\n [2026-09-04T03:42:34.595605074+00:00] apply_patch on non-diff: not a diff at all\n \n+[2026-09-07T05:09:23.170193438+00:00] apply_patch on non-diff: not a diff at all\n+\n",
-  "ts": "2026-09-07T05:12:57.289162717+00:00"
-}

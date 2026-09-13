@@ -1,8 +1,0 @@
-{
-  "command": "cargo fmt --check",
-  "duration_ms": 175,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "",
-  "ts": "2026-09-11T09:03:03.371645202+00:00"
-}

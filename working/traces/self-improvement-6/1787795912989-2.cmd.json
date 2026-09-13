@@ -1,8 +1,0 @@
-{
-  "command": "git log --oneline -4",
-  "duration_ms": 7,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "23ba6c2 Add ui module and import its helpers\n2418c69 Fix dead_code warning by allowing it on diff_already_applied\nd215e4a Formatting.  Whitespace changes\n15dea7c Allow `hash-object` if no `-w` flag\n",
-  "ts": "2026-08-27T01:58:32.989861099+00:00"
-}

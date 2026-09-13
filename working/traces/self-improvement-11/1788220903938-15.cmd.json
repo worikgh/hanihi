@@ -1,8 +1,0 @@
-{
-  "command": "git branch -a -vv",
-  "duration_ms": 9,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "* main                30a6952 [origin/main: ahead 5] Replace-git-apply-with-pure-Rust-patch-applier\n  remotes/origin/HEAD -> origin/main\n  remotes/origin/main 22191d8 Use Cyan for font colour echoing interactive prompt\n",
-  "ts": "2026-09-01T00:01:43.938111389+00:00"
-}

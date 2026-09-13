@@ -1,8 +1,0 @@
-{
-  "command": "cargo clippy --workspace --all-targets -- -D warnings",
-  "duration_ms": 22050,
-  "exit_code": 0,
-  "stderr": "    Checking aws-lc-sys v0.44.0\n    Checking aws-lc-rs v1.18.0\n    Checking rustls-webpki v0.103.13\n    Checking rustls v0.23.43\n    Checking tokio-rustls v0.26.4\n    Checking rustls-platform-verifier v0.7.0\n    Checking hyper-rustls v0.27.9\n    Checking reqwest v0.13.4\n    Checking rig-core v0.41.0\n    Checking hanihi-core v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-core)\n    Checking hanihi-mcp-server v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-mcp-server)\n    Checking hanihi-cli v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-cli)\n    Checking hanihi-session v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-session)\n    Checking hanihi-eval v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-eval)\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 21.94s\n",
-  "stdout": "",
-  "ts": "2026-09-11T09:02:14.097571373+00:00"
-}

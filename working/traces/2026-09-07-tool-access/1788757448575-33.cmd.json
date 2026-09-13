@@ -1,8 +1,0 @@
-{
-  "command": "git grep -n \"debug::\" -- crates",
-  "duration_ms": 8,
-  "exit_code": 1,
-  "stderr": "",
-  "stdout": "",
-  "ts": "2026-09-07T05:04:08.575882704+00:00"
-}

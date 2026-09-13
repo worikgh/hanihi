@@ -1,7 +1,0 @@
-diff --git a/working/scratch-repro/main.rs b/working/scratch-repro/main.rs
---- a/working/scratch-repro/main.rs
-+++ b/working/scratch-repro/main.rs
-@@ -1,2 +1,3 @@
- fn main() {}
- // local
-+// patched

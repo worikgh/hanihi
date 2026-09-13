@@ -1,8 +1,0 @@
-{
-  "command": "git diff --stat",
-  "duration_ms": 12,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": " Cargo.lock                               |  15 ++--\n crates/hanihi-mcp-server/src/main.rs     |  58 ++++++++++++---\n crates/hanihi-session/src/bin/analyse.rs |   6 +-\n prompts/code_generation.md               | 121 +++++++++++++++----------------\n prompts/rust_coding.md                   |   6 +-\n 5 files changed, 128 insertions(+), 78 deletions(-)\n",
-  "ts": "2026-09-12T05:19:55.673112695+00:00"
-}

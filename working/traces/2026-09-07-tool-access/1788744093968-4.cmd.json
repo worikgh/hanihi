@@ -1,8 +1,0 @@
-{
-  "command": "grep -n \"add\\\" | \\\"commit\\\" => Ok\" crates/hanihi-core/src/tool.rs",
-  "duration_ms": 3,
-  "exit_code": 2,
-  "stderr": "grep: |: No such file or directory\ngrep: \\\"commit\\\": No such file or directory\ngrep: =>: No such file or directory\ngrep: Ok\": No such file or directory\n",
-  "stdout": "crates/hanihi-core/src/tool.rs:507:                    \"add\" | \"commit\" => Ok(()),\ncrates/hanihi-core/src/tool.rs:1220:        git(&[\"add\", \"-A\"]);\n",
-  "ts": "2026-09-07T01:21:33.968384321+00:00"
-}

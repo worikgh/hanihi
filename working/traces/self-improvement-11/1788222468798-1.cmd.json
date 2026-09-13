@@ -1,8 +1,0 @@
-{
-  "command": "git log --oneline -3",
-  "duration_ms": 6,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "c58c9aa Normalize-indentation-in-tool.rs-via-cargo-fmt\n30a6952 Replace-git-apply-with-pure-Rust-patch-applier\n7eb185a Expand-run_command-allowlist-and-read-only-git-verbs\n",
-  "ts": "2026-09-01T00:27:48.798333409+00:00"
-}

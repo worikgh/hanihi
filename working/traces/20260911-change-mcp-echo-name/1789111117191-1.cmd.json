@@ -1,8 +1,0 @@
-{
-  "command": "git rev-parse --show-toplevel",
-  "duration_ms": 1,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "/home/worik/Documents/2026/hanihi\n",
-  "ts": "2026-09-11T07:18:37.191935111+00:00"
-}

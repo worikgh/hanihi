@@ -1,8 +1,0 @@
-{
-  "command": "git show a80d61c --stat",
-  "duration_ms": 31,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "commit a80d61c8b0b2e5661c43e0a39f63db030d786ef3\nAuthor: Worik <5387413+worikgh@users.noreply.github.com>\nDate:   Fri Sep 11 11:27:16 2026 +1200\n\n    Start the process of moving tools all to MCP server\n    \n    The `builtin_echo` has been moved to `mcp-echo-server` which\n    internally has been renamed `McpServer`\n\n Cargo.lock                              |   1 +\n crates/hanihi-cli/src/main.rs           |  20 ++++--\n crates/hanihi-core/src/agent.rs         |  90 ++++++++++++------------\n crates/hanihi-core/src/lib.rs           |  10 ++-\n crates/hanihi-core/src/session/mod.rs   | 120 ++++++++++++++++----------------\n crates/hanihi-core/src/tool.rs          |  48 ++++++-------\n crates/hanihi-eval/src/main.rs          |  16 +++--\n crates/mcp-echo-server/Cargo.toml       |   1 +\n crates/mcp-echo-server/src/echo_tool.rs |  39 +++++++++++\n crates/mcp-echo-server/src/main.rs      |  38 +++-------\n 10 files changed, 216 insertions(+), 167 deletions(-)\n",
-  "ts": "2026-09-11T02:28:23.967072761+00:00"
-}

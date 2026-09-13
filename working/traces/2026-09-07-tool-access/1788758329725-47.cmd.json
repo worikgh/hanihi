@@ -1,8 +1,0 @@
-{
-  "command": "cargo check --workspace",
-  "duration_ms": 14768,
-  "exit_code": 0,
-  "stderr": "    Checking rig-core v0.41.0\n    Checking hanihi-core v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-core)\n    Checking hanihi-session v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-session)\n    Checking hanihi-eval v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-eval)\n    Checking hanihi-cli v0.3.0 (/home/worik/Documents/2026/hanihi/crates/hanihi-cli)\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 14.70s\n",
-  "stdout": "",
-  "ts": "2026-09-07T05:18:49.725316070+00:00"
-}

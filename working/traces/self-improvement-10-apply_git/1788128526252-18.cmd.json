@@ -1,8 +1,0 @@
-{
-  "command": "git rev-parse HEAD:crates/hanihi-core/src/write.rs",
-  "duration_ms": 1,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "74f3020b6eecc398c5a758d35ae60392d38e251b\n",
-  "ts": "2026-08-30T22:22:06.252918234+00:00"
-}

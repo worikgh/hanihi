@@ -1,8 +1,0 @@
-{
-  "command": "git show HEAD:crates/hanihi-mcp-server/src/read_file_tool.rs",
-  "duration_ms": 3,
-  "exit_code": 128,
-  "stderr": "fatal: path 'crates/hanihi-mcp-server/src/read_file_tool.rs' exists on disk, but not in 'HEAD'\n",
-  "stdout": "",
-  "ts": "2026-09-11T09:27:41.887595103+00:00"
-}

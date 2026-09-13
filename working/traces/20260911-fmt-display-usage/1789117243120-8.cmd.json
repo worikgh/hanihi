@@ -1,8 +1,0 @@
-{
-  "command": "git show --stat 9a9c3cd",
-  "duration_ms": 15,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "commit 9a9c3cd25ab51c4856d7d68622fd86dbfd716c34\nAuthor: Worik <5387413+worikgh@users.noreply.github.com>\nDate:   Fri Sep 4 15:36:37 2026 +1200\n\n    Fix the bug in session replay that broke resumed sessions\n\n crates/hanihi-core/src/session/mod.rs | 190 +++++++++++++++++++++++-----------\n 1 file changed, 127 insertions(+), 63 deletions(-)\n",
-  "ts": "2026-09-11T09:00:43.120045096+00:00"
-}

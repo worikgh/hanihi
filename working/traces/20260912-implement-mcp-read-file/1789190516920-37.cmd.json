@@ -1,8 +1,0 @@
-{
-  "command": "git check-ignore -v crates/hanihi-mcp-server/src/read_file_tool.rs",
-  "duration_ms": 1,
-  "exit_code": 1,
-  "stderr": "",
-  "stdout": "",
-  "ts": "2026-09-12T05:21:56.920507393+00:00"
-}

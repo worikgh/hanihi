@@ -1,8 +1,0 @@
-{
-  "command": "git log --oneline -5 CRATES/hanihi-cli/src/main.rs",
-  "duration_ms": 7,
-  "exit_code": 128,
-  "stderr": "fatal: ambiguous argument 'CRATES/hanihi-cli/src/main.rs': unknown revision or path not in the working tree.\nUse '--' to separate paths from revisions, like this:\n'git <command> [<revision>...] -- [<file>...]'\n",
-  "stdout": "",
-  "ts": "2026-08-24T21:54:41.040980322+00:00"
-}

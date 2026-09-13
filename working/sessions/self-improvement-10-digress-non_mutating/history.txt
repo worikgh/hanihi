@@ -1,4 +1,0 @@
-Give me a list of non-mutating unix commands. Like 'ls' or 'wc'
-put them in a rust `[&str]` like `["which", "whatis",...]`
-/session
-/quit

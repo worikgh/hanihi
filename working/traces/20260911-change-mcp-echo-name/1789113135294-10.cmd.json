@@ -1,8 +1,0 @@
-{
-  "command": "git commit -F working/.rename-msg.txt",
-  "duration_ms": 80,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "[main e645a15] Rename mcp-echo-server crate to hanihi-mcp-server\n 7 files changed, 18 insertions(+), 18 deletions(-)\n rename crates/{mcp-echo-server => hanihi-mcp-server}/Cargo.toml (91%)\n rename crates/{mcp-echo-server => hanihi-mcp-server}/src/echo_tool.rs (100%)\n rename crates/{mcp-echo-server => hanihi-mcp-server}/src/main.rs (97%)\n",
-  "ts": "2026-09-11T07:52:15.294297253+00:00"
-}

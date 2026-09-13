@@ -1,8 +1,0 @@
-{
-  "command": "ls -la crates",
-  "duration_ms": 5,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "total 28\ndrwxrwxr-x  7 worik worik 4096 Sep 12 14:27 .\ndrwxrwxr-x 12 worik worik 4096 Sep 12 13:26 ..\ndrwxrwxr-x  3 worik worik 4096 Sep 10 16:55 hanihi-cli\ndrwxrwxr-x  4 worik worik 4096 Sep 11 20:06 hanihi-core\ndrwxrwxr-x  3 worik worik 4096 Aug 12 14:41 hanihi-eval\ndrwxrwxr-x  3 worik worik 4096 Sep 12 12:06 hanihi-mcp-server\ndrwxrwxr-x  3 worik worik 4096 Sep 11 20:12 hanihi-session\n",
-  "ts": "2026-09-12T02:53:05.592955899+00:00"
-}

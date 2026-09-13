@@ -1,8 +1,0 @@
-{
-  "command": "git ls-files --others --exclude-standard crates/",
-  "duration_ms": 9,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "crates/hanihi-core/hanihi-debug.log\ncrates/hanihi-mcp-server/src/hanihi_tool_trait.rs\ncrates/hanihi-mcp-server/src/read_file_tool.rs\n",
-  "ts": "2026-09-11T07:48:16.250063051+00:00"
-}

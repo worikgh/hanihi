@@ -1,8 +1,0 @@
-{
-  "command": "git diff -- crates/hanihi-core/src/tool.rs",
-  "duration_ms": 1,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "",
-  "ts": "2026-09-01T00:22:23.669958268+00:00"
-}

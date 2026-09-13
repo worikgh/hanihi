@@ -1,8 +1,0 @@
-{
-  "command": "git diff crates/hanihi-core/src/tool.rs",
-  "duration_ms": 12,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "diff --git a/crates/hanihi-core/src/tool.rs b/crates/hanihi-core/src/tool.rs\nindex 16b3338..0c42513 100644\n--- a/crates/hanihi-core/src/tool.rs\n+++ b/crates/hanihi-core/src/tool.rs\n@@ -37,6 +37,7 @@ pub(crate) fn map_source_err(e: SourceError) -> ToolExecutionError {\n \n /// Tool: report the current local date and time.\n pub fn builtin_get_time() -> PortableDynamicTool {\n+    dbg!(\"builtin_get_time called\");\n     PortableDynamicTool::new(\n         \"get_time\",\n         \"Get the current local date and time in RFC 3339 format.\",\n",
-  "ts": "2026-09-04T00:58:34.149355835+00:00"
-}

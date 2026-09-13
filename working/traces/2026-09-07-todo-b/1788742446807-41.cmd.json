@@ -1,8 +1,0 @@
-{
-  "command": "git rev-parse HEAD",
-  "duration_ms": 2,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "f4720df772c8a3c00c1215648b0ab079d439f68c\n",
-  "ts": "2026-09-07T00:54:06.807526285+00:00"
-}

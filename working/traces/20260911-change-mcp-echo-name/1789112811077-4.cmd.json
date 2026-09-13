@@ -1,8 +1,0 @@
-{
-  "command": "git status --porcelain=v1",
-  "duration_ms": 6,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "M  Cargo.lock\nM  Cargo.toml\nM  README.md\nM  crates/hanihi-cli/src/main.rs\nR  crates/mcp-echo-server/Cargo.toml -> crates/hanihi-mcp-server/Cargo.toml\nR  crates/mcp-echo-server/src/echo_tool.rs -> crates/hanihi-mcp-server/src/echo_tool.rs\nR  crates/mcp-echo-server/src/main.rs -> crates/hanihi-mcp-server/src/main.rs\n M crates/hanihi-session/src/bin/analyse.rs\n",
-  "ts": "2026-09-11T07:46:51.077480826+00:00"
-}

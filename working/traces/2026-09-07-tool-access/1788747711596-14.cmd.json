@@ -1,8 +1,0 @@
-{
-  "command": "git show HEAD:crates/hanihi-core/src/tool.rs | sed -n '684,700p' | cat -A",
-  "duration_ms": 4,
-  "exit_code": 128,
-  "stderr": "fatal: ambiguous argument '|': unknown revision or path not in the working tree.\nUse '--' to separate paths from revisions, like this:\n'git <command> [<revision>...] -- [<file>...]'\n",
-  "stdout": "",
-  "ts": "2026-09-07T02:21:51.596777900+00:00"
-}

@@ -1,8 +1,0 @@
-{
-  "command": "git status --short",
-  "duration_ms": 2,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": " M Cargo.lock\n M Cargo.toml\n M crates/hanihi-session/src/bin/analyse.rs\n M prompts/code_generation.md\n M prompts/rust_coding.md\n",
-  "ts": "2026-09-12T04:35:38.991853974+00:00"
-}

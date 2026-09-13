@@ -1,8 +1,0 @@
-{
-  "command": "git log -5",
-  "duration_ms": 1,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "commit b69eb1ca3d14ba9fce6e54a619c84dd16da4b3f0\nAuthor: Worik <5387413+worikgh@users.noreply.github.com>\nDate:   Fri Sep 11 14:26:07 2026 +1200\n\n    Add a deploy script to install the agent\n\ncommit ab5beb9332a5beddfa2b3270b94d27a17969bfcf\nAuthor: Worik <5387413+worikgh@users.noreply.github.com>\nDate:   Fri Sep 11 14:22:52 2026 +1200\n\n    Rewrite echo tests to use builtin_get_time\n    \n    The commented-out tests still referenced builtin_echo, which was\n    removed in favour of an MCP server. Point them at builtin_get_time\n    so they compile and exercise a real tool again.\n    \n    Hānihi\n\ncommit a80d61c8b0b2e5661c43e0a39f63db030d786ef3\nAuthor: Worik <5387413+worikgh@users.noreply.github.com>\nDate:   Fri Sep 11 11:27:16 2026 +1200\n\n    Start the process of moving tools all to MCP server\n    \n    The `builtin_echo` has been moved to `mcp-echo-server` which\n    internally has been renamed `McpServer`\n\ncommit 9e64a0ec8285d97d3dc16d360301ab3b7e26a2e6\nAuthor: Worik <5387413+worikgh@users.noreply.github.com>\nDate:   Fri Sep 11 11:24:39 2026 +1200\n\n    Formatting\n\ncommit b4a0728d2fd232df94469d0415dc9e5fa4529f50\nAuthor: Worik <5387413+worikgh@users.noreply.github.com>\nDate:   Fri Sep 11 11:22:18 2026 +1200\n\n    Clear files form `working/` from the Git repo\n",
-  "ts": "2026-09-11T02:40:59.662171633+00:00"
-}

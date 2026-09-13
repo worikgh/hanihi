@@ -1,8 +1,0 @@
-{
-  "command": "git show daab065 --stat",
-  "duration_ms": 11,
-  "exit_code": 0,
-  "stderr": "",
-  "stdout": "commit daab0656b58bf11bfb95cbc484bee6e30d8cf8c9\nAuthor: Worik <5387413+worikgh@users.noreply.github.com>\nDate:   Sat Aug 29 19:40:23 2026 +1200\n\n    Allow `working/` and `target/doc` in gitignore\n\n .gitignore | 3 ++-\n 1 file changed, 2 insertions(+), 1 deletion(-)\n",
-  "ts": "2026-08-30T01:24:03.361143036+00:00"
-}
