@@ -845,20 +845,6 @@ mod tests {
         assert_eq!(history.len(), 4);
     }
 
-    // #[tokio::test]
-    // async fn test_max_turns_exceeded() {
-    // 	let model = MockCompletionModel::from_turns(std::iter::repeat_n(
-    // 	    MockTurn::tool_call("call_x", "echo", serde_json::json!({"text": "x"})),
-    // 	    50,
-    // 	));
-    // 	let mut agent = Agent::new(model, "test system");
-    // 	agent.add_tool(crate::tool::builtin_echo());
-    // 	agent.set_max_turns(3);
-
-    // 	let err = agent.run("loop").await.expect_err("run must fail");
-    // 	assert!(matches!(err, AgentError::MaxTurns { turns: 3 }));
-    // }
-
     #[tokio::test]
     async fn test_unknown_tool_fails() {
         let model = MockCompletionModel::from_turns([MockTurn::tool_call(
@@ -923,37 +909,6 @@ mod tests {
         assert_eq!(summary.tool_calls, 2);
         use std::sync::atomic::Ordering;
         assert_eq!(executions.load(Ordering::SeqCst), 1);
-    }
-
-    #[test]
-    fn probe_shapes() {
-        let call = ToolCall::new(
-            "call_1".to_string(),
-            rig::completion::message::ToolFunction {
-                name: "get_time".to_string(),
-                arguments: serde_json::json!({}),
-            },
-        );
-        let history = vec![
-            Message::user("earlier"),
-            Message::assistant("partial"),
-            Message::Assistant {
-                id: Some("msg_1".to_string()),
-                content: rig::OneOrMany::one(AssistantContent::ToolCall(call)),
-            },
-        ];
-        let turn_messages = vec![Message::tool_result_with_call_id(
-            "call_1".to_string(),
-            None,
-            "12:00:00",
-        )];
-        let value = context_to_log_json(&build_context(
-            "system",
-            &history,
-            &turn_messages,
-            "now",
-        ));
-        println!("{}", serde_json::to_string_pretty(&value).unwrap());
     }
 
     #[test]
