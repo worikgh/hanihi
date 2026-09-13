@@ -447,20 +447,6 @@ fn apply_unified_diff(tree: &SourceTree, diff: &str) -> Result<(), String> {
     }
     Ok(())
 }
-
-/// Is the patch's change already present in the working tree? True exactly
-/// when applying the reversed patch succeeds — the "change already exists,
-/// stop re-patching it" signal, computed in pure Rust.
-#[cfg(test)]
-fn diff_already_applied(tree: &SourceTree, diff: &str) -> bool {
-    let Ok(patches) = parse_diff(diff) else {
-        return false;
-    };
-    patches
-        .iter()
-        .all(|p| apply_file_patch(tree, &p.reversed()).is_ok())
-}
-
 /// Extract the repo-relative path from a `--- a/…` or `+++ b/…` line,
 /// stripping any trailing tab metadata (timestamps from `git diff`).
 fn diff_path_from_marker(rest: &str) -> String {
@@ -647,6 +633,19 @@ pub fn builtin_write_file(tree: Arc<SourceTree>) -> PortableDynamicTool {
             })
         },
     )
+}
+
+/// Is the patch's change already present in the working tree? True exactly
+/// when applying the reversed patch succeeds — the "change already exists,
+/// stop re-patching it" signal, computed in pure Rust.
+#[cfg(test)]
+fn diff_already_applied(tree: &SourceTree, diff: &str) -> bool {
+    let Ok(patches) = parse_diff(diff) else {
+        return false;
+    };
+    patches
+        .iter()
+        .all(|p| apply_file_patch(tree, &p.reversed()).is_ok())
 }
 
 #[cfg(test)]
