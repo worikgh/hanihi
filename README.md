@@ -1,8 +1,9 @@
 # hānihi
 
-A  tool-calling agent harness in Rust. Built on:
+**A lot of the documents and code herein are written using AI and other algorithmic systems**
 
-** A lot of the documents and code herein are written using AI and other algorithmic systems**
+
+A tool-calling agent harness in Rust. Built on:
 
 - **rig** (`rig-core` 0.41) — OpenAI-compatible chat completions client, tool
   definitions, completion loop
@@ -25,8 +26,7 @@ crates/
 ├── hanihi-cli/         # binary: clap CLI + reedline REPL + --once mode
 ├── hanihi-eval/        # binary: eval runner — run test cases against a live
 │                       #   LLM and check assertions against the session log
-└── hanihi-mcp-server/  # binary: minimal MCP stdio server (demo, one
-                        #   `mcp_echo` tool)
+└── hanihi-mcp-server/  # binary: MCP stdio server 
 evals/
 └── cases/              # eval test cases (TOML + README per case)
 ```
