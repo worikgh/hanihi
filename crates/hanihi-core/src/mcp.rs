@@ -46,6 +46,7 @@ impl McpClient {
     /// `tools/call` on the connected service.
     fn wrap_tool(&self, tool: rmcp::model::Tool) -> PortableDynamicTool {
         let name = tool.name.to_string();
+        eprintln!("{}:{} wrap_tool {} ", file!(), line!(), tool.name);
         let description = tool
             .description
             .as_deref()

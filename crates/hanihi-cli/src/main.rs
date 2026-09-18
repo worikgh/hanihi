@@ -19,7 +19,7 @@ use hanihi_core::session::SessionManager;
 use hanihi_core::{
     McpClient, SourceTree, StreamEvent, builtin_apply_patch, builtin_get_time, builtin_grep,
     builtin_list_dir, builtin_read_file, builtin_read_session_log, builtin_run_command,
-    builtin_run_command_write, builtin_write_file, connect_chat_model_with_prompt, debug,
+    builtin_run_command_write, builtin_write_file, connect_chat_model_with_prompt,
 };
 use nu_ansi_term::Color;
 use reedline::{DefaultPrompt, FileBackedHistory, Reedline, Signal};
@@ -376,7 +376,6 @@ async fn main() -> Result<(), AgentError> {
     }
 
     for command in &args.mcp_commands {
-        debug::log_to_file("command from args.mcp_commands: ", command);
         let parts: Vec<String> = command.split_whitespace().map(String::from).collect();
         let (program, rest) = parts.split_first().ok_or_else(|| AgentError::Tool {
             name: "<mcp>".into(),
@@ -467,7 +466,7 @@ async fn main() -> Result<(), AgentError> {
                 }
                 StreamEvent::Error { message } => {
                     eprintln!();
-                    eprintln!("error: {message}");
+                    eprintln!("{}:{}: error: {message}", file!(), line!());
                     break;
                 }
             }
@@ -649,7 +648,7 @@ async fn run_turn<M: CompletionModel + 'static>(
                     StreamEvent::ToolCallReady { .. } => {}
                     StreamEvent::ToolResult { .. } => println_coloured!(" ✅]"),
                     StreamEvent::CompletionRequest { .. }
-                    | StreamEvent::CompletionResponse { .. } => {}
+                    | StreamEvent::CompletionResponse { .. } => (),
                     StreamEvent::TurnComplete { summary } => {
                         println!();
                         println_coloured!(
@@ -667,7 +666,7 @@ async fn run_turn<M: CompletionModel + 'static>(
                     }
                     StreamEvent::Error { message } => {
                         eprintln!();
-                        eprintln!("error: {message}");
+                        eprintln!("{}:{}  error message: {message}", file!(), line!());
                         return None;
                     }
                 }
@@ -675,7 +674,7 @@ async fn run_turn<M: CompletionModel + 'static>(
             None
         }
         Err(e) => {
-            eprintln!("error: {e}");
+            eprintln!("{}:{}: error: {e}", file!(), line!());
             None
         }
     }
