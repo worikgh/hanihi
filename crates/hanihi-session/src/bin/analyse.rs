@@ -11,7 +11,7 @@ const DEFAULT_WORKING_DIR: &str = "./working";
 #[derive(Debug, Parser)]
 #[command(group(
     ArgGroup::new("output")
-	.args(["cost", "verbose", "prompts", "messages", ])
+	.args(["cost", "verbose", "prompts", "messages", "transcripts",])
 	.multiple(false)
 ))]
 #[command(name = "analyse", about = "Inspect hānihi session logs")]
@@ -34,6 +34,9 @@ struct Args {
 
     #[arg(long="messages", short='m',  action = clap::ArgAction::SetTrue)]
     messages: bool,
+
+    #[arg(long="transcripts", short='t',  action = clap::ArgAction::SetTrue)]
+    transcripts: bool,
 }
 
 enum Action {
@@ -56,6 +59,9 @@ enum Action {
 
     /// Display all the messages sent to the LLM
     Messages(String),
+
+    /// Display user input and model replys (not reasoning)
+    Transcripts(String),
 }
 impl Args {
     fn action(&self) -> Result<Action, String> {
@@ -76,6 +82,8 @@ impl Args {
                 Ok(Action::Prompts(session))
             } else if self.messages {
                 Ok(Action::Messages(session))
+            } else if self.transcripts {
+                Ok(Action::Transcripts(session))
             } else {
                 Ok(Action::SessionBrief(session))
             }
@@ -130,6 +138,14 @@ fn main() -> ExitCode {
         }
         Ok(Action::Messages(session)) => {
             if let Err(e) = messages(&working_dir, &session) {
+                eprintln!("{e}");
+                ExitCode::FAILURE
+            } else {
+                ExitCode::SUCCESS
+            }
+        }
+        Ok(Action::Transcripts(session)) => {
+            if let Err(e) = transcripts(&working_dir, &session) {
                 eprintln!("{e}");
                 ExitCode::FAILURE
             } else {
@@ -225,6 +241,33 @@ fn analyse_session(working_dir: &Path, session: &str) -> Result<(), String> {
             err.line,
             err.message
         );
+    }
+    Ok(())
+}
+
+/// `--transcript` `-t` The user input, and the responses
+fn transcripts(working_dir: &Path, session: &str) -> Result<(), String> {
+    for event in events(working_dir, session)? {
+        match event {
+            LogEntry::UserInput { ts, turn, data } => {
+                println!("User Input: {ts} T({turn})");
+                println!("{}", data.text);
+                println![];
+            }
+            LogEntry::LlmResponse { ts, turn, data } => {
+                if let Some(text) = data.text {
+                    println!("LLM Response: {ts} T({turn})");
+                    println!("{text}",);
+                    println![];
+                }
+            }
+            LogEntry::Error { ts, turn, data } => {
+                println!("Error: {ts} T({turn})");
+                println!("{:?}: {}", data.stage, data.message);
+                println![];
+            }
+            _ => (),
+        };
     }
     Ok(())
 }
