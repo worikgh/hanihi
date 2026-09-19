@@ -34,9 +34,9 @@ const DEFAULT_WORKING_DIR: &str = "./working";
 /// Default cap on model turns per request. Effectively unlimited: a sane
 /// upper bound so runaway tool-call loops still terminate, but far above any
 /// realistic working session.
-const DEFAULT_MAX_TURNS: usize = 10;
+const DEFAULT_MAX_TURNS: usize = 29;
 /// Default cap on model turns in task mode (long-horizon self-improvement).
-const TASK_MAX_TURNS: usize = 10;
+const TASK_MAX_TURNS: usize = 29;
 
 #[derive(Parser, Debug)]
 #[command(
