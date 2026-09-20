@@ -39,7 +39,7 @@ evals/
 ## Features
 
 - **Agent loop** — system preamble + persistent history + tool definitions,
-  tool-call dispatch, `max_turns` guard (default 10), per-turn usage tracking
+  tool-call dispatch, `max_turns` guard (default 29), per-turn usage tracking
 - **Streaming output** — model text arrives token-by-token in both `--once`
   and REPL modes. Tool calls show as `🔧 tool_name … ✅` while the model is
   still generating. Under the hood: `tokio::spawn` + `mpsc` channel — the
@@ -121,7 +121,7 @@ Configuration — every flag has an environment variable:
 | `--once PROMPT` | — | none |
 | `--write` | — | write tools NOT registered |
 | `--task PROMPT` | — | none (takes precedence over `--once`) |
-| `--max-turns N` | — | 10 (50 in task mode) |
+| `--max-turns N` | — | 29  |
 
 ## REPL commands
 
@@ -153,7 +153,7 @@ error and does not run a turn.
 3. If the model requests tool calls → record the assistant message, execute
    each tool (built-in or MCP), append results as `tool_result` messages,
    loop back to 1.
-4. `max_turns` (default 10) guards runaway tool-call loops.
+4. `max_turns` (default 29) guards runaway tool-call loops.
 
 `Agent::run_streaming` does the same but yields events through a
 `tokio::sync::mpsc` channel: text arrives token-by-token, tool calls are
