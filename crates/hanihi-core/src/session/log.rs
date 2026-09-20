@@ -651,8 +651,18 @@ impl Display for LogEntry {
                 let json = serde_json::to_string_pretty(&data.messages).map_err(|_| fmt::Error)?;
                 writeln!(f, "  Messages: {} characters", json.len())?;
                 writeln!(f)?;
-                writeln!(f, "  Tool definitions:")?;
-                write_json_indented(f, &data.tool_definitions, "    ")
+                // Tool definitions are long and static
+                // writeln!(f, "  Tool definitions:")?;
+                // write_json_indented(f, &data.tool_definitions, "    ")
+                writeln!(
+                    f,
+                    "  Tool definitions: {}",
+                    if data.tool_definitions.is_array() {
+                        format!("{}", &data.tool_definitions.as_array().unwrap().len())
+                    } else {
+                        "Not array".to_string()
+                    }
+                )
             }
 
             Self::LlmResponse { ts, turn, data } => {
