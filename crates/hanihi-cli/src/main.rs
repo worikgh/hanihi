@@ -449,7 +449,9 @@ async fn main() -> Result<(), AgentError> {
                 StreamEvent::ToolCallArgs { .. } => {}
                 StreamEvent::ToolCallReady { .. } => {}
                 StreamEvent::ToolResult { .. } => println_coloured!(" ✅]"),
-                StreamEvent::CompletionRequest { .. } | StreamEvent::CompletionResponse { .. } => {}
+                StreamEvent::Compaction { .. }
+                | StreamEvent::CompletionRequest { .. }
+                | StreamEvent::CompletionResponse { .. } => {}
                 StreamEvent::TurnComplete { summary } => {
                     println!();
                     println_coloured!(
@@ -461,6 +463,7 @@ async fn main() -> Result<(), AgentError> {
                         agent.max_turns()
                     );
                     agent.set_history(summary.final_history);
+                    agent.set_summary(summary.final_summary);
                     break;
                 }
                 StreamEvent::Error { message } => {
@@ -646,7 +649,8 @@ async fn run_turn<M: CompletionModel + 'static>(
                     StreamEvent::ToolCallArgs { .. } => {}
                     StreamEvent::ToolCallReady { .. } => {}
                     StreamEvent::ToolResult { .. } => println_coloured!(" ✅]"),
-                    StreamEvent::CompletionRequest { .. }
+                    StreamEvent::Compaction { .. }
+                    | StreamEvent::CompletionRequest { .. }
                     | StreamEvent::CompletionResponse { .. } => (),
                     StreamEvent::TurnComplete { summary } => {
                         println!();
@@ -661,6 +665,7 @@ async fn run_turn<M: CompletionModel + 'static>(
                         );
                         // TODO: Do I need this `clone`?
                         agent.set_history(summary.final_history.clone());
+                        agent.set_summary(summary.final_summary.clone());
                         return Some(summary);
                     }
                     StreamEvent::Error { message } => {

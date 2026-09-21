@@ -18,7 +18,10 @@ use serde::{Deserialize, Serialize};
 /// Policy: additive changes (a new optional field with `#[serde(default)]`)
 /// do not bump this. Breaking changes (rename, remove, restructure) bump it
 /// and add a migration in [`migrate`].
-pub const SCHEMA_VERSION: u32 = 1;
+///
+/// v2 adds the `compaction` kind. v1 lines still parse unchanged, so
+/// [`migrate`] remains a no-op for the v1 → v2 transition.
+pub const SCHEMA_VERSION: u32 = 2;
 
 /// One message in a logged completion request.
 ///
@@ -193,6 +196,13 @@ pub enum LogEntry {
         turn: u64,
         data: ErrorData,
     },
+    /// Context compaction summarized older history into the in-memory summary.
+    #[serde(rename = "compaction")]
+    Compaction {
+        ts: DateTime<Utc>,
+        turn: u64,
+        data: CompactionData,
+    },
 }
 
 // --- Data structs for each variant ---
@@ -296,6 +306,19 @@ pub struct ErrorData {
 pub enum ErrorStage {
     LlmCall,
     ToolExecution,
+}
+
+/// Data for a [`LogEntry::Compaction`] entry: how much context shrank and
+/// what it was distilled into.
+#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct CompactionData {
+    pub before_tokens: usize,
+    pub after_tokens: usize,
+    pub summary: String,
+    pub dropped_messages: usize,
+    pub kept_messages: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summarization_usage: Option<UsageData>,
 }
 
 // --- Helpers for constructing entries ---
@@ -425,6 +448,34 @@ impl LogEntry {
         }
     }
 
+    /// The eight-argument form mirrors the other variant constructors; the
+    /// task-mandated signature needs the same lint allowance as
+    /// [`crate::agent::compact_if_needed`].
+    #[allow(clippy::too_many_arguments)]
+    pub fn compaction(
+        ts: DateTime<Utc>,
+        turn: u64,
+        before_tokens: usize,
+        after_tokens: usize,
+        summary: String,
+        dropped_messages: usize,
+        kept_messages: usize,
+        summarization_usage: Option<UsageData>,
+    ) -> Self {
+        LogEntry::Compaction {
+            ts,
+            turn,
+            data: CompactionData {
+                before_tokens,
+                after_tokens,
+                summary,
+                dropped_messages,
+                kept_messages,
+                summarization_usage,
+            },
+        }
+    }
+
     /// Wire-format `kind` tag, matching the enum's serde `rename`.
     pub fn kind(&self) -> &'static str {
         match self {
@@ -437,6 +488,7 @@ impl LogEntry {
             LogEntry::ToolExecution { .. } => "tool_execution",
             LogEntry::TurnComplete { .. } => "turn_complete",
             LogEntry::Error { .. } => "error",
+            LogEntry::Compaction { .. } => "compaction",
         }
     }
 
@@ -451,7 +503,8 @@ impl LogEntry {
             | LogEntry::LlmResponse { ts, .. }
             | LogEntry::ToolExecution { ts, .. }
             | LogEntry::TurnComplete { ts, .. }
-            | LogEntry::Error { ts, .. } => *ts,
+            | LogEntry::Error { ts, .. }
+            | LogEntry::Compaction { ts, .. } => *ts,
         }
     }
 
@@ -466,7 +519,8 @@ impl LogEntry {
             | LogEntry::LlmResponse { turn, .. }
             | LogEntry::ToolExecution { turn, .. }
             | LogEntry::TurnComplete { turn, .. }
-            | LogEntry::Error { turn, .. } => *turn,
+            | LogEntry::Error { turn, .. }
+            | LogEntry::Compaction { turn, .. } => *turn,
         }
     }
 }
@@ -535,7 +589,8 @@ pub struct LogReadResult {
 ///
 /// Hook for future breaking changes. There are no migrations yet: version 0
 /// (legacy, no `schema` field) parses through the existing lenient
-/// `#[serde(default)]` fields.
+/// `#[serde(default)]` fields, and v1 lines parse unchanged under v2 because
+/// the `compaction` kind is purely additive.
 fn migrate(_value: &mut serde_json::Value, _from: u32) -> Result<(), String> {
     Ok(())
 }
@@ -723,6 +778,27 @@ impl Display for LogEntry {
                     "[{ts}] Error during {} (turn {turn}): {}",
                     data.stage, data.message
                 )
+            }
+
+            Self::Compaction { ts, turn, data } => {
+                writeln!(f, "[{ts}] Context compacted (turn {turn})")?;
+                writeln!(
+                    f,
+                    "  Tokens: {} → {}",
+                    data.before_tokens, data.after_tokens
+                )?;
+                writeln!(
+                    f,
+                    "  Messages: {} dropped, {} kept",
+                    data.dropped_messages, data.kept_messages
+                )?;
+                writeln!(f, "  Summary:")?;
+                write_indented(f, &data.summary, "    ")?;
+                if let Some(usage) = &data.summarization_usage {
+                    writeln!(f)?;
+                    write!(f, "  Summarization usage: {usage}")?;
+                }
+                Ok(())
             }
         }
     }
@@ -1138,5 +1214,57 @@ mod tests {
         let rendered = entry.to_string();
         assert!(rendered.contains("  Messages: "), "got: {rendered}");
         assert!(rendered.contains(" characters"), "got: {rendered}");
+    }
+
+    #[test]
+    fn compaction_entry_round_trips() {
+        let entry = LogEntry::compaction(
+            "2026-01-01T00:00:00Z".parse().expect("valid timestamp"),
+            3,
+            123_456,
+            45_678,
+            "## Goal\nkeep going".to_string(),
+            18,
+            2,
+            Some(UsageData {
+                input_tokens: 20_000,
+                output_tokens: 800,
+            }),
+        );
+
+        let line = serde_json::to_string(&entry).expect("serialize");
+        let value: serde_json::Value = serde_json::from_str(&line).expect("parse json");
+        assert_eq!(value["kind"], "compaction");
+
+        let parsed: LogEntry = serde_json::from_str(&line).expect("parse entry");
+        assert_eq!(parsed, entry);
+    }
+
+    #[test]
+    fn schema_1_line_parses_under_schema_2() {
+        let v1 = r#"{"schema":1,"kind":"user_input","ts":"2026-01-01T00:00:00Z","turn":1,"data":{"text":"hi"}}"#;
+        let entries = parse_log_strict(v1).expect("v1 line must parse");
+        assert!(matches!(entries[0], LogEntry::UserInput { .. }));
+    }
+
+    #[test]
+    fn compaction_display_includes_counts_and_summary() {
+        let entry = LogEntry::compaction(
+            "2026-01-01T00:00:00Z".parse().expect("valid timestamp"),
+            3,
+            500,
+            100,
+            "compacted summary".to_string(),
+            9,
+            2,
+            None,
+        );
+        let rendered = entry.to_string();
+        assert!(rendered.contains("Tokens: 500 → 100"), "got: {rendered}");
+        assert!(
+            rendered.contains("Messages: 9 dropped, 2 kept"),
+            "got: {rendered}"
+        );
+        assert!(rendered.contains("compacted summary"), "got: {rendered}");
     }
 }

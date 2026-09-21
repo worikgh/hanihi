@@ -403,6 +403,23 @@ impl Session {
             // Prepare the exact context that will be sent (compacting if
             // needed), then log and send the same messages.
             let prepared = agent.prepare_context(user_input, &turn_messages).await?;
+
+            // A compaction caused this prompt: record it immediately before
+            // the prompt it produced.
+            if let Some(record) = &prepared.compaction {
+                self.log_entry(&LogEntry::compaction(
+                    Utc::now(),
+                    self.turn,
+                    record.before_tokens,
+                    record.after_tokens,
+                    record.summary.clone(),
+                    record.dropped_messages,
+                    record.kept_messages,
+                    record.summarization_usage.clone(),
+                ))
+                .map_err(|e| AgentError::Rig(e.to_string()))?;
+            }
+
             let tools = agent.tool_definitions();
             let tools_json =
                 serde_json::to_value(&tools).map_err(|e| AgentError::Rig(e.to_string()))?;
@@ -639,6 +656,24 @@ impl Session {
                         pending_args.insert(id.clone(), arguments.clone());
                         Ok(())
                     }
+                    StreamEvent::Compaction {
+                        ts,
+                        before_tokens,
+                        after_tokens,
+                        summary,
+                        dropped_messages,
+                        kept_messages,
+                        summarization_usage,
+                    } => log_writer.write_entry(&LogEntry::compaction(
+                        *ts,
+                        turn,
+                        *before_tokens,
+                        *after_tokens,
+                        summary.clone(),
+                        *dropped_messages,
+                        *kept_messages,
+                        summarization_usage.clone(),
+                    )),
                     StreamEvent::CompletionRequest {
                         ts,
                         messages,
@@ -771,9 +806,9 @@ impl Session {
     /// - non-streaming: `llm_response` (tool calls) → `tool_execution`*
     /// - streaming:      `tool_execution`* → `llm_response` (tool calls)
     ///
-    /// Lifecycle events (`session_created`, `session_opened`, etc.) and
-    /// `llm_prompt` entries are skipped — they're not needed for history
-    /// reconstruction.
+    /// Lifecycle events (`session_created`, `session_opened`, etc.),
+    /// `compaction` entries, and `llm_prompt` entries are skipped — they're
+    /// not needed for history reconstruction.
     pub fn replay_history(&self) -> Result<Vec<Message>, SessionError> {
         let entries = self.events()?;
         let mut messages: Vec<Message> = Vec::new();
@@ -800,10 +835,11 @@ impl Session {
                     safe_len = messages.len();
                     turn = TurnState::default();
                 }
-                // Skip lifecycle and prompt entries.
+                // Skip lifecycle, compaction, and prompt entries.
                 LogEntry::SessionCreated { .. }
                 | LogEntry::SessionOpened { .. }
                 | LogEntry::SessionClosed { .. }
+                | LogEntry::Compaction { .. }
                 | LogEntry::LlmPrompt { .. } => {}
             }
         }
@@ -998,7 +1034,7 @@ fn replay_error_tool_result(id: &str) -> Message {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rig::test_utils::{MockCompletionModel, MockStreamEvent};
+    use rig::test_utils::{MockCompletionModel, MockStreamEvent, MockTurn};
 
     fn tmp_working_dir() -> PathBuf {
         std::env::temp_dir().join(format!("hanihi-session-test-{}", Uuid::new_v4()))
@@ -1173,6 +1209,74 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap_or(());
     }
 
+    #[tokio::test]
+    async fn run_over_budget_writes_compaction_before_prompt() {
+        let dir = tmp_working_dir();
+        let mut mgr = SessionManager::new(&dir);
+        let session = mgr
+            .create("compaction-log", "deepseek-chat", "p")
+            .expect("create");
+
+        // [summarize, answer]: the first call is the plain summarization
+        // completion, the second is the real answer.
+        let model = MockCompletionModel::from_turns([
+            MockTurn::text("compacted summary"),
+            MockTurn::text("final answer"),
+        ]);
+        let mut agent = Agent::new(model, "test system");
+        agent.set_context_limit_tokens(500);
+
+        let mut history = Vec::new();
+        for i in 0..20 {
+            history.push(Message::user(format!("question {i}")));
+            history.push(Message::assistant(format!(
+                "answer {i} {}",
+                "x".repeat(200)
+            )));
+        }
+        agent.set_history(history);
+
+        let summary = session
+            .run(&mut agent, "d", "m", "hi")
+            .await
+            .expect("run succeeds");
+        assert_eq!(summary.text, "final answer");
+
+        let events = session.events().expect("events");
+
+        let compactions: Vec<_> = events
+            .iter()
+            .filter_map(|e| match e {
+                LogEntry::Compaction { data, .. } => Some(data),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(compactions.len(), 1);
+        assert_eq!(compactions[0].summary, "compacted summary");
+        assert!(compactions[0].before_tokens > compactions[0].after_tokens);
+        assert!(compactions[0].dropped_messages > 0);
+
+        // The compaction entry sits immediately before the llm_prompt it
+        // produced.
+        let compaction_idx = events
+            .iter()
+            .position(|e| matches!(e, LogEntry::Compaction { .. }))
+            .expect("compaction entry");
+        let prompt_idx = events
+            .iter()
+            .position(|e| matches!(e, LogEntry::LlmPrompt { .. }))
+            .expect("llm_prompt entry");
+        assert_eq!(compaction_idx + 1, prompt_idx);
+
+        // replay_history ignores the compaction entry but still replays the
+        // completed turn.
+        let history = session.replay_history().expect("replay");
+        assert!(!history.is_empty());
+
+        mgr.close("compaction-log").expect("close");
+        std::fs::remove_dir_all(&dir).unwrap_or(());
+    }
+
     // ── replay_history tests ──
 
     /// Write entries to a session's event log directly.
@@ -1239,6 +1343,54 @@ mod tests {
         assert!(matches!(history[1], Message::Assistant { .. }));
 
         mgr.close("replay-text").expect("close");
+        std::fs::remove_dir_all(&dir).unwrap_or(());
+    }
+
+    #[test]
+    fn replay_ignores_compaction_entries() {
+        let dir = tmp_working_dir();
+        let mut mgr = SessionManager::new(&dir);
+        let session = mgr
+            .create("replay-compaction", "deepseek-chat", "p")
+            .expect("create");
+        let now = Utc::now();
+
+        write_log(
+            session,
+            &[
+                LogEntry::user_input(now, 1, "hello".into()),
+                LogEntry::compaction(now, 1, 500, 100, "compacted summary".into(), 9, 2, None),
+                LogEntry::llm_prompt(
+                    now,
+                    1,
+                    "d".into(),
+                    "m".into(),
+                    Vec::new(),
+                    serde_json::json!([]),
+                ),
+                LogEntry::llm_response(
+                    now,
+                    1,
+                    Some("msg_1".into()),
+                    Some("hi there".into()),
+                    None,
+                    None,
+                    UsageData {
+                        input_tokens: 10,
+                        output_tokens: 5,
+                    },
+                ),
+                LogEntry::turn_complete(now, 1, "hi there".into(), 0),
+            ],
+        );
+
+        let history = session.replay_history().expect("replay");
+        // user + assistant only; the compaction entry contributed nothing.
+        assert_eq!(history.len(), 2);
+        assert!(matches!(history[0], Message::User { .. }));
+        assert!(matches!(history[1], Message::Assistant { .. }));
+
+        mgr.close("replay-compaction").expect("close");
         std::fs::remove_dir_all(&dir).unwrap_or(());
     }
 

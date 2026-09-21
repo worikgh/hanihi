@@ -20,7 +20,7 @@ use crate::context::{
     truncate_to_token_budget,
 };
 use crate::error::AgentError;
-use crate::session::log::ContextMessage;
+use crate::session::log::{ContextMessage, UsageData};
 use crate::tool::truncate_tool_output;
 
 /// Default system prompt used when none is supplied.
@@ -167,6 +167,16 @@ pub enum StreamEvent {
         /// Full rendered result (for session-log persistence).
         result: String,
     },
+    /// Context was compacted before the upcoming completion request.
+    Compaction {
+        ts: chrono::DateTime<Utc>,
+        before_tokens: usize,
+        after_tokens: usize,
+        summary: String,
+        dropped_messages: usize,
+        kept_messages: usize,
+        summarization_usage: Option<UsageData>,
+    },
     /// A completion request was assembled and is about to be sent.
     CompletionRequest {
         ts: chrono::DateTime<Utc>,
@@ -189,6 +199,18 @@ pub enum StreamEvent {
     Error { message: String },
 }
 
+/// Metadata for one actual compaction, produced by [`compact_if_needed`] and
+/// carried to the session log via [`PreparedContext`] (non-streaming) or
+/// [`StreamEvent::Compaction`] (streaming).
+pub(crate) struct CompactionRecord {
+    pub(crate) before_tokens: usize,
+    pub(crate) after_tokens: usize,
+    pub(crate) summary: String,
+    pub(crate) dropped_messages: usize,
+    pub(crate) kept_messages: usize,
+    pub(crate) summarization_usage: Option<UsageData>,
+}
+
 /// A prepared completion context: exactly what is sent to the model, plus the
 /// log-shaped rendering of the same messages.
 ///
@@ -199,6 +221,10 @@ pub(crate) struct PreparedContext {
     pub(crate) messages: Vec<Message>,
     pub(crate) user_input: String,
     pub(crate) log_messages: Vec<ContextMessage>,
+    /// Set when preparing this context triggered a compaction, so the session
+    /// layer can log a `compaction` entry immediately before the `llm_prompt`
+    /// it caused.
+    pub(crate) compaction: Option<CompactionRecord>,
 }
 
 /// Connect to an OpenAI-compatible chat completions endpoint (e.g. DeepSeek)
@@ -360,7 +386,7 @@ impl<M: CompletionModel> Agent<M> {
     ) -> Result<PreparedContext, AgentError> {
         let tool_defs_json = serde_json::to_string(&self.tool_definitions())?;
 
-        compact_if_needed(
+        let compaction = compact_if_needed(
             &self.model,
             &self.system_prompt,
             &mut self.history,
@@ -386,6 +412,7 @@ impl<M: CompletionModel> Agent<M> {
             messages,
             user_input: user_input.to_string(),
             log_messages,
+            compaction,
         })
     }
 
@@ -561,10 +588,11 @@ fn build_preamble(system_prompt: &str, summary: Option<&str>) -> String {
 #[allow(clippy::too_many_arguments)]
 /// Compact history when the estimated input exceeds the budget.
 ///
-/// Returns `true` when a summarization call was made and `history`/`summary`
-/// were updated. Under budget, or when there is no old history to summarize
-/// (a single dominating recent turn), it returns `false` and leaves state
-/// untouched — callers then fall through to the tool-output truncation path.
+/// Returns `Some(record)` when a summarization call was made and
+/// `history`/`summary` were updated. Under budget, or when there is no old
+/// history to summarize (a single dominating recent turn), it returns `None`
+/// and leaves state untouched — callers then fall through to the tool-output
+/// truncation path.
 async fn compact_if_needed<M: CompletionModel>(
     model: &M,
     system_prompt: &str,
@@ -574,7 +602,7 @@ async fn compact_if_needed<M: CompletionModel>(
     user_input: &str,
     turn_messages: &[Message],
     tool_defs_json: &str,
-) -> Result<bool, AgentError> {
+) -> Result<Option<CompactionRecord>, AgentError> {
     let limit = context_limit_tokens.saturating_sub(RESERVE_OUTPUT_TOKENS);
     let before = estimate_context(
         system_prompt,
@@ -585,12 +613,12 @@ async fn compact_if_needed<M: CompletionModel>(
         tool_defs_json,
     );
     if before <= limit {
-        return Ok(false);
+        return Ok(None);
     }
 
     let (old, kept) = split_history(history);
     if old.is_empty() {
-        return Ok(false);
+        return Ok(None);
     }
 
     let mut prompt = String::from(COMPACTION_PROMPT);
@@ -614,7 +642,15 @@ async fn compact_if_needed<M: CompletionModel>(
         }
     }
 
-    *summary = Some(truncate_to_token_budget(&text, MAX_SUMMARY_TOKENS));
+    let new_summary = truncate_to_token_budget(&text, MAX_SUMMARY_TOKENS);
+    let summarization_usage = UsageData {
+        input_tokens: response.usage.input_tokens as u32,
+        output_tokens: response.usage.output_tokens as u32,
+    };
+    let dropped_messages = old.len();
+    let kept_messages = kept.len();
+
+    *summary = Some(new_summary.clone());
     *history = kept.to_vec();
 
     let after = estimate_context(
@@ -631,7 +667,14 @@ async fn compact_if_needed<M: CompletionModel>(
         "compacted conversation context"
     );
 
-    Ok(true)
+    Ok(Some(CompactionRecord {
+        before_tokens: before,
+        after_tokens: after,
+        summary: new_summary,
+        dropped_messages,
+        kept_messages,
+        summarization_usage: Some(summarization_usage),
+    }))
 }
 
 /// Build the typed message list for one completion request.
@@ -738,7 +781,7 @@ where
         let tool_defs_json_str = tool_definitions_json.to_string();
 
         // One token check + possible compaction before every call.
-        compact_if_needed(
+        if let Some(record) = compact_if_needed(
             &model,
             &system_prompt,
             history,
@@ -748,7 +791,20 @@ where
             &turn_messages,
             &tool_defs_json_str,
         )
-        .await?;
+        .await?
+        {
+            let _ = tx
+                .send(StreamEvent::Compaction {
+                    ts: Utc::now(),
+                    before_tokens: record.before_tokens,
+                    after_tokens: record.after_tokens,
+                    summary: record.summary,
+                    dropped_messages: record.dropped_messages,
+                    kept_messages: record.kept_messages,
+                    summarization_usage: record.summarization_usage,
+                })
+                .await;
+        }
 
         let preamble = build_preamble(&system_prompt, summary.as_deref());
         let messages = build_context(&preamble, history, &turn_messages, &user_input);
@@ -1094,6 +1150,7 @@ mod tests {
 
         assert_eq!(prepared.messages.len(), 3);
         assert_eq!(prepared.log_messages.len(), 5);
+        assert!(prepared.compaction.is_none());
         assert_eq!(
             prepared.log_messages[0],
             ContextMessage::System("sys".into())
@@ -1111,6 +1168,52 @@ mod tests {
             ContextMessage::Message(Message::assistant("partial"))
         );
         assert_eq!(prepared.log_messages[4], ContextMessage::User("now".into()));
+    }
+
+    #[tokio::test]
+    async fn test_prepare_context_under_budget_has_no_compaction_record() {
+        let mut agent = Agent::new(MockCompletionModel::text("unused"), "sys");
+        agent.set_history(vec![
+            Message::user("earlier"),
+            Message::assistant("earlier-a"),
+        ]);
+        let prepared = agent
+            .prepare_context("now", &[])
+            .await
+            .expect("prepare succeeds");
+        assert!(prepared.compaction.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_prepare_context_over_budget_returns_compaction_record() {
+        // [summarize, answer]: the summarization completion runs first.
+        let model = MockCompletionModel::from_turns([
+            MockTurn::text("compacted summary"),
+            MockTurn::text("final answer"),
+        ]);
+        let mut agent = Agent::new(model, "test system");
+        agent.set_context_limit_tokens(500);
+
+        let mut history = Vec::new();
+        for i in 0..20 {
+            history.push(Message::user(format!("question {i}")));
+            history.push(Message::assistant(format!(
+                "answer {i} {}",
+                "x".repeat(200)
+            )));
+        }
+        agent.set_history(history);
+
+        let prepared = agent
+            .prepare_context("hi", &[])
+            .await
+            .expect("prepare succeeds");
+
+        let record = prepared.compaction.expect("over budget must compact");
+        assert!(record.before_tokens > record.after_tokens);
+        assert!(record.dropped_messages > 0);
+        assert!(record.kept_messages > 0);
+        assert_eq!(record.summary, "compacted summary");
     }
 
     #[tokio::test]
