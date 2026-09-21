@@ -13,6 +13,7 @@ use rmcp::service::{RoleClient, RunningService};
 use rmcp::transport::TokioChildProcess;
 
 use crate::error::AgentError;
+use crate::tool::truncate_tool_output;
 
 /// A connected MCP server (stdio transport).
 pub struct McpClient {
@@ -81,10 +82,14 @@ impl McpClient {
 
 /// Render an MCP call result as plain text: text content blocks joined, plus
 /// structured content serialized as JSON when present.
+///
+/// The result is capped at [`truncate_tool_output`]'s limit so an MCP server
+/// returning a multi-MB text block cannot blow the context window — the one
+/// path today that had no per-tool cap.
 fn render_call_result(result: &CallToolResult) -> String {
     // Structured content is the canonical result when present.
     if let Some(structured) = &result.structured_content {
-        return structured.to_string();
+        return truncate_tool_output(&structured.to_string());
     }
     let parts: Vec<String> = result
         .content
@@ -94,11 +99,12 @@ fn render_call_result(result: &CallToolResult) -> String {
             _ => None,
         })
         .collect();
-    if parts.is_empty() {
+    let joined = if parts.is_empty() {
         String::from("(no output)")
     } else {
         parts.join("\n")
-    }
+    };
+    truncate_tool_output(&joined)
 }
 
 #[cfg(test)]
@@ -122,5 +128,18 @@ mod tests {
     fn test_render_call_result_empty() {
         let result = CallToolResult::success(vec![]);
         assert_eq!(render_call_result(&result), "(no output)");
+    }
+
+    #[test]
+    fn test_render_call_result_truncates_large_blocks() {
+        let big = "z".repeat(crate::tool::MAX_TOOL_RESULT_BYTES + 4096);
+        let result = CallToolResult::success(vec![ContentBlock::text(big)]);
+        let rendered = render_call_result(&result);
+        assert!(
+            rendered.contains("[truncated"),
+            "got len {}",
+            rendered.len()
+        );
+        assert!(rendered.len() < crate::tool::MAX_TOOL_RESULT_BYTES + 4096);
     }
 }

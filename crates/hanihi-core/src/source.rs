@@ -13,7 +13,9 @@
 
 use std::fmt;
 use std::fs;
+use std::fs::File;
 use std::io;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
@@ -166,6 +168,10 @@ impl SourceTree {
 
     /// Read a text file under `rel`, honouring ignore rules and the size
     /// cap. Returns the (possibly truncated) contents.
+    ///
+    /// Only [`MAX_READ_BYTES`] (+1 to detect overflow) are ever read from
+    /// disk, so a multi-GB file is never loaded into memory. The truncation
+    /// note reports the true total from file metadata.
     pub fn read(&self, rel: &Path) -> Result<String, SourceError> {
         let canon = self.resolve(rel)?;
         if !canon.is_file() {
@@ -174,13 +180,21 @@ impl SourceTree {
         if self.is_ignored(&canon) {
             return Err(SourceError::Ignored(rel.to_path_buf()));
         }
-        let bytes = fs::read(&canon).map_err(SourceError::Io)?;
+
+        let total_len = fs::metadata(&canon).map_err(SourceError::Io)?.len() as usize;
+        let mut bytes = Vec::with_capacity(MAX_READ_BYTES + 1);
+        File::open(&canon)
+            .map_err(SourceError::Io)?
+            .take((MAX_READ_BYTES + 1) as u64)
+            .read_to_end(&mut bytes)
+            .map_err(SourceError::Io)?;
+
         let text = String::from_utf8_lossy(&bytes);
         let cut = text.floor_char_boundary(MAX_READ_BYTES);
         let mut out = String::with_capacity(cut + 64);
         out.push_str(&text[..cut]);
-        if bytes.len() > MAX_READ_BYTES {
-            let note = format!("\n…[truncated, {} bytes total]", bytes.len());
+        if total_len > MAX_READ_BYTES {
+            let note = format!("\n…[truncated, {} bytes total]", total_len);
             out.push_str(&note);
         }
         Ok(out)
@@ -469,6 +483,22 @@ mod tests {
         let out = tree.read(Path::new("big.rs")).unwrap();
         assert!(out.contains("[truncated"));
         assert!(out.len() < MAX_READ_BYTES + 4096);
+    }
+
+    #[test]
+    fn read_reports_true_total_for_large_files() {
+        // A few MB (not GB) proves the bounded-read path without loading the
+        // whole file into memory, and the note carries the real size.
+        let fx = testutil::Fixture::new();
+        let tree = fx.tree();
+        let total = MAX_READ_BYTES * 40;
+        fs::write(fx.dir.join("big.rs"), "y".repeat(total)).unwrap();
+        let out = tree.read(Path::new("big.rs")).unwrap();
+        assert!(
+            out.contains(&format!("{total} bytes total")),
+            "got note missing"
+        );
+        assert!(out.len() <= MAX_READ_BYTES + 128);
     }
 
     #[test]

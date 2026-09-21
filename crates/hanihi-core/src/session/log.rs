@@ -658,7 +658,7 @@ impl Display for LogEntry {
                     f,
                     "  Tool definitions: {}",
                     if data.tool_definitions.is_array() {
-                        format!("{}", &data.tool_definitions.as_array().unwrap().len())
+                        format!("{}", data.tool_definitions.as_array().unwrap().len())
                     } else {
                         "Not array".to_string()
                     }

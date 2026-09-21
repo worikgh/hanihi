@@ -31,6 +31,11 @@ pub enum AgentError {
         /// Maximum turns allowed.
         turns: usize,
     },
+    /// The turn exceeded the hard tool-call-per-turn guard.
+    ToolCallLimit {
+        /// Number of tool calls executed before the guard tripped.
+        calls: usize,
+    },
 }
 
 impl fmt::Display for AgentError {
@@ -46,6 +51,9 @@ impl fmt::Display for AgentError {
             AgentError::Tool { name, message } => write!(f, "tool '{name}' failed: {message}"),
             AgentError::MaxTurns { turns } => {
                 write!(f, "agent exceeded maximum of {turns} model turns")
+            }
+            AgentError::ToolCallLimit { calls } => {
+                write!(f, "tool call limit exceeded: {calls} calls in one turn")
             }
         }
     }

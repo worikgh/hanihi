@@ -35,6 +35,28 @@ pub(crate) fn map_source_err(e: SourceError) -> ToolExecutionError {
     }
 }
 
+/// Maximum bytes of any rendered tool result fed back to the model.
+///
+/// This is the agent-layer backstop. Per-tool caps (file reads, grep,
+/// command output) are the primary policy; this catches any path that
+/// renders an unbounded result, in particular MCP tools.
+pub(crate) const MAX_TOOL_RESULT_BYTES: usize = 64 * 1024;
+
+/// Cap a rendered tool result, appending a note with the original byte count
+/// when truncated. Used after `ToolOutput::render()` at the agent dispatch so
+/// every result (built-in or MCP) shares one truncation format.
+pub(crate) fn truncate_tool_output(s: &str) -> String {
+    if s.len() <= MAX_TOOL_RESULT_BYTES {
+        s.to_string()
+    } else {
+        let cut = s.floor_char_boundary(MAX_TOOL_RESULT_BYTES);
+        let mut out = String::with_capacity(cut + 64);
+        out.push_str(&s[..cut]);
+        out.push_str(&format!("\n…[truncated, {} bytes total]", s.len()));
+        out
+    }
+}
+
 /// Tool: report the current local date and time.
 pub fn builtin_get_time() -> PortableDynamicTool {
     PortableDynamicTool::new(
@@ -620,17 +642,11 @@ where
     Ok(String::from_utf8_lossy(&buf).into_owned())
 }
 
-/// Cap a string at `MAX_READ_BYTES`, appending a truncation note.
+/// Cap a string at `MAX_TOOL_RESULT_BYTES`, appending a truncation note.
+/// Kept as a thin alias so run_command/read_session_log callers share the
+/// agent-layer format.
 fn cap_output(s: &str) -> String {
-    if s.len() <= crate::source::MAX_READ_BYTES {
-        s.to_string()
-    } else {
-        let cut = s.floor_char_boundary(crate::source::MAX_READ_BYTES);
-        let mut out = String::with_capacity(cut + 64);
-        out.push_str(&s[..cut]);
-        out.push_str(&format!("\n…[truncated, {} bytes total]", s.len()));
-        out
-    }
+    truncate_tool_output(s)
 }
 
 /// Spawn `argv`, capture stdout/stderr, enforce a timeout (killing the child
@@ -1416,6 +1432,17 @@ mod tests {
         let out = cap_output(&big);
         assert!(out.contains("[truncated"), "got: {out}");
         assert!(out.len() < big.len());
+    }
+
+    #[test]
+    fn truncate_tool_output_reports_original_size() {
+        let big = "y".repeat(MAX_TOOL_RESULT_BYTES + 2048);
+        let out = truncate_tool_output(&big);
+        assert!(
+            out.contains(&format!("{} bytes total", big.len())),
+            "got: {out}"
+        );
+        assert!(out.len() <= MAX_TOOL_RESULT_BYTES + 64);
     }
 
     #[tokio::test]

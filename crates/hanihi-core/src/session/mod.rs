@@ -28,7 +28,7 @@ use self::lock::SessionGuard;
 use self::log::{
     ErrorStage, LlmResponseData, LogEntry, LogWriter, ToolCallData, ToolExecutionData, UsageData,
 };
-use crate::agent::{Agent, StreamEvent, TurnSummary, build_context};
+use crate::agent::{Agent, StreamEvent, TurnSummary};
 use crate::error::AgentError;
 
 /// Errors produced by session operations.
@@ -400,14 +400,10 @@ impl Session {
         let mut usage_total = rig::completion::Usage::new();
 
         for _ in 0..agent.max_turns() {
-            // Build and log the prompt.
+            // Prepare the exact context that will be sent (compacting if
+            // needed), then log and send the same messages.
+            let prepared = agent.prepare_context(user_input, &turn_messages).await?;
             let tools = agent.tool_definitions();
-            let messages = build_context(
-                agent.system_prompt(),
-                agent.history(),
-                &turn_messages,
-                user_input,
-            );
             let tools_json =
                 serde_json::to_value(&tools).map_err(|e| AgentError::Rig(e.to_string()))?;
             self.log_entry(&LogEntry::llm_prompt(
@@ -415,13 +411,13 @@ impl Session {
                 self.turn,
                 provider.to_string(),
                 model_name.to_string(),
-                messages,
+                prepared.log_messages.clone(),
                 tools_json,
             ))
             .map_err(|e| AgentError::Rig(e.to_string()))?;
 
             // Call the model.
-            let response = agent.single_completion(user_input, &turn_messages).await?;
+            let response = agent.single_completion_with(&prepared).await?;
             usage_total += response.usage;
 
             // Extract content from the response.
@@ -503,6 +499,7 @@ impl Session {
                     tool_calls: tool_calls_total,
                     usage: usage_total,
                     final_history: agent.history().to_vec(),
+                    final_summary: agent.summary().map(|s| s.to_string()),
                 });
             }
 

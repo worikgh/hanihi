@@ -14,8 +14,14 @@ use rig::providers::openai;
 use rig::tool::PortableDynamicTool;
 use tokio::sync::mpsc;
 
+use crate::context::{
+    COMPACTION_PROMPT, DEFAULT_CONTEXT_LIMIT_TOKENS, MAX_SUMMARY_TOKENS, RESERVE_OUTPUT_TOKENS,
+    context_limit_for, estimate_context, serialize_for_summary, split_history,
+    truncate_to_token_budget,
+};
 use crate::error::AgentError;
 use crate::session::log::ContextMessage;
+use crate::tool::truncate_tool_output;
 
 /// Default system prompt used when none is supplied.
 pub const DEFAULT_SYSTEM_PROMPT: &str = "You are a helpful assistant running in an agent harness. \
@@ -42,6 +48,11 @@ re-running. When a tool call fails or reports an error, do not stop. Report the 
 continue toward the goal by the next viable means (retry once only if the cause was transient; \
 otherwise try a different approach). Stop only when no way to continue remains, and then \
 explain what blocked you.";
+
+/// Hard cap on tool executions within a single turn. Additional to
+/// [`Agent::max_turns`]: a turn may legally make many tool calls across
+/// model turns, and this guard bounds that runaway loop.
+const MAX_TOOL_CALLS_PER_TURN: usize = 100;
 
 /// Read-only, deterministic tools whose results may be reused within a turn.
 const CACHEABLE_TOOLS: &[&str] = &["read_file", "list_dir", "grep", "read_session_log", "echo"];
@@ -119,6 +130,9 @@ pub struct TurnSummary {
     /// Final message history after the turn (for streaming — the agent's
     /// history is updated in the spawned task; the caller seeds it back).
     pub final_history: Vec<Message>,
+    /// Compaction summary produced during the turn (for streaming — the
+    /// caller seeds it back so compaction is cumulative across turns).
+    pub final_summary: Option<String>,
 }
 
 /// A tool call carried in a [`StreamEvent::CompletionResponse`].
@@ -175,6 +189,18 @@ pub enum StreamEvent {
     Error { message: String },
 }
 
+/// A prepared completion context: exactly what is sent to the model, plus the
+/// log-shaped rendering of the same messages.
+///
+/// Produced once per model call by [`Agent::prepare_context`] so the logged
+/// prompt and the sent prompt can never diverge (including after compaction).
+pub(crate) struct PreparedContext {
+    pub(crate) preamble: String,
+    pub(crate) messages: Vec<Message>,
+    pub(crate) user_input: String,
+    pub(crate) log_messages: Vec<ContextMessage>,
+}
+
 /// Connect to an OpenAI-compatible chat completions endpoint (e.g. DeepSeek)
 /// and return an agent bound to it.
 ///
@@ -201,8 +227,11 @@ pub fn connect_chat_model_with_prompt(
         .base_url(&base_url)
         .build()
         .map_err(|e| AgentError::Rig(e.to_string()))?;
+    let context_limit = context_limit_for(&model);
     let model = client.completion_model(&model);
-    Ok(Agent::new(model, system_prompt))
+    let mut agent = Agent::new(model, system_prompt);
+    agent.context_limit_tokens = context_limit;
+    Ok(agent)
 }
 
 /// A minimal tool-calling agent.
@@ -217,6 +246,10 @@ pub struct Agent<M: CompletionModel> {
     history: Vec<Message>,
     max_turns: usize,
     tool_cache: Arc<Mutex<ToolCallCache>>,
+    /// Per-model input budget (tokens). Defaults to 1M.
+    context_limit_tokens: usize,
+    /// In-memory compaction summary, injected into the effective preamble.
+    summary: Option<String>,
 }
 
 impl<M: CompletionModel> Agent<M> {
@@ -229,6 +262,8 @@ impl<M: CompletionModel> Agent<M> {
             history: Vec::new(),
             max_turns: 10,
             tool_cache: Arc::new(Mutex::new(ToolCallCache::default())),
+            context_limit_tokens: DEFAULT_CONTEXT_LIMIT_TOKENS,
+            summary: None,
         }
     }
 
@@ -272,6 +307,26 @@ impl<M: CompletionModel> Agent<M> {
         self.max_turns = max_turns;
     }
 
+    /// Current per-model input token budget.
+    pub fn context_limit_tokens(&self) -> usize {
+        self.context_limit_tokens
+    }
+
+    /// Override the per-model input token budget (tests and future CLI flag).
+    pub fn set_context_limit_tokens(&mut self, limit: usize) {
+        self.context_limit_tokens = limit;
+    }
+
+    /// Current compaction summary, if any.
+    pub fn summary(&self) -> Option<&str> {
+        self.summary.as_deref()
+    }
+
+    /// Replace the in-memory compaction summary (seeds a streaming turn).
+    pub fn set_summary(&mut self, summary: Option<String>) {
+        self.summary = summary;
+    }
+
     /// Clear the persistent message history.
     pub fn clear_history(&mut self) {
         self.history.clear();
@@ -290,22 +345,60 @@ impl<M: CompletionModel> Agent<M> {
         self.history = history;
     }
 
-    /// Run a single completion call against the model.
-    ///
-    /// Assembles the request from `user_input` + persistent history +
-    /// in-progress turn messages + tool definitions, sends it to the
-    /// model, and returns the response. `Session` uses this to interpose
-    /// logging between calls.
-    pub(crate) async fn single_completion(
-        &self,
+    /// System preamble actually sent: base prompt plus, after compaction, a
+    /// clearly delimited summary of the conversation so far.
+    pub(crate) fn effective_preamble(&self) -> String {
+        build_preamble(&self.system_prompt, self.summary.as_deref())
+    }
+
+    /// Prepare one completion context: compact if needed, then build the
+    /// exact message list that is both sent and logged.
+    pub(crate) async fn prepare_context(
+        &mut self,
         user_input: &str,
         turn_messages: &[Message],
+    ) -> Result<PreparedContext, AgentError> {
+        let tool_defs_json = serde_json::to_string(&self.tool_definitions())?;
+
+        compact_if_needed(
+            &self.model,
+            &self.system_prompt,
+            &mut self.history,
+            &mut self.summary,
+            self.context_limit_tokens,
+            user_input,
+            turn_messages,
+            &tool_defs_json,
+        )
+        .await?;
+
+        let preamble = self.effective_preamble();
+        let messages: Vec<Message> = self
+            .history
+            .iter()
+            .chain(turn_messages.iter())
+            .cloned()
+            .collect();
+        let log_messages = build_context(&preamble, &self.history, turn_messages, user_input);
+
+        Ok(PreparedContext {
+            preamble,
+            messages,
+            user_input: user_input.to_string(),
+            log_messages,
+        })
+    }
+
+    /// Send the already-prepared context to the model.
+    pub(crate) async fn single_completion_with(
+        &self,
+        prepared: &PreparedContext,
     ) -> Result<rig::completion::CompletionResponse<M::Response>, AgentError> {
         let request = self
             .model
-            .completion_request(Message::user(user_input))
-            .preamble(self.system_prompt.clone())
-            .messages(self.history.iter().chain(turn_messages.iter()).cloned())
+            .completion_request(Message::user(prepared.user_input.clone()))
+            .preamble(prepared.preamble.clone())
+            .messages(prepared.messages.iter().cloned())
             .tools(self.tool_definitions())
             .build();
         let response = self.model.completion(request).await?;
@@ -321,15 +414,8 @@ impl<M: CompletionModel> Agent<M> {
         let mut usage_total = Usage::new();
 
         for _ in 0..self.max_turns {
-            let request = self
-                .model
-                .completion_request(Message::user(user_input))
-                .preamble(self.system_prompt.clone())
-                .messages(self.history.iter().chain(turn_messages.iter()).cloned())
-                .tools(self.tool_definitions())
-                .build();
-
-            let response = self.model.completion(request).await?;
+            let prepared = self.prepare_context(user_input, &turn_messages).await?;
+            let response = self.single_completion_with(&prepared).await?;
             usage_total += response.usage;
 
             let mut text_parts = Vec::new();
@@ -355,6 +441,7 @@ impl<M: CompletionModel> Agent<M> {
                     tool_calls: tool_calls_total,
                     usage: usage_total,
                     final_history: self.history.clone(),
+                    final_summary: self.summary.clone(),
                 });
             }
 
@@ -368,6 +455,16 @@ impl<M: CompletionModel> Agent<M> {
             });
 
             for call in &tool_calls {
+                if tool_calls_total >= MAX_TOOL_CALLS_PER_TURN {
+                    tracing::error!(
+                        calls = tool_calls_total,
+                        "tool call limit exceeded in one turn"
+                    );
+                    self.commit_turn(user_input, turn_messages);
+                    return Err(AgentError::ToolCallLimit {
+                        calls: tool_calls_total,
+                    });
+                }
                 let output = self.execute_tool(call).await?;
                 tool_calls_total += 1;
                 turn_messages.push(Message::tool_result_with_call_id(
@@ -388,8 +485,9 @@ impl<M: CompletionModel> Agent<M> {
     ///
     /// Returns a channel receiver. The caller reads events as they arrive.
     /// The agent loop runs on a spawned task. After the stream completes,
-    /// the caller should extract `final_history` from the `TurnComplete`
-    /// event and call `set_history` to persist the new state.
+    /// the caller should extract `final_history` and `final_summary` from the
+    /// `TurnComplete` event and call `set_history` / `set_summary` to persist
+    /// the new state.
     pub async fn run_streaming(
         &self,
         user_input: &str,
@@ -404,6 +502,8 @@ impl<M: CompletionModel> Agent<M> {
         let tool_cache = self.tool_cache.clone();
         let max_turns = self.max_turns;
         let system_prompt = self.system_prompt.clone();
+        let context_limit_tokens = self.context_limit_tokens;
+        let summary = self.summary.clone();
         let mut history = self.history.clone();
         let user_input = user_input.to_string();
 
@@ -414,6 +514,8 @@ impl<M: CompletionModel> Agent<M> {
                 &mut history,
                 user_input,
                 system_prompt,
+                context_limit_tokens,
+                summary,
                 max_turns,
                 &tx,
                 tool_cache,
@@ -443,6 +545,93 @@ impl<M: CompletionModel> Agent<M> {
         self.history.push(Message::user(user_input));
         self.history.extend(turn_messages);
     }
+}
+
+/// Build the effective system preamble: base prompt plus the compaction
+/// summary block when one exists.
+fn build_preamble(system_prompt: &str, summary: Option<&str>) -> String {
+    match summary {
+        Some(summary) => {
+            format!("{system_prompt}\n\n## Summary of the conversation so far:\n{summary}")
+        }
+        None => system_prompt.to_string(),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+/// Compact history when the estimated input exceeds the budget.
+///
+/// Returns `true` when a summarization call was made and `history`/`summary`
+/// were updated. Under budget, or when there is no old history to summarize
+/// (a single dominating recent turn), it returns `false` and leaves state
+/// untouched — callers then fall through to the tool-output truncation path.
+async fn compact_if_needed<M: CompletionModel>(
+    model: &M,
+    system_prompt: &str,
+    history: &mut Vec<Message>,
+    summary: &mut Option<String>,
+    context_limit_tokens: usize,
+    user_input: &str,
+    turn_messages: &[Message],
+    tool_defs_json: &str,
+) -> Result<bool, AgentError> {
+    let limit = context_limit_tokens.saturating_sub(RESERVE_OUTPUT_TOKENS);
+    let before = estimate_context(
+        system_prompt,
+        summary.as_deref(),
+        history,
+        turn_messages,
+        user_input,
+        tool_defs_json,
+    );
+    if before <= limit {
+        return Ok(false);
+    }
+
+    let (old, kept) = split_history(history);
+    if old.is_empty() {
+        return Ok(false);
+    }
+
+    let mut prompt = String::from(COMPACTION_PROMPT);
+    if let Some(previous) = summary.as_deref() {
+        prompt.push_str("\n\nPrevious summary:\n");
+        prompt.push_str(previous);
+    }
+    prompt.push_str("\n\nConversation to summarize:\n");
+    prompt.push_str(&serialize_for_summary(old));
+
+    let request = model
+        .completion_request(Message::user(prompt))
+        .preamble(system_prompt.to_string())
+        .build();
+    let response = model.completion(request).await?;
+
+    let mut text = String::new();
+    for content in response.choice.iter() {
+        if let AssistantContent::Text(t) = content {
+            text.push_str(t.text());
+        }
+    }
+
+    *summary = Some(truncate_to_token_budget(&text, MAX_SUMMARY_TOKENS));
+    *history = kept.to_vec();
+
+    let after = estimate_context(
+        system_prompt,
+        summary.as_deref(),
+        history,
+        turn_messages,
+        user_input,
+        tool_defs_json,
+    );
+    tracing::info!(
+        before_tokens = before,
+        after_tokens = after,
+        "compacted conversation context"
+    );
+
+    Ok(true)
 }
 
 /// Build the typed message list for one completion request.
@@ -506,7 +695,10 @@ async fn execute_tool_with_cache(
             name: name.to_string(),
             message: e.to_string(),
         })?;
-    let rendered = output.render();
+
+    // Backstop: never feed an unbounded tool result back to the model. The
+    // per-tool caps remain the primary policy; this is the last line.
+    let rendered = truncate_tool_output(&output.render());
 
     let mut cache = cache.lock().expect("tool call cache lock");
     cache.store(name, &args, &rendered);
@@ -525,6 +717,8 @@ async fn run_streaming_loop<M: CompletionModel>(
     history: &mut Vec<Message>,
     user_input: String,
     system_prompt: String,
+    context_limit_tokens: usize,
+    mut summary: Option<String>,
     max_turns: usize,
     tx: &mpsc::Sender<StreamEvent>,
     tool_cache: Arc<Mutex<ToolCallCache>>,
@@ -540,8 +734,24 @@ where
     for _turn in 0..max_turns {
         // Build the request and report it before sending.
         let tool_definitions = tools.iter().map(|t| t.definition()).collect::<Vec<_>>();
-        let messages = build_context(&system_prompt, history, &turn_messages, &user_input);
         let tool_definitions_json = serde_json::to_value(&tool_definitions)?;
+        let tool_defs_json_str = tool_definitions_json.to_string();
+
+        // One token check + possible compaction before every call.
+        compact_if_needed(
+            &model,
+            &system_prompt,
+            history,
+            &mut summary,
+            context_limit_tokens,
+            &user_input,
+            &turn_messages,
+            &tool_defs_json_str,
+        )
+        .await?;
+
+        let preamble = build_preamble(&system_prompt, summary.as_deref());
+        let messages = build_context(&preamble, history, &turn_messages, &user_input);
         let _ = tx
             .send(StreamEvent::CompletionRequest {
                 ts: Utc::now(),
@@ -552,7 +762,7 @@ where
 
         let request = model
             .completion_request(Message::user(user_input.clone()))
-            .preamble(system_prompt.clone())
+            .preamble(preamble)
             .messages(history.iter().chain(turn_messages.iter()).cloned())
             .tools(tool_definitions)
             .build();
@@ -608,6 +818,24 @@ where
                             arguments: tool_call.function.arguments.clone(),
                         })
                         .await;
+
+                    // Hard guard: bound the number of tool calls per turn.
+                    if tool_calls_total >= MAX_TOOL_CALLS_PER_TURN {
+                        tracing::error!(
+                            calls = tool_calls_total,
+                            "tool call limit exceeded in one turn"
+                        );
+                        let _ = tx
+                            .send(StreamEvent::Error {
+                                message: format!(
+                                    "tool call limit exceeded: {tool_calls_total} calls in one turn"
+                                ),
+                            })
+                            .await;
+                        return Err(AgentError::ToolCallLimit {
+                            calls: tool_calls_total,
+                        });
+                    }
 
                     // Execute the tool, reusing cached results for repeated
                     // identical read-only calls within this turn.
@@ -709,18 +937,19 @@ where
             turn_messages.push(Message::assistant(text_buf.clone()));
             history.push(Message::user(user_input));
             history.extend(turn_messages);
-            let summary = TurnSummary {
+            let turn_summary = TurnSummary {
                 text: text_buf,
                 tool_calls: tool_calls_total,
                 usage: usage_total,
                 final_history: history.clone(),
+                final_summary: summary.clone(),
             };
             let _ = tx
                 .send(StreamEvent::TurnComplete {
-                    summary: summary.clone(),
+                    summary: turn_summary.clone(),
                 })
                 .await;
-            return Ok(summary);
+            return Ok(turn_summary);
         }
 
         // Tool calls were executed. Build the assistant message and loop.
@@ -810,6 +1039,125 @@ mod tests {
         let mut agent = Agent::new(model, "test system");
         let err = agent.run("do it").await.expect_err("run must fail");
         assert!(matches!(err, AgentError::Tool { .. }));
+    }
+
+    #[tokio::test]
+    async fn test_under_budget_does_not_compact() {
+        let model = MockCompletionModel::from_turns([MockTurn::text("answer")]);
+        let mut agent = Agent::new(model, "test system");
+        let summary = agent.run("hi").await.expect("run succeeds");
+        assert_eq!(summary.text, "answer");
+        assert!(agent.summary().is_none());
+        assert_eq!(agent.history().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_over_budget_compacts_history() {
+        // Scripted turns: [summarize, answer]. The first call is the plain
+        // summarization completion; the second is the real answer.
+        let model = MockCompletionModel::from_turns([
+            MockTurn::text("compacted summary"),
+            MockTurn::text("final answer"),
+        ]);
+        let mut agent = Agent::new(model, "test system");
+        agent.set_context_limit_tokens(500);
+
+        let mut history = Vec::new();
+        for i in 0..20 {
+            history.push(Message::user(format!("question {i}")));
+            history.push(Message::assistant(format!(
+                "answer {i} {}",
+                "x".repeat(200)
+            )));
+        }
+        agent.set_history(history);
+        let original_len = agent.history().len();
+
+        let summary = agent.run("hi").await.expect("run succeeds");
+        assert_eq!(summary.text, "final answer");
+        assert!(agent.summary().is_some());
+        assert!(agent.history().len() < original_len);
+    }
+
+    #[tokio::test]
+    async fn test_prepare_context_matches_log_messages() {
+        let mut agent = Agent::new(MockCompletionModel::text("unused"), "sys");
+        agent.set_history(vec![
+            Message::user("earlier"),
+            Message::assistant("earlier-a"),
+        ]);
+        let turn = vec![Message::assistant("partial")];
+        let prepared = agent
+            .prepare_context("now", &turn)
+            .await
+            .expect("prepare succeeds");
+
+        assert_eq!(prepared.messages.len(), 3);
+        assert_eq!(prepared.log_messages.len(), 5);
+        assert_eq!(
+            prepared.log_messages[0],
+            ContextMessage::System("sys".into())
+        );
+        assert_eq!(
+            prepared.log_messages[1],
+            ContextMessage::Message(Message::user("earlier"))
+        );
+        assert_eq!(
+            prepared.log_messages[2],
+            ContextMessage::Message(Message::assistant("earlier-a"))
+        );
+        assert_eq!(
+            prepared.log_messages[3],
+            ContextMessage::Message(Message::assistant("partial"))
+        );
+        assert_eq!(prepared.log_messages[4], ContextMessage::User("now".into()));
+    }
+
+    #[tokio::test]
+    async fn test_tool_output_truncated_at_agent_layer() {
+        let big = "x".repeat(70 * 1024);
+        let big_for_tool = big.clone();
+        let tool = PortableDynamicTool::new(
+            "big_tool",
+            "returns a big string",
+            serde_json::json!({ "type": "object", "properties": {} }),
+            move |_args: serde_json::Value| {
+                let big = big_for_tool.clone();
+                Box::pin(async move { Ok(rig::tool::ToolOutput::text(big)) })
+            },
+        );
+        let cache = Arc::new(Mutex::new(ToolCallCache::default()));
+        let rendered = execute_tool_with_cache(
+            std::slice::from_ref(&tool),
+            &cache,
+            "big_tool",
+            serde_json::json!({}),
+        )
+        .await
+        .expect("execute succeeds");
+        assert!(
+            rendered.contains("[truncated"),
+            "got len {}",
+            rendered.len()
+        );
+        assert!(rendered.len() < big.len());
+    }
+
+    #[tokio::test]
+    async fn test_tool_call_limit_enforced() {
+        let mut turns: Vec<MockTurn> = (0..=MAX_TOOL_CALLS_PER_TURN)
+            .map(|i| MockTurn::tool_call(format!("call_{i}"), "get_time", serde_json::json!({})))
+            .collect();
+        turns.push(MockTurn::text("done"));
+        let model = MockCompletionModel::from_turns(turns);
+        let mut agent = Agent::new(model, "test system");
+        agent.set_max_turns(200);
+        agent.add_tool(crate::tool::builtin_get_time());
+
+        let err = agent.run("go").await.expect_err("must hit the limit");
+        assert!(
+            matches!(err, AgentError::ToolCallLimit { calls } if calls == MAX_TOOL_CALLS_PER_TURN)
+        );
     }
 
     /// A read-only, deterministic tool whose results can be reused within a
