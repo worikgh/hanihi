@@ -437,12 +437,14 @@ async fn main() -> Result<(), AgentError> {
 
     let prompt = args.task.clone().or_else(|| args.once.clone());
     if let Some(prompt) = prompt {
+        eprintln!("{}:{}: Got prompt", file!(), line!(),);
         let mut rx = session
             .run_streaming(&mut agent, provider, &args.model, &prompt)
             .await
             .map_err(|e| AgentError::Rig(e.to_string()))?;
 
         while let Some(event) = rx.recv().await {
+            eprintln!("{}:{}: Got event", file!(), line!(),);
             match event {
                 StreamEvent::TextDelta { text } => print_coloured!("{text}"),
                 StreamEvent::ToolCallStart { name, .. } => print_coloured!("\n[🔧 {name}"),

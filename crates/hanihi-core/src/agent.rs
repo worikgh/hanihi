@@ -198,7 +198,22 @@ pub enum StreamEvent {
     /// An error occurred during the turn.
     Error { message: String },
 }
-
+impl StreamEvent {
+    pub fn type_name(&self) -> &'static str {
+        match self {
+            Self::TextDelta { .. } => "TextDelta",
+            Self::ToolCallStart { .. } => "ToolCallStart",
+            Self::ToolCallArgs { .. } => "ToolCallArgs",
+            Self::ToolCallReady { .. } => "ToolCallReady",
+            Self::ToolResult { .. } => "ToolResult",
+            Self::Compaction { .. } => "Compaction",
+            Self::CompletionRequest { .. } => "CompletionRequest",
+            Self::CompletionResponse { .. } => "CompletionResponse",
+            Self::TurnComplete { .. } => "TurnComplete",
+            Self::Error { .. } => "Error",
+        }
+    }
+}
 /// Metadata for one actual compaction, produced by [`compact_if_needed`] and
 /// carried to the session log via [`PreparedContext`] (non-streaming) or
 /// [`StreamEvent::Compaction`] (streaming).
@@ -255,6 +270,7 @@ pub fn connect_chat_model_with_prompt(
         .map_err(|e| AgentError::Rig(e.to_string()))?;
     let context_limit = context_limit_for(&model);
     let model = client.completion_model(&model);
+    eprintln!("{}:{}: Created model", file!(), line!(),);
     let mut agent = Agent::new(model, system_prompt);
     agent.context_limit_tokens = context_limit;
     Ok(agent)
@@ -775,6 +791,7 @@ where
     let mut usage_total = Usage::new();
 
     for _turn in 0..max_turns {
+        eprintln!("{}:{}: turn:{_turn}", file!(), line!(),);
         // Build the request and report it before sending.
         let tool_definitions = tools.iter().map(|t| t.definition()).collect::<Vec<_>>();
         let tool_definitions_json = serde_json::to_value(&tool_definitions)?;
@@ -793,6 +810,13 @@ where
         )
         .await?
         {
+            eprintln!(
+                "{}:{}: Compaction {} -> {}",
+                file!(),
+                line!(),
+                record.before_tokens,
+                record.after_tokens
+            );
             let _ = tx
                 .send(StreamEvent::Compaction {
                     ts: Utc::now(),
@@ -808,6 +832,12 @@ where
 
         let preamble = build_preamble(&system_prompt, summary.as_deref());
         let messages = build_context(&preamble, history, &turn_messages, &user_input);
+        eprintln!(
+            "{}:{}: Completion ready:  message count: {}",
+            file!(),
+            line!(),
+            messages.len()
+        );
         let _ = tx
             .send(StreamEvent::CompletionRequest {
                 ts: Utc::now(),

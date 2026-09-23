@@ -643,8 +643,9 @@ impl Session {
             // tool_execution entry can log the real values (not a
             // placeholder).
             let mut pending_args: HashMap<String, serde_json::Value> = HashMap::new();
-
+            let mut events_record: Vec<String> = Vec::new();
             while let Some(event) = agent_rx.recv().await {
+                events_record.push(event.type_name().to_string());
                 // Translate agent stream events into log entries. On writer
                 // failure, report an error and stop logging further events.
                 let write_result = match &event {
@@ -765,6 +766,19 @@ impl Session {
 
                 let _ = tx.send(event).await;
             }
+            let mut counts: HashMap<String, usize> = HashMap::new();
+            for e in events_record {
+                *counts.entry(e).or_insert(0) += 1;
+            }
+
+            eprintln!(
+                "{}:{}: event names: {}",
+                file!(),
+                line!(),
+                counts
+                    .iter()
+                    .fold("".to_string(), |a, b| format!("{a}, {} => {}, ", b.0, b.1))
+            );
         });
 
         Ok(rx)
