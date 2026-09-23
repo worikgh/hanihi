@@ -238,6 +238,7 @@ const NON_MUTATING: &[&str] = &[
     "readlink",
     "realpath",
     "rev",
+    "sha256sum",
     "sed",
     "seq",
     "sort",
