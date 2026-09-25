@@ -75,33 +75,6 @@ pub fn builtin_get_time() -> PortableDynamicTool {
     )
 }
 
-/// Tool: read a text file from the git repository.
-pub fn builtin_read_file(tree: Arc<SourceTree>) -> PortableDynamicTool {
-    PortableDynamicTool::new(
-        "read_file",
-        "Read a text file from the git repository. `path` is relative to the repo root. \
-	 Git-ignored paths cannot be read. Returns up to 64 KiB.",
-        json!({
-            "type": "object",
-            "properties": {
-            "path": { "type": "string", "description": "Path relative to the repo root" }
-            },
-            "required": ["path"]
-        }),
-        move |args: serde_json::Value| {
-            let tree = tree.clone();
-            Box::pin(async move {
-                let rel = args.get("path").and_then(|v| v.as_str()).ok_or_else(|| {
-                    ToolExecutionError::invalid_args("missing string field 'path'")
-                })?;
-                tree.read(Path::new(rel))
-                    .map(ToolOutput::text)
-                    .map_err(map_source_err)
-            })
-        },
-    )
-}
-
 /// Tool: list files and directories in the git repository.
 pub fn builtin_list_dir(tree: Arc<SourceTree>) -> PortableDynamicTool {
     PortableDynamicTool::new(
@@ -1069,52 +1042,7 @@ pub fn builtin_read_session_log(log_path: PathBuf) -> PortableDynamicTool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::Agent;
     use crate::source::testutil::Fixture;
-    use rig::test_utils::{MockCompletionModel, MockTurn};
-
-    #[tokio::test]
-    async fn read_file_tool_returns_contents() {
-        let fx = Fixture::new();
-        let tool = builtin_read_file(fx.tree());
-        let out = tool
-            .execute(serde_json::json!({ "path": "src/main.rs" }))
-            .await
-            .expect("read succeeds");
-        assert!(out.render().contains("fn main"));
-    }
-
-    #[tokio::test]
-    async fn read_file_tool_denies_ignored_and_escapes() {
-        let fx = Fixture::new();
-        let tool = builtin_read_file(fx.tree());
-        let err = tool
-            .execute(serde_json::json!({ "path": "target/debug/junk.rs" }))
-            .await
-            .expect_err("ignored path must fail");
-        assert!(err.to_string().contains("git-ignored"), "got: {err}");
-
-        let name = format!("hanihi-outside-{}", uuid::Uuid::new_v4());
-        let outside = std::env::temp_dir().join(&name);
-        std::fs::write(&outside, "secret").unwrap();
-        let err = tool
-            .execute(serde_json::json!({ "path": format!("../{name}") }))
-            .await
-            .expect_err("escape must fail");
-        assert!(err.to_string().contains("escapes"), "got: {err}");
-        std::fs::remove_file(&outside).unwrap_or(());
-    }
-
-    #[tokio::test]
-    async fn read_file_tool_rejects_bad_args() {
-        let fx = Fixture::new();
-        let tool = builtin_read_file(fx.tree());
-        let err = tool
-            .execute(serde_json::json!({}))
-            .await
-            .expect_err("missing path must fail");
-        assert!(err.to_string().contains("path"), "got: {err}");
-    }
 
     #[tokio::test]
     async fn list_dir_tool_lists_only_visible() {
@@ -1129,25 +1057,6 @@ mod tests {
         assert!(out.contains("Cargo.toml"), "got: {out}");
         assert!(!out.contains("target"), "got: {out}");
         assert!(!out.contains("junk"), "got: {out}");
-    }
-
-    #[tokio::test]
-    async fn read_file_round_trip_through_agent() {
-        let fx = Fixture::new();
-        let model = MockCompletionModel::from_turns([
-            MockTurn::tool_call(
-                "call_1",
-                "read_file",
-                serde_json::json!({ "path": "src/main.rs" }),
-            ),
-            MockTurn::text("read the file"),
-        ]);
-        let mut agent = Agent::new(model, "test system");
-        agent.add_tool(builtin_read_file(fx.tree()));
-
-        let summary = agent.run("read src/main.rs").await.expect("run succeeds");
-        assert_eq!(summary.tool_calls, 1);
-        assert_eq!(summary.text, "read the file");
     }
 
     // ── grep ──

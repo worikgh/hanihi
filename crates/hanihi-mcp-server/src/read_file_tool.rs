@@ -1,213 +1,183 @@
-//! The `read_file` tool, served over MCP. Mirrors
-//! `hanihi_core::tool::builtin_read_file`.
+//! `read_file` tool for Hānihi: reads a workspace file and returns its
+//! content plus the token `apply_patch` expects as `base_token`.
 
+use crate::workspace_fs::{self, ToolError};
+use serde_json::{Value, json};
+use std::fs;
+use std::io::ErrorKind;
 use std::path::Path;
-use std::sync::Arc;
 
-use hanihi_core::{SourceError, SourceTree};
-use rmcp::ErrorData;
-use rmcp::model::{CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, Tool};
-use rmcp::service::{RequestContext, RoleServer};
-
-pub(crate) fn new() -> Tool {
-    Tool::new(
-        "mcp_read_file",
-        "Read a text file from the git repository. `path` is relative to the repo root. \
-         Git-ignored paths cannot be read. Returns up to 64 KiB.",
-        serde_json::json!({
+/// `tools/list` entry for this tool.
+pub(crate) fn json() -> Value {
+    json!({
+        "name": "read_file",
+        "description": "Reads the file at the given workspace-relative path and returns its content, byte size, and SHA-256. The `token` value is the exact `base_token` to pass to `apply_patch` for this path.",
+        "inputSchema": {
             "type": "object",
             "properties": {
-                "path": { "type": "string", "description": "Path relative to the repo root" }
+                "path": {
+                    "type": "string",
+                    "description": "Path of the file to read, relative to the workspace root."
+                }
             },
-            "required": ["path"]
-        })
-        .as_object()
-        .expect("static schema is an object")
-        .clone(),
-    )
-}
-
-pub(crate) async fn call(
-    request: CallToolRequestParams,
-    tree: Arc<SourceTree>,
-    _context: RequestContext<RoleServer>,
-) -> Result<CallToolResponse, ErrorData> {
-    let args = request.arguments.unwrap_or_default();
-    let rel = path_arg(&args)?;
-    read(tree, rel)
-}
-
-/// Caller-visible result for when the server was started outside a git repo.
-pub(crate) fn unavailable() -> CallToolResponse {
-    tool_error("read_file unavailable: no git repository".to_string())
-}
-
-fn path_arg(args: &serde_json::Map<String, serde_json::Value>) -> Result<&str, ErrorData> {
-    args.get("path")
-        .and_then(|value| value.as_str())
-        .ok_or_else(|| ErrorData::invalid_params("missing string field 'path'", None))
-}
-
-/// Reads one file. Tool-level failures are `Ok(CallToolResult::error(...))`;
-/// infrastructure failures are `Err(ErrorData)`.
-fn read(tree: Arc<SourceTree>, rel: &str) -> Result<CallToolResponse, ErrorData> {
-    match tree.read(Path::new(rel)) {
-        Ok(text) => Ok(CallToolResponse::from(CallToolResult::success(vec![
-            ContentBlock::text(text),
-        ]))),
-        Err(SourceError::NotFound(p)) => Ok(tool_error(format!("no such path: {}", p.display()))),
-        Err(SourceError::Ignored(p)) => {
-            Ok(tool_error(format!("path is git-ignored: {}", p.display())))
+            "required": ["path"],
+            "additionalProperties": false
         }
-        Err(SourceError::Escape(p)) => Ok(tool_error(format!(
-            "path escapes the repository: {}",
-            p.display()
-        ))),
-        Err(e) => Err(ErrorData::internal_error(
-            format!("reading {rel}: {e}"),
-            None,
-        )),
+    })
+}
+
+/// Implements the tool. `params` carries the MCP tool call; its `arguments`
+/// object holds the request.
+pub(crate) fn exec(params: &Value, id: Value) -> Value {
+    let result = workspace_fs::arguments(params).and_then(run);
+    match result {
+        Ok(text) => workspace_fs::success(id, text),
+        Err(error) => workspace_fs::failure(id, error.code, error.message),
     }
 }
 
-fn tool_error(message: String) -> CallToolResponse {
-    CallToolResponse::from(CallToolResult::error(vec![ContentBlock::text(message)]))
+fn run(arguments: &Value) -> Result<String, ToolError> {
+    let path = workspace_fs::required_non_empty_string(arguments, "path")?;
+
+    let root = workspace_fs::workspace_root()?;
+    let resolved =
+        workspace_fs::resolve_workspace_path(&root, path).map_err(workspace_fs::invalid)?;
+
+    read_file(&resolved, path)
+}
+
+fn read_file(path: &Path, display_path: &str) -> Result<String, ToolError> {
+    let bytes = match fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == ErrorKind::NotFound => {
+            return Err(workspace_fs::invalid(format!(
+                "file does not exist: {display_path}"
+            )));
+        }
+        Err(error) if error.kind() == ErrorKind::NotADirectory => {
+            return Err(workspace_fs::invalid(format!(
+                "argument `path` is not a valid file path: {display_path} (a parent component is not a directory)"
+            )));
+        }
+        Err(error) if error.kind() == ErrorKind::IsADirectory => {
+            return Err(workspace_fs::invalid(format!(
+                "{display_path} is a directory, not a file"
+            )));
+        }
+        Err(error) => {
+            return Err(workspace_fs::internal(format!(
+                "cannot read {display_path}: {error}"
+            )));
+        }
+    };
+
+    // Invariant: hash the raw file bytes, not the decoded String. `apply_patch`
+    // verifies against `fs::read` bytes, so hashing the String here would
+    // mismatch on BOMs, CRLF, or any non-canonical encoding.
+    let sha256 = workspace_fs::sha256_hex(&bytes);
+    let size = bytes.len();
+    let content = String::from_utf8(bytes)
+        .map_err(|_| workspace_fs::internal(format!("file is not valid UTF-8: {display_path}")))?;
+
+    // `token` is the forward-compatible "copy this" slot. At Level 0 it is
+    // byte-identical to `sha256`; a Level 1 implementation would replace it
+    // with an HMAC while keeping `sha256` as the content hash.
+    let report = json!({
+        "path": display_path,
+        "token": sha256,
+        "sha256": sha256,
+        "size": size,
+        "content": content,
+    });
+    serde_json::to_string_pretty(&report)
+        .map_err(|error| workspace_fs::internal(format!("failed to serialize result: {error}")))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use crate::workspace_fs::test_support::temp_dir;
 
-    static SEQ: AtomicU64 = AtomicU64::new(0);
-
-    /// Throwaway git repo with an ignored `target/` dir.
-    struct Fixture {
-        dir: std::path::PathBuf,
-    }
-
-    impl Fixture {
-        fn new() -> Self {
-            let seq = SEQ.fetch_add(1, Ordering::Relaxed);
-            let dir =
-                std::env::temp_dir().join(format!("hanihi-mcp-src-{}-{seq}", std::process::id()));
-            fs::create_dir_all(dir.join(".git")).unwrap();
-            fs::create_dir_all(dir.join("src")).unwrap();
-            fs::create_dir_all(dir.join("target/debug")).unwrap();
-            fs::write(dir.join(".gitignore"), "target/\n").unwrap();
-            fs::write(dir.join("Cargo.toml"), "[package]\nname = \"fixture\"\n").unwrap();
-            fs::write(dir.join("src/main.rs"), "fn main() {}\n").unwrap();
-            fs::write(dir.join("target/debug/junk.rs"), "junk\n").unwrap();
-            Self { dir }
-        }
-
-        fn tree(&self) -> Arc<SourceTree> {
-            Arc::new(SourceTree::open_at(&self.dir).expect("fixture is a git repo"))
-        }
-    }
-
-    impl Drop for Fixture {
-        fn drop(&mut self) {
-            fs::remove_dir_all(&self.dir).unwrap_or(());
-        }
-    }
-
-    fn response_text(resp: &CallToolResponse) -> String {
-        match resp {
-            CallToolResponse::Complete(result) => result
-                .content
-                .iter()
-                .filter_map(|block| match block {
-                    ContentBlock::Text(t) => Some(t.text.clone()),
-                    _ => None,
-                })
-                .collect::<Vec<_>>()
-                .join("\n"),
-            _ => panic!("expected Complete response"),
-        }
-    }
-
-    fn is_error(resp: &CallToolResponse) -> bool {
-        matches!(resp, CallToolResponse::Complete(result) if result.is_error == Some(true))
+    #[test]
+    fn json_exposes_required_arguments() {
+        let schema = json();
+        assert_eq!(schema["name"], json!("read_file"));
+        assert_eq!(schema["inputSchema"]["required"], json!(["path"]));
     }
 
     #[test]
-    fn new_reports_read_file_schema() {
-        let tool = new();
-        assert_eq!(tool.name.as_ref(), "mcp_read_file");
-        assert!(
-            tool.description
-                .as_deref()
-                .unwrap_or_default()
-                .contains("Read a text file")
-        );
-        let schema = &*tool.input_schema;
-        assert_eq!(schema["type"], "object");
-        let required = schema["required"].as_array().expect("required array");
-        assert!(required.iter().any(|v| v == "path"));
+    fn run_requires_path() {
+        let error = run(&json!({})).unwrap_err();
+        assert_eq!(error.code, -32602);
+        assert!(error.message.contains("path"));
     }
 
     #[test]
-    fn path_arg_extracts_and_rejects() {
-        let mut with = serde_json::Map::new();
-        with.insert("path".into(), serde_json::json!("src/main.rs"));
-        assert_eq!(path_arg(&with).unwrap(), "src/main.rs");
-
-        let empty = serde_json::Map::new();
-        assert!(path_arg(&empty).is_err());
-
-        let mut non_string = serde_json::Map::new();
-        non_string.insert("path".into(), serde_json::json!(42));
-        assert!(path_arg(&non_string).is_err());
+    fn run_rejects_empty_path() {
+        let error = run(&json!({ "path": "" })).unwrap_err();
+        assert_eq!(error.code, -32602);
+        assert!(error.message.contains("empty"));
     }
 
     #[test]
-    fn read_returns_file_contents() {
-        let fx = Fixture::new();
-        let tree = fx.tree();
-        let resp = read(tree, "src/main.rs").unwrap();
-        assert!(!is_error(&resp));
-        assert!(response_text(&resp).contains("fn main"));
+    fn reads_file_and_returns_hash() {
+        let dir = temp_dir("read_file_hash");
+        let path = dir.join("a.txt");
+        std::fs::write(&path, "abc").unwrap();
+
+        let result = read_file(&path, "a.txt").unwrap();
+        let report: Value = serde_json::from_str(&result).unwrap();
+
+        assert_eq!(report["path"], json!("a.txt"));
+        assert_eq!(report["size"], json!(3));
+        assert_eq!(report["content"], json!("abc"));
+        let expected = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+        assert_eq!(report["sha256"], json!(expected));
+        assert_eq!(report["token"], json!(expected));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn read_reports_missing() {
-        let fx = Fixture::new();
-        let tree = fx.tree();
-        let resp = read(tree, "nope.rs").unwrap();
-        assert!(is_error(&resp));
-        assert!(response_text(&resp).contains("no such path:"));
+    fn missing_file_is_invalid_params() {
+        let dir = temp_dir("read_file_missing");
+        let error = read_file(&dir.join("missing.txt"), "missing.txt").unwrap_err();
+        assert_eq!(error.code, -32602);
+        assert!(error.message.contains("does not exist"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn read_rejects_ignored() {
-        let fx = Fixture::new();
-        let tree = fx.tree();
-        let resp = read(tree, "target/debug/junk.rs").unwrap();
-        assert!(is_error(&resp));
-        assert!(response_text(&resp).contains("git-ignored"));
+    fn path_through_regular_file_is_invalid_params() {
+        let dir = temp_dir("read_file_through_regular_file");
+        let file = dir.join("a.txt");
+        std::fs::write(&file, "x").unwrap();
+
+        let error = read_file(&file.join("anything"), "a.txt/anything").unwrap_err();
+        assert_eq!(error.code, -32602);
+        assert!(error.message.contains("a.txt/anything"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn read_rejects_escape() {
-        let fx = Fixture::new();
-        let tree = fx.tree();
-        let seq = SEQ.fetch_add(1, Ordering::Relaxed);
-        let name = format!("hanihi-mcp-outside-{}-{seq}", std::process::id());
-        let outside = std::env::temp_dir().join(&name);
-        fs::write(&outside, "secret").unwrap();
-        let rel = format!("../{name}");
-        let resp = read(tree, &rel).unwrap();
-        assert!(is_error(&resp));
-        assert!(response_text(&resp).contains("escapes"));
-        fs::remove_file(&outside).unwrap_or(());
+    fn directory_is_invalid_params() {
+        let dir = temp_dir("read_file_directory");
+        let sub = dir.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+
+        let error = read_file(&sub, "sub").unwrap_err();
+        assert_eq!(error.code, -32602);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn unavailable_reports_no_repo() {
-        let resp = unavailable();
-        assert!(is_error(&resp));
-        assert!(response_text(&resp).contains("no git repository"));
+    fn non_utf8_file_reports_internal_error() {
+        let dir = temp_dir("read_file_non_utf8");
+        let path = dir.join("a.bin");
+        std::fs::write(&path, [0xff, 0xfe]).unwrap();
+
+        let error = read_file(&path, "a.bin").unwrap_err();
+        assert_eq!(error.code, -32603);
+        assert!(error.message.contains("UTF-8"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

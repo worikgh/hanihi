@@ -1,36 +1,51 @@
-use rmcp::ErrorData;
-/// The `echo` tool.  A basic tool that returns the prompt unchanged
-use rmcp::model::{CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, Tool};
-use rmcp::service::{MaybeSendFuture, RequestContext, RoleServer};
-pub(crate) fn new() -> Tool {
-    Tool::new(
-        "mcp_echo",
-        "Echo the provided text back verbatim. Served over MCP.",
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-            "text": { "type": "string", "description": "Text to echo" }
-            },
-            "required": ["text"]
-        })
-        .as_object()
-        .expect("static schema is an object")
-        .clone(),
-    )
-}
+/// Provide local time
+// use crate::tool::Tool;
+use serde_json::{Value, json};
 
-pub(crate) fn call<'a>(
-    request: CallToolRequestParams,
-    _context: RequestContext<RoleServer>,
-) -> impl Future<Output = Result<CallToolResponse, ErrorData>> + MaybeSendFuture + 'a {
-    let text = request
-        .arguments
-        .clone()
-        .and_then(|mut args| args.remove("text"))
-        .and_then(|value| value.as_str().map(String::from))
-        .unwrap_or_default();
-    let ret = std::future::ready(Ok(CallToolResponse::from(CallToolResult::success(vec![
-        ContentBlock::text(text),
-    ]))));
-    ret.clone()
+pub(crate) fn exec(params: &Value, id: Value) -> Value {
+    eprintln!("{}:{}: exec", file!(), line!());
+    let content = params
+        .get("arguments")
+        .and_then(|arguments| arguments.get("message"))
+        .and_then(Value::as_str);
+    match content {
+        Some(text) => json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "result": {
+            "content": [
+            {
+            "type": "text",
+            "text": text
+            }
+            ],
+            "isError": false
+            }
+        }),
+        None => json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": {
+            "code": -32602,
+            "message": "Missing required string argument: message"
+            }
+        }),
+    }
+}
+pub(crate) fn json() -> Value {
+    json!({
+    "name": "echo",
+    "description": "Returns the supplied message unchanged.",
+    "inputSchema": {
+    "type": "object",
+    "properties": {
+    "message": {
+    "type": "string",
+    "description": "The message to echo."
+    }
+    },
+    "required": ["message"],
+    "additionalProperties": false
+    }
+    })
 }

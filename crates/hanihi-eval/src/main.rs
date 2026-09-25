@@ -15,8 +15,8 @@ use hanihi_core::connect_chat_model;
 use hanihi_core::session::SessionManager;
 use hanihi_core::session::log::LogEntry;
 use hanihi_core::{
-    SourceTree, builtin_get_time, builtin_grep, builtin_list_dir, builtin_read_file,
-    builtin_read_session_log, builtin_run_command, builtin_run_command_write, builtin_write_file,
+    SourceTree, builtin_get_time, builtin_grep, builtin_list_dir, builtin_read_session_log,
+    builtin_run_command, builtin_run_command_write, builtin_write_file,
 };
 use serde::Deserialize;
 use tracing_subscriber::EnvFilter;
@@ -680,7 +680,6 @@ async fn run_case(
             .join("sessions")
             .join(&session_name)
             .join("events.jsonl");
-        agent.add_tool(builtin_read_file(tree.clone()));
         agent.add_tool(builtin_list_dir(tree.clone()));
         agent.add_tool(builtin_grep(tree.clone()));
         if case.write_tools {
