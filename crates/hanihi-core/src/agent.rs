@@ -952,6 +952,11 @@ where
                             pending_results.push((tool_call.clone(), rendered));
                         }
                         Err(e) => {
+                            eprintln!(
+                                "{}:{}:execute_tool_with_cache error. {name}",
+                                file!(),
+                                line!(),
+                            );
                             let _ = tx
                                 .send(StreamEvent::Error {
                                     message: e.to_string(),
@@ -982,6 +987,7 @@ where
                 }
                 Ok(rig::streaming::StreamedAssistantContent::Unknown(_)) => {}
                 Err(e) => {
+                    eprintln!("{}:{}:execute_tool_with_cache error.", file!(), line!(),);
                     let _ = tx
                         .send(StreamEvent::Error {
                             message: e.to_string(),

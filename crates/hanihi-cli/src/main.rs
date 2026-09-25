@@ -369,6 +369,15 @@ async fn main() -> Result<(), AgentError> {
             if args.write {
                 agent.add_tool(builtin_write_file(tree));
             }
+            eprintln!(
+                "{}:{}: Tools: {}",
+                file!(),
+                line!(),
+                agent
+                    .tool_definitions()
+                    .iter()
+                    .fold(String::new(), |a, b| format!("{a}, {}", b.name))
+            );
         }
         Err(e) => println!("source tools disabled (no git repository): {e}"),
     }
@@ -383,6 +392,7 @@ async fn main() -> Result<(), AgentError> {
         let tools = client.tool_defs().await?;
         let count = tools.len();
         for tool in tools {
+            eprintln!("{}:{}: Adding tool: {}", file!(), line!(), tool.name());
             agent.add_tool(tool);
         }
         println!("attached MCP server '{program}': {count} tool(s)");
@@ -425,6 +435,15 @@ async fn main() -> Result<(), AgentError> {
         } else {
             ""
         },
+    );
+    eprintln!(
+        "{}:{}: Tools: {}",
+        file!(),
+        line!(),
+        agent
+            .tool_definitions()
+            .iter()
+            .fold(String::new(), |a, b| format!("{a}, {}", b.name))
     );
     if let Some(t) = prior_turns {
         println!(

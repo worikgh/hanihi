@@ -821,7 +821,12 @@ fn builtin_run_command_for(
                 }
                 check_command_argv_mode(&argv, mode)
                     .map_err(ToolExecutionError::permission_denied)?;
-
+                eprintln!(
+                    "{}:{}: run_command: argv: {}",
+                    file!(),
+                    line!(),
+                    argv.iter().fold(String::new(), |a, b| format!("{a}, {b}"))
+                );
                 let outcome =
                     execute_captured(&argv, tree.root(), Duration::from_secs(timeout_secs))
                         .await
