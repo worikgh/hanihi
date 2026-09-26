@@ -37,6 +37,10 @@ struct Args {
 
     #[arg(long="transcripts", short='t',  action = clap::ArgAction::SetTrue)]
     transcripts: bool,
+
+    /// Only the last entry
+    #[arg(long="last", short='l',  action = clap::ArgAction::SetTrue)]
+    last: bool,
 }
 
 enum Action {
@@ -93,6 +97,7 @@ impl Args {
 fn main() -> ExitCode {
     let args = Args::parse();
     let working_dir = PathBuf::from(DEFAULT_WORKING_DIR);
+    let last = args.last;
 
     // Calculate what the user wants to display.
     match args.action() {
@@ -105,7 +110,7 @@ fn main() -> ExitCode {
                 }
             }
         }
-        Ok(Action::ListSessions) => match list_sessions(&working_dir) {
+        Ok(Action::ListSessions) => match list_sessions(&working_dir, last) {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
                 eprintln!("{e}");
@@ -113,7 +118,7 @@ fn main() -> ExitCode {
             }
         },
         Ok(Action::CostOfSession(session)) => {
-            if let Err(error) = analyse_cost(&working_dir, &session) {
+            if let Err(error) = analyse_cost(&working_dir, &session, last) {
                 eprintln!("{error}");
                 ExitCode::FAILURE
             } else {
@@ -121,7 +126,7 @@ fn main() -> ExitCode {
             }
         }
         Ok(Action::Verbose(session)) => {
-            if let Err(e) = verbose_session(&working_dir, &session) {
+            if let Err(e) = verbose_session(&working_dir, &session, last) {
                 eprintln!("{e}");
                 ExitCode::FAILURE
             } else {
@@ -129,7 +134,7 @@ fn main() -> ExitCode {
             }
         }
         Ok(Action::Prompts(session)) => {
-            if let Err(e) = prompt_reply(&working_dir, &session) {
+            if let Err(e) = prompt_reply(&working_dir, &session, last) {
                 eprintln!("{e}");
                 ExitCode::FAILURE
             } else {
@@ -137,7 +142,7 @@ fn main() -> ExitCode {
             }
         }
         Ok(Action::Messages(session)) => {
-            if let Err(e) = messages(&working_dir, &session) {
+            if let Err(e) = messages(&working_dir, &session, last) {
                 eprintln!("{e}");
                 ExitCode::FAILURE
             } else {
@@ -145,7 +150,7 @@ fn main() -> ExitCode {
             }
         }
         Ok(Action::Transcripts(session)) => {
-            if let Err(e) = transcripts(&working_dir, &session) {
+            if let Err(e) = transcripts(&working_dir, &session, last) {
                 eprintln!("{e}");
                 ExitCode::FAILURE
             } else {
@@ -160,15 +165,20 @@ fn main() -> ExitCode {
 }
 
 /// Print names of all sessions on disk, one per line.
-fn list_sessions(working_dir: &Path) -> Result<(), String> {
+fn list_sessions(working_dir: &Path, last: bool) -> Result<(), String> {
     let names = session_names(working_dir)?;
     if names.is_empty() {
         println!("no sessions");
     } else {
-        for name in names {
-            println!("{name}");
+        if last {
+            println!("{}", names.iter().last().unwrap());
+        } else {
+            for name in names {
+                println!("{name}");
+            }
         }
     }
+
     Ok(())
 }
 
@@ -209,15 +219,31 @@ fn events(working_dir: &Path, session: &str) -> Result<Vec<LogEntry>, String> {
     Ok(logs.entries)
 }
 /// A report on the costs (in tokens) of LLM_Prompts
-fn analyse_cost(working_dir: &Path, session: &str) -> Result<(), String> {
-    for entry in &events(working_dir, session)? {
-        if let LogEntry::LlmResponse { ts, turn: _, data } = entry {
+fn analyse_cost(working_dir: &Path, session: &str, last: bool) -> Result<(), String> {
+    if last {
+        if let Some(LogEntry::LlmResponse { ts, turn: _, data }) = events(working_dir, session)?
+            .iter()
+            .rfind(|&e| matches!(e, LogEntry::LlmResponse { .. }))
+        {
             println!(
                 "{}\t{}\t{}",
                 ts.to_rfc3339(),
                 data.usage.input_tokens,
                 data.usage.output_tokens
             );
+        } else {
+            println!("No LlmResponse logs");
+        }
+    } else {
+        for entry in &events(working_dir, session)? {
+            if let LogEntry::LlmResponse { ts, turn: _, data } = entry {
+                println!(
+                    "{}\t{}\t{}",
+                    ts.to_rfc3339(),
+                    data.usage.input_tokens,
+                    data.usage.output_tokens
+                );
+            }
         }
     }
     Ok(())
@@ -246,8 +272,21 @@ fn analyse_session(working_dir: &Path, session: &str) -> Result<(), String> {
 }
 
 /// `--transcript` `-t` The user input, and the responses
-fn transcripts(working_dir: &Path, session: &str) -> Result<(), String> {
-    for event in events(working_dir, session)? {
+fn transcripts(working_dir: &Path, session: &str, last: bool) -> Result<(), String> {
+    let event_list = events(working_dir, session)?;
+    let event_list = event_list
+        .iter()
+        .filter(|e| {
+            matches!(e, LogEntry::UserInput { .. })
+                || matches!(e, LogEntry::LlmResponse { .. })
+                || matches!(e, LogEntry::Error { .. })
+        })
+        .collect::<Vec<&LogEntry>>();
+    if event_list.is_empty() {
+        println!("No entries");
+        return Ok(());
+    }
+    let output = |event: &LogEntry| {
         match event {
             LogEntry::UserInput { ts, turn, data } => {
                 println!("User Input: {ts} T({turn})");
@@ -255,7 +294,7 @@ fn transcripts(working_dir: &Path, session: &str) -> Result<(), String> {
                 println![];
             }
             LogEntry::LlmResponse { ts, turn, data } => {
-                if let Some(text) = data.text {
+                if let Some(text) = &data.text {
                     println!("LLM Response: {ts} T({turn})");
                     println!("{text}",);
                     println![];
@@ -266,30 +305,59 @@ fn transcripts(working_dir: &Path, session: &str) -> Result<(), String> {
                 println!("{:?}: {}", data.stage, data.message);
                 println![];
             }
-            _ => (),
+            _ => panic!("Invalid event: {event:?}"),
         };
+    };
+    if last {
+        let event = event_list.iter().last().unwrap();
+        output(event);
+    } else {
+        for event in event_list {
+            output(event);
+        }
     }
     Ok(())
 }
 
 /// `--messages` `-m` The messages send back to the LLM
-fn messages(working_dir: &Path, session: &str) -> Result<(), String> {
-    for event in events(working_dir, session)? {
-        if let LogEntry::LlmPrompt { ts, turn, data } = event {
+fn messages(working_dir: &Path, session: &str, last: bool) -> Result<(), String> {
+    let event_list = events(working_dir, session)?;
+    let event_list: Vec<&LogEntry> = event_list
+        .iter()
+        .filter(|e| matches!(e, LogEntry::LlmPrompt { .. }))
+        .collect();
+    if event_list.is_empty() {
+        println!("No LlmPrompt entries");
+        return Ok(());
+    }
+    let output = |entry: &LogEntry| -> Result<(), String> {
+        if let LogEntry::LlmPrompt { ts, turn, data } = entry {
             let messages =
                 serde_json::to_string_pretty(&data.messages).map_err(|e| format!("{e}"))?;
             println!("Messages: {ts} T({turn}) {} characters", messages.len());
             println!("{messages}");
+        }
+        Ok(())
+    };
+    if last {
+        let event = event_list.iter().last().unwrap();
+        output(event)?;
+    } else {
+        for event in event_list.iter() {
+            output(event)?;
         }
     }
     Ok(())
 }
 
 /// `--prompts` `-p`: The prompts and replies.
-fn prompt_reply(working_dir: &Path, session: &str) -> Result<(), String> {
+fn prompt_reply(working_dir: &Path, session: &str, last: bool) -> Result<(), String> {
     let mut last_send_ts: Option<DateTime<Utc>> = None;
-    for entry in &events(working_dir, session)? {
-        match entry {
+    let event_list = events(working_dir, session)?;
+    if event_list.is_empty() {
+        println!("No sessions");
+    } else {
+        let mut output = |entry: &LogEntry| match entry {
             LogEntry::UserInput { ts, turn, data } => {
                 println!("User Input: {ts} T({turn})");
                 println!("{}", data.text);
@@ -324,16 +392,33 @@ fn prompt_reply(working_dir: &Path, session: &str) -> Result<(), String> {
                 println!("LLM Tool Execution: {ts} T({turn}) {time} {}", data.name);
             }
             _ => (),
+        };
+        if last {
+            let entry = event_list.iter().last().unwrap();
+            output(entry);
+        } else {
+            for entry in &events(working_dir, session)? {
+                output(entry);
+            }
         }
     }
-
     Ok(())
 }
 
 /// Print everything from the session
-fn verbose_session(working_dir: &Path, session: &str) -> Result<(), String> {
-    for entry in &events(working_dir, session)? {
-        println!("{}", entry);
+fn verbose_session(working_dir: &Path, session: &str, last: bool) -> Result<(), String> {
+    let event_list = events(working_dir, session)?;
+    if event_list.is_empty() {
+        println!("No sessions");
+    } else {
+        if last {
+            let l = event_list.iter().last().unwrap();
+            println!("{}", l);
+        } else {
+            for entry in &event_list {
+                println!("{}", entry);
+            }
+        }
     }
     Ok(())
 }
