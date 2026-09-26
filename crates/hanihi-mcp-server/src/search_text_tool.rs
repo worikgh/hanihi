@@ -72,6 +72,7 @@ pub(crate) fn json() -> Value {
 pub(crate) fn exec(params: &Value, id: Value) -> Value {
     eprintln!("{}:{}: exec", file!(), line!());
     let arguments = params.get("arguments").unwrap_or(params);
+    eprintln!("{}:{}: exec", file!(), line!());
     match run(arguments) {
         Ok(text) => success(id, text),
         Err(error) => failure(id, error.code, error.message),
@@ -119,6 +120,7 @@ fn failure(id: Value, code: i64, message: String) -> Value {
 
 fn run(arguments: &Value) -> Result<String, ToolError> {
     let pattern = required_string(arguments, "pattern")?;
+    eprintln!("{}:{}: run pattern:{pattern}", file!(), line!());
 
     let literal = arguments
         .get("literal")
@@ -129,9 +131,12 @@ fn run(arguments: &Value) -> Result<String, ToolError> {
     let globs = Globs::from_arguments(arguments)?;
     let context = bounded_unsigned(arguments, "context", DEFAULT_CONTEXT, MAX_CONTEXT)?;
     let max_matches = bounded_unsigned(arguments, "max_matches", DEFAULT_MAX_MATCHES, MAX_MATCHES)?;
+    eprintln!("{}:{}: run arguments:{arguments:?}", file!(), line!());
     let root = resolve_root(arguments)?;
+    eprintln!("{}:{}: run ", file!(), line!());
 
     let mut output = SearchOutput::new();
+    eprintln!("{}:{}: run ", file!(), line!());
     walk(
         &root,
         &root,
@@ -179,16 +184,24 @@ fn bounded_unsigned(
 }
 
 fn resolve_root(arguments: &Value) -> Result<PathBuf, ToolError> {
+    eprintln!("{}:{}: resolve_root ", file!(), line!());
     let base = std::env::current_dir()
         .map_err(|error| internal(format!("cannot read current directory: {error}")))?;
 
     match arguments.get("path").and_then(Value::as_str) {
         None | Some("") => Ok(base),
         Some(relative) => {
+            eprintln!(
+                "{}:{}: resolve_root base: {base:?} relative: {relative}",
+                file!(),
+                line!()
+            );
             let root = base.join(relative);
             if root.is_dir() {
+                eprintln!("{}:{}: resolve_root Ok: {root:?}", file!(), line!());
                 Ok(root)
             } else {
+                eprintln!("{}:{}: resolve_root Error: {root:?}", file!(), line!());
                 Err(invalid(format!(
                     "search path does not exist or is not a directory: {relative}"
                 )))
@@ -363,6 +376,7 @@ fn walk(
     max_matches: usize,
     output: &mut SearchOutput,
 ) -> Result<(), std::io::Error> {
+    eprintln!("{}:{}: walk {root:?} ", file!(), line!(),);
     for entry in fs::read_dir(current)? {
         let entry = entry?;
         let path = entry.path();

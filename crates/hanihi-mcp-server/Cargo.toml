@@ -1,13 +1,25 @@
 [package]
 name = "hanihi-mcp-server"
-version.workspace = true
-edition.workspace = true
-license.workspace = true
-publish = false
+version = "0.1.0"
+edition = "2024"
+description = "MCP Server for Hānihi"
+default-run = "hanihi-mcp-server-ro"
+autobins = false
 
 [dependencies]
-hanihi-core = {  path = "../hanihi-core" }
-rmcp = { version = "3.1.2", features = ["transport-io"] }
-serde.workspace = true
-serde_json.workspace = true
-tokio.workspace = true
+chrono = "0.4.45"
+regex = "1.13.1"
+serde = {version = "1.0.229", features = [
+    "derive",
+    "rc",
+],}
+serde_json = "1"
+sha2 = "0.10"
+
+[[bin]]
+name = "hanihi-mcp-server-ro"
+path = "src/main.rs"
+
+[[bin]]
+name = "hanihi-mcp-server-rw"
+path = "src/bin/hanihi-mcp-server-rw.rs"
