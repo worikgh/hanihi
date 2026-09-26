@@ -26,43 +26,43 @@ pub(crate) fn json() -> Value {
     "name": "search_text",
     "description": "Regex or literal search with file globs. Returns matching lines plus a small context window.",
     "inputSchema": {
-        "type": "object",
-        "properties": {
-        "pattern": {
-            "type": "string",
-            "description": "The text to search for. Treated as a regular expression unless `literal` is true."
-        },
-        "literal": {
-            "type": "boolean",
-            "description": "Treat `pattern` as a fixed string instead of a regular expression.",
-            "default": false
-        },
-        "globs": {
-            "type": "array",
-            "items": { "type": "string" },
-            "description": "File globs limiting which files are searched, e.g. \"*.rs\", \"src/**/*.rs\", \"tests/**/*.rs\". Defaults to all files."
-        },
-        "path": {
-            "type": "string",
-            "description": "Directory to search, relative to the repository root. Defaults to the repository root."
-        },
-        "context": {
-            "type": "integer",
-            "description": "Number of context lines to show before and after each match.",
-            "default": DEFAULT_CONTEXT,
-            "minimum": 0,
-            "maximum": MAX_CONTEXT
-        },
-        "max_matches": {
-            "type": "integer",
-            "description": "Maximum number of matching lines to report.",
-            "default": DEFAULT_MAX_MATCHES,
-            "minimum": 1,
-            "maximum": MAX_MATCHES
-        }
-        },
-        "required": ["pattern"],
-        "additionalProperties": false
+    "type": "object",
+    "properties": {
+    "pattern": {
+        "type": "string",
+        "description": "The text to search for. Treated as a regular expression unless `literal` is true."
+    },
+    "literal": {
+        "type": "boolean",
+        "description": "Treat `pattern` as a fixed string instead of a regular expression.",
+        "default": false
+    },
+    "globs": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "File globs limiting which files are searched, e.g. \"*.rs\", \"src/**/*.rs\", \"tests/**/*.rs\". Defaults to all files."
+    },
+    "path": {
+        "type": "string",
+        "description": "Directory to search, relative to the repository root. Defaults to the repository root."
+    },
+    "context": {
+        "type": "integer",
+        "description": "Number of context lines to show before and after each match.",
+        "default": DEFAULT_CONTEXT,
+        "minimum": 0,
+        "maximum": MAX_CONTEXT
+    },
+    "max_matches": {
+        "type": "integer",
+        "description": "Maximum number of matching lines to report.",
+        "default": DEFAULT_MAX_MATCHES,
+        "minimum": 1,
+        "maximum": MAX_MATCHES
+    }
+    },
+    "required": ["pattern"],
+    "additionalProperties": false
     }
     })
 }
@@ -104,8 +104,8 @@ fn success(id: Value, text: String) -> Value {
     "jsonrpc": "2.0",
     "id": id,
     "result": {
-        "content": [{ "type": "text", "text": text }],
-        "isError": false
+    "content": [{ "type": "text", "text": text }],
+    "isError": false
     }
     })
 }
