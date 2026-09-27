@@ -34,20 +34,20 @@ pub(crate) fn internal(message: impl Into<String>) -> ToolError {
 
 pub(crate) fn success(id: Value, text: String) -> Value {
     json!({
-        "jsonrpc": "2.0",
-        "id": id,
-        "result": {
-            "content": [{ "type": "text", "text": text }],
-            "isError": false
-        }
+    "jsonrpc": "2.0",
+    "id": id,
+    "result": {
+        "content": [{ "type": "text", "text": text }],
+        "isError": false
+    }
     })
 }
 
 pub(crate) fn failure(id: Value, code: i64, message: String) -> Value {
     json!({
-        "jsonrpc": "2.0",
-        "id": id,
-        "error": { "code": code, "message": message }
+    "jsonrpc": "2.0",
+    "id": id,
+    "error": { "code": code, "message": message }
     })
 }
 
@@ -99,12 +99,16 @@ pub(crate) fn resolve_workspace_path(root: &Path, relative: &str) -> Result<Path
     // Canonicalize the nearest existing ancestor so symlinks pointing outside
     // the workspace are detected even when the final path does not exist yet.
     let mut existing = candidate.as_path();
-    while !existing.exists() {
+    while !existing.is_dir() {
         existing = existing
             .parent()
             .ok_or_else(|| format!("path has no existing ancestor: {relative}"))?;
     }
-
+    eprintln!(
+        "{}:{}: resolve_workspace_path: existing: {existing:?}",
+        file!(),
+        line!(),
+    );
     let canonical_existing = existing
         .canonicalize()
         .map_err(|error| format!("cannot resolve path ancestor: {error}"))?;
@@ -117,7 +121,11 @@ pub(crate) fn resolve_workspace_path(root: &Path, relative: &str) -> Result<Path
     if !resolved.starts_with(&canonical_root) {
         return Err(format!("path escapes the workspace: {relative}"));
     }
-
+    eprintln!(
+        "{}:{}: resolve_workspace_path resolved: {resolved:?}",
+        file!(),
+        line!(),
+    );
     Ok(resolved)
 }
 
@@ -157,7 +165,11 @@ pub(crate) fn normalize_relative(
             _ => return Err(format!("unsupported path component in: {relative}")),
         }
     }
-
+    eprintln!(
+        "{}:{}: normalize_relative root: {root:?} relative: {relative} candidate: {candidate:?} normalised: {normalized:?}",
+        file!(),
+        line!(),
+    );
     Ok((candidate, normalized))
 }
 

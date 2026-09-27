@@ -10,19 +10,19 @@ use std::path::Path;
 /// `tools/list` entry for this tool.
 pub(crate) fn json() -> Value {
     json!({
-        "name": "read_file",
-        "description": "Reads the file at the given workspace-relative path and returns its content, byte size, and SHA-256. The `token` value is the exact `base_token` to pass to `apply_patch` for this path.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "Path of the file to read, relative to the workspace root."
-                }
-            },
-            "required": ["path"],
-            "additionalProperties": false
+    "name": "read_file",
+    "description": "Reads the file at the given workspace-relative path and returns its content, byte size, and SHA-256. The `token` value is the exact `base_token` to pass to `apply_patch` for this path.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+        "path": {
+            "type": "string",
+            "description": "Path of the file to read, relative to the workspace root."
         }
+        },
+        "required": ["path"],
+        "additionalProperties": false
+    }
     })
 }
 
@@ -38,15 +38,18 @@ pub(crate) fn exec(params: &Value, id: Value) -> Value {
 
 fn run(arguments: &Value) -> Result<String, ToolError> {
     let path = workspace_fs::required_non_empty_string(arguments, "path")?;
+    eprintln!("{}:{}: run path: {path}", file!(), line!(),);
 
     let root = workspace_fs::workspace_root()?;
     let resolved =
         workspace_fs::resolve_workspace_path(&root, path).map_err(workspace_fs::invalid)?;
 
+    eprintln!("{}:{}: run resolved: {resolved:?}", file!(), line!(),);
     read_file(&resolved, path)
 }
 
 fn read_file(path: &Path, display_path: &str) -> Result<String, ToolError> {
+    eprintln!("{}:{}: read_file path:{path:?}", file!(), line!(),);
     let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == ErrorKind::NotFound => {
@@ -70,6 +73,7 @@ fn read_file(path: &Path, display_path: &str) -> Result<String, ToolError> {
             )));
         }
     };
+    eprintln!("{}:{}: read_file", file!(), line!(),);
 
     // Invariant: hash the raw file bytes, not the decoded String. `apply_patch`
     // verifies against `fs::read` bytes, so hashing the String here would
@@ -79,16 +83,18 @@ fn read_file(path: &Path, display_path: &str) -> Result<String, ToolError> {
     let content = String::from_utf8(bytes)
         .map_err(|_| workspace_fs::internal(format!("file is not valid UTF-8: {display_path}")))?;
 
+    eprintln!("{}:{}: read_file", file!(), line!(),);
     // `token` is the forward-compatible "copy this" slot. At Level 0 it is
     // byte-identical to `sha256`; a Level 1 implementation would replace it
     // with an HMAC while keeping `sha256` as the content hash.
     let report = json!({
-        "path": display_path,
-        "token": sha256,
-        "sha256": sha256,
-        "size": size,
-        "content": content,
+    "path": display_path,
+    "token": sha256,
+    "sha256": sha256,
+    "size": size,
+    "content": content,
     });
+    eprintln!("{}:{}: read_file", file!(), line!(),);
     serde_json::to_string_pretty(&report)
         .map_err(|error| workspace_fs::internal(format!("failed to serialize result: {error}")))
 }
