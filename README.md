@@ -26,15 +26,26 @@ crates/
 ├── hanihi-cli/         # binary: clap CLI + reedline REPL + --once mode
 ├── hanihi-eval/        # binary: eval runner — run test cases against a live
 │                       #   LLM and check assertions against the session log
-└── hanihi-mcp-server/  # binary: MCP stdio server 
+├── hanihi-mcp-server/  # binaries: MCP stdio servers (ro + rw)
+└── hanihi-session/     # binary: read-only session inspection (no model
+                        #   needed); also an `analyse` sub-binary
 evals/
-└── cases/              # eval test cases (TOML + README per case)
+└── cases/              # eval test cases (case.toml + README per case)
+
+prompts/                # reusable system prompts (rust_coding, self-improvement)
+plans/                  # design notes, numbered
+reports/                # write-ups of applied changes
+scripts/                # self-improve.sh — minimal external self-improvement loop
 ```
 
-> Crate *package* names are ASCII (`hanihi-core`, `hanihi-cli`, `hanihi-eval`)
-> because crates.io only accepts ASCII names. The project name keeps the macron
-> (`hānihi`), as does the CLI's display name. The lib target is
-> `hanihi_core` (rustc requires ASCII identifiers for `--extern`).
+> Crate *package* names are ASCII (`hanihi-core`, `hanihi-cli`, `hanihi-eval`,
+> `hanihi-mcp-server`, `hanihi-session`) because crates.io only accepts ASCII
+> names. The project name keeps the macron (`hānihi`), as does the CLI's
+> display name. The lib target is `hanihi_core` (rustc requires ASCII
+> identifiers for `--extern`).
+
+> Workspace version is **0.3.0** (the MCP server crate is versioned separately
+> at 0.1.0).
 
 ## Features
 
@@ -50,8 +61,6 @@ evals/
   session and the agent replays all prior turns to pick up where it left off.
   Filesystem-locked for safety. Cumulative token usage and per-call latencies
   are computable from the log.
-- **Built-in tools** — `get_time` (local RFC 3339 timestamp), `echo`,
-  `read_file` + `list_dir` (source-tree access, see below)
 - **Source tree access** — the agent can read and list the enclosing git
   repository (found by walking up from the cwd). Everything is filtered by
   the repo's ignore rules via the `ignore` crate: `.gitignore` and
@@ -72,34 +81,40 @@ evals/
   enclosing repo (escapes, ignored paths, `.ignore`, `.git*` refused);
   changes land as local git commits — never pushed. Off by default: without
   `--write` the tools are not even registered.
-- **Task mode (`--task`)** — one long-horizon turn with a system prompt
-  encoding the workflow gates (`cargo fmt` → `cargo test` → `cargo build`
-  → `cargo clippy -- -D warnings` → commit). `--max-turns N` (default 50 in
-  task mode). `scripts/self-improve.sh` drives the full loop: task mode →
-  rebuild → eval gate.
 - **MCP client** — spawn an MCP stdio server, wrap each of its tools as an
   agent tool dispatching over `tools/call`
+    * Two MCP servers: One for read only tools (`hānihi-mcp-server-ro` and one for read/write tools `hānihi-mcp-server-rw`
 - **CLI** — interactive reedline REPL (`/help /tools /clear /session /file
   /quit`), `--once` one-shot mode for scripting and smoke tests, repeatable
   `--mcp-command`, session management (`--session` / `--new-session`)
+  * System-prompt control: `--prompt TEXT` and `--prompt-file PATH`
+    (both repeatable; appended to the prompt and persisted to the session on
+    resume), and `--new-prompt` to replace the stored prompt outright.
 - **Eval harness** (`hanihi-eval`) — run TOML-based test cases against a
   live LLM, assert tool calls / text content / error-free completion /
   latency / token budgets against the session log. Separate from
   `cargo test` because it needs API keys.
+  * Also `--list`, `--case NAME`, `--keep-sessions`, and `--timeout SECS`.
+  * MCP servers are **not** yet supported here: passing `--mcp-command`
+    fails with "MCP support in eval runner not yet implemented".
+
+> **Tool inventory.** Built-in tools are `get_time`, `list_dir`, `grep`,
+> `run_command`, and `read_session_log` (always registered), plus
+> `write_file` and `apply_patch` under `--write`. There is no built-in
+> `echo`; `echo` exists only as an MCP tool served by
+> `hānihi-mcp-server-ro`.
 
 ## Run
 
 ```bash
-# One-shot turn (streaming output)
-cargo run -p hanihi-cli -- --once "What time is it? Use the get_time tool."
-
 # Create a named session and have a conversation
-cargo run -p hanihi-cli -- --new-session my-chat
+cargo run  -p hanihi-cli -- --mcp-command hānihi-mcp-server-ro  -- --new-session my-chat
+
 # Later, resume:
 cargo run -p hanihi-cli -- --session my-chat
 
-# Attach an MCP server and talk interactively
-cargo run -p hanihi-cli -- --mcp-command "./target/debug/hanihi-mcp-server"
+# Create a named session and have a conversation and edit code
+cargo run -- --mcp-command hānihi-mcp-server-ro --mcp-command hānihi-mcp-server-rw   -p hanihi-cli --new-session my-chat
 
 # Run the eval suite against DeepSeek
 LLM_API_KEY=*** cargo run -p hanihi-eval -- --cases-dir ./evals/cases
@@ -109,19 +124,22 @@ LLM_API_KEY=*** cargo run -p hanihi-eval -- --cases-dir ./evals/cases
 
 Configuration — every flag has an environment variable:
 
-| Flag | Env | Default |
-|---|---|---|
-| `--base-url` | `LLM_BASE_URL` | `https://api.deepseek.com/v1` |
-| `--api-key` | `LLM_API_KEY` | — (required) |
-| `--model` | `LLM_MODEL` | `deepseek-chat` |
-| `--session NAME` | — | `default-session` |
-| `--new-session NAME` | — | none (auto-creates `default-session` on first run) |
-| `--working-dir DIR` | `HANIHI_WORKING_DIR` | `./working` |
-| `--mcp-command CMD` | — | none (repeatable) |
-| `--once PROMPT` | — | none |
-| `--write` | — | write tools NOT registered |
-| `--task PROMPT` | — | none (takes precedence over `--once`) |
-| `--max-turns N` | — | 29  |
+| Flag                 | Env                  | Default                                            |
+|----------------------|----------------------|----------------------------------------------------|
+| `--base-url`         | `LLM_BASE_URL`       | `https://api.deepseek.com/v1`                      |
+| `--api-key`          | `LLM_API_KEY`        | — (required)                                       |
+| `--model`            | `LLM_MODEL`          | `deepseek-chat`                                    |
+| `--session NAME`     | —                    | `default-session`                                  |
+| `--new-session NAME` | —                    | none (auto-creates `default-session` on first run) |
+| `--working-dir DIR`  | `HANIHI_WORKING_DIR` | `./working`                                        |
+| `--mcp-command CMD`  | —                    | none (repeatable)                                  |
+| `--once PROMPT`      | —                    | none                                               |
+| `--write`            | —                    | write tools NOT registered                         |
+| `--task PROMPT`      | —                    | none (takes precedence over `--once`)              |
+| `--max-turns N`      | —                    | 29                                                 |
+| `--prompt TEXT`      | —                    | none (repeatable; appends to system prompt)        |
+| `--prompt-file PATH` | —                    | none (repeatable; appends file contents)           |
+| `--new-prompt`       | —                    | off (replace stored prompt with appends)           |
 
 ## REPL commands
 
@@ -138,8 +156,10 @@ as a normal message.
 | `/file <PATH>` | Read the file at `<PATH>` (relative to the working dir, or absolute) and send its contents to the model as the prompt. Lets multi-line content — a prompt, a plan, or code — be loaded from disk in one go when only a single line can be typed. |
 | `/quit` (or `/exit`) | Exit the REPL. |
 
-`/file` requires a non-empty path; an empty or unreadable file prints an
-error and does not run a turn.
+`/session` also prints the last turn's footer (model, turn, tool calls, tokens
+in/out, `max_turns`), or `No TurnSummary` if no turn has run yet.
+
+`/file` requires a non-empty path; an empty or unreadable file prints an error and does not run a turn.
 
 ## How it works
 
@@ -153,13 +173,37 @@ error and does not run a turn.
 3. If the model requests tool calls → record the assistant message, execute
    each tool (built-in or MCP), append results as `tool_result` messages,
    loop back to 1.
-4. `max_turns` (default 29) guards runaway tool-call loops.
+4. `max_turns` (default 29) guards runaway tool-call loops. A separate
+   `MAX_TOOL_CALLS_PER_TURN` (100) bounds tool executions within one turn.
 
 `Agent::run_streaming` does the same but yields events through a
 `tokio::sync::mpsc` channel: text arrives token-by-token, tool calls are
 announced as they start and complete, and results are reported as they
 execute. The agent loop runs on a spawned task so the caller can read events
 in real time.
+
+#### Context compaction
+
+Before every completion request the agent estimates the input size and, if it
+exceeds the model's context budget (`context_limit_for(model)`, minus a
+reserve for output tokens), summarizes the older portion of the history into
+a rolling summary and drops those messages. The summary is injected into the
+effective preamble under a `## Summary of the conversation so far:` heading,
+and is cumulative across turns. Non-streaming runs log a `compaction` entry
+immediately before the `llm_prompt` it produced; streaming runs emit
+`StreamEvent::Compaction`.
+
+If there is no old history to summarize (a single dominating recent turn),
+compaction is skipped and tool-output truncation is the backstop instead.
+
+#### Read-only tool cache
+
+Within a single turn, repeated identical calls to a read-only tool
+(`read_file`, `list_dir`, `grep`, `read_session_log`, `echo`) reuse the first
+result instead of re-executing; the third and later identical calls are
+refused with a "duplicate call skipped" note. Any successful `apply_patch` or
+`write_file` invalidates the cache, so writes are never presented with stale
+reads. The cache is cleared at the start of each turn.
 
 ### Sessions
 
@@ -169,33 +213,42 @@ session is a subdirectory under `working/sessions/<name>/`:
 ```
 session.json    — static metadata (id, name, created_at, model, system_prompt)
 events.jsonl    — append-only JSONL log: user_input, llm_prompt, llm_response,
-                  tool_execution, turn_complete, error, lifecycle events
+                  tool_execution, turn_complete, compaction, error, lifecycle
+                  events
+history.txt     — reedline line-editing history (REPL only)
 .lock           — filesystem lock (one process per session)
 ```
 
 On open, `replay_history()` scans the log and reconstructs the agent's
 message history from completed turns. Partial turns (log ends without
 `turn_complete`) are dropped. Streaming sessions that lack `llm_response`
-entries get synthetic assistant messages inserted during replay.
+entries get synthetic assistant messages inserted during replay. `compaction`
+and `llm_prompt` entries are skipped — they are not needed to rebuild history.
+Tool calls and their results are paired by `tool_call_id`, not by log
+position, so streaming and non-streaming logs replay identically.
 
 ### Eval runner
 
 Each case is a directory under `evals/cases/` containing a `case.toml`:
 
 ```toml
-user_input = "Use the echo tool to repeat back: hello world"
+user_input = "What time is it right now? Use the get_time tool to find out, then tell me."
 
 [[assertions]]
 type = "tool_called"
-name = "echo"
+name = "get_time"
 
 [[assertions]]
-type = "text_contains"
-value = "hello world"
+type = "text_regex"
+pattern = "20\\d{2}"
 
 [[assertions]]
 type = "no_error"
 ```
+
+(That is `evals/cases/002-get-time/case.toml` verbatim. `001-basic-echo`
+asserts on the MCP `echo` tool, so it requires an attached MCP server — which
+the eval runner does not yet support.)
 
 The runner creates a temp session, runs the prompt against a live LLM, then
 checks each assertion against the `events.jsonl` log. Assertion types:
@@ -209,18 +262,23 @@ Tools are rig `PortableDynamicTool`s: name + description + JSON schema + an
 async callback over raw `serde_json::Value`. MCP tools get wrapped into this
 shape, dispatching over `tools/call` on the connected service.
 
+Case fields: `user_input` (required), `assertions` (required), plus the
+optional `model`, `system_prompt`, `source_tree`, `write_tools`, `repo`, and
+`fixture`. `repo` is resolved relative to the case directory.
+
 The library is model-agnostic: `Agent<M: CompletionModel>` works with rig's
 `MockCompletionModel` in tests and any OpenAI-compatible chat-completions
 endpoint in production (see `connect_chat_model`).
 
 ## Status
 
-- 39 unit tests (rig `MockCompletionModel`, scripted turns, temp-repo
-  fixtures, session replay — no network), `cargo clippy --workspace --all-targets -- -D warnings` clean
+- Unit and integration tests (rig `MockCompletionModel`, scripted turns,
+  temp-repo fixtures, session replay — no network), including the
+  `replay_streaming` integration test
 - Smoke-tested against DeepSeek (`deepseek-chat`): `get_time` round trip ✔,
   MCP `mcp_echo` round trip ✔, streaming output ✔, session replay across
   restarts ✔, eval runner against live model ✔
-- 0.2.0 on crates.io
+- Workspace version 0.3.0
 
 ## Testing
 
@@ -234,32 +292,15 @@ LLM_API_KEY=*** cargo run -p hanihi-eval -- --list
 LLM_API_KEY=*** cargo run -p hanihi-eval -- --case 001-basic-echo
 ```
 
-## Publishing (crates.io)
-
-`hanihi-core` and `hanihi-cli` are publishable (both inherit version,
-license, repository, and readme from the workspace). `hanihi-eval` and
-`hanihi-mcp-server` are not published (`publish = false`).
-
-Publish order matters: **`hanihi-core` first**, then `hanihi-cli` (it depends
-on the published `hanihi-core`):
-
-```bash
-cargo login                      # once: paste token from https://crates.io/settings/tokens
-cargo publish -p hanihi-core
-cargo publish -p hanihi-cli
-```
-
-Sanity-check locally before publishing:
-
-```bash
-cargo package -p hanihi-core --list     # inspect tarball contents
-cargo publish -p hanihi-core --dry-run  # full verification, no upload
-```
+`cargo clippy --workspace --all-targets -- -D warnings` is intended to be
+clean. `hanihi-mcp-server` currently emits one `dead_code` warning
+(`resolve_directory` in `workspace_fs.rs` is unused) with default
+`--all-targets`; fix or remove that function to keep the gate honest.
 
 ## Known TODOs
 
-- Tool name collisions: first registration wins (builtin `echo` shadows an MCP
-  `echo`). Namespacing MCP tools is a future concern.
+- Tool name collisions: first registration wins (the built-in `get_time`
+  shadows an MCP `get_time`). Namespacing MCP tools is a future concern.
 - `add_ignore` tool / `--regenerate-ignore` — grow `.ignore` from within the
   agent.
 - **LSP via MCP** — bridge an LSP server (goto-definition, references,
@@ -277,5 +318,3 @@ cargo publish -p hanihi-core --dry-run  # full verification, no upload
   driver script is the minimal external version; do that first.
 - **Eval compare mode** — `--baseline`/`--compare` in `hanihi-eval` to diff
   pass/fail + token usage between runs (stretch goal from plan 005).
-- `add_ignore` tool / `--regenerate-ignore` — grow `.ignore` from within the
-  agent.
