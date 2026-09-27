@@ -35,7 +35,9 @@ const DEFAULT_WORKING_DIR: &str = "./working";
 /// upper bound so runaway tool-call loops still terminate, but far above any
 /// realistic working session.
 const DEFAULT_MAX_TURNS: usize = 29;
-/// Default cap on model turns in task mode (long-horizon self-improvement).
+/// Default cap on model turns in task mode. Same value as
+/// [`DEFAULT_MAX_TURNS`]; kept as a separate constant so the two can diverge
+/// if task mode ever needs a longer horizon.
 const TASK_MAX_TURNS: usize = 29;
 
 #[derive(Parser, Debug)]
@@ -94,7 +96,7 @@ struct Args {
     #[arg(long, value_name = "PROMPT")]
     task: Option<String>,
 
-    /// Maximum model turns per request (default: 1000; task mode: 1000).
+    /// Maximum model turns per request (default: 29; task mode: 29).
     #[arg(long)]
     max_turns: Option<usize>,
 
