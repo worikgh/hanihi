@@ -37,17 +37,21 @@ fn is_sentinel_version(hash: &str) -> bool {
 pub(crate) fn json() -> Value {
     json!({
     "name": "apply_patch",
-    "description": "Applies unified diffs to workspace files after verifying each file's current SHA-256 hash. Returns the resulting diff and refuses paths outside the workspace or protected files.",
+    "description": "Applies unified diffs or whole-file replacements to workspace files after verifying each file's current SHA-256 hash. Returns the resulting diff and refuses paths outside the workspace or protected files.",
     "inputSchema": {
         "type": "object",
         "properties": {
         "file": {
             "type": "string",
-            "description": "Path to edit, relative to the workspace root. Use together with `patch` and `base_token` for a single-file edit."
+            "description": "Path to edit, relative to the workspace root. Use together with `patch` or `content` and `base_token` for a single-file edit."
         },
         "patch": {
             "type": "string",
-            "description": "Unified diff to apply. Use together with `file` and `base_token`."
+            "description": "Unified diff to apply. Use together with `file` and `base_token`. Each hunk header must carry ranges, e.g. \"@@ -1,1 +1,1 @@\". For whole-file replacement, use `content` instead."
+        },
+        "content": {
+            "type": "string",
+            "description": "Replace the entire file with this UTF-8 text. Use together with `file` and `base_token`. Mutually exclusive with `patch`; the returned diff is computed by the server. An empty string truncates the file."
         },
         "base_token": {
             "type": "string",
@@ -68,13 +72,17 @@ pub(crate) fn json() -> Value {
                 },
                 "patch": {
                 "type": "string",
-                "description": "Unified diff to apply to this file."
+                "description": "Unified diff to apply to this file. Each hunk header must carry ranges, e.g. \"@@ -1,1 +1,1 @@\". Use `content` instead for whole-file replacement."
+                },
+                "content": {
+                "type": "string",
+                "description": "Replace the entire file with this UTF-8 text. Mutually exclusive with `patch`."
                 }
             },
-            "required": ["path", "base_token", "patch"],
+            "required": ["path", "base_token"],
             "additionalProperties": false
             },
-            "description": "Edits to apply together. Use either `files` or the single-file `file`/`patch`/`base_token` form."
+            "description": "Edits to apply together. Use either `files` or the single-file `file`/`patch`/`content`/`base_token` form."
         }
         },
         "required": [],
@@ -133,11 +141,19 @@ fn failure(id: Value, code: i64, message: String) -> Value {
     })
 }
 
+/// One requested edit: either a unified diff to apply or a whole-file
+/// replacement. The two forms are mutually exclusive.
+#[derive(Debug)]
+enum EditOp {
+    Patch { patch: String },
+    Replace { content: String },
+}
+
 #[derive(Debug)]
 struct Edit {
     path: String,
     base_token: String,
-    patch: String,
+    op: EditOp,
 }
 
 fn run(arguments: &Value) -> Result<String, ToolError> {
@@ -154,12 +170,13 @@ fn run(arguments: &Value) -> Result<String, ToolError> {
 fn parse_edits(arguments: &Value) -> Result<Vec<Edit>, ToolError> {
     let single_file = arguments.get("file").is_some()
         || arguments.get("patch").is_some()
+        || arguments.get("content").is_some()
         || arguments.get("base_token").is_some();
     let multi_file = arguments.get("files").is_some();
 
     if single_file && multi_file {
         return Err(invalid(
-            "use either the single-file `file`/`patch`/`base_token` form or `files`, not both",
+            "use either the single-file `file`/`patch`/`content`/`base_token` form or `files`, not both",
         ));
     }
 
@@ -171,29 +188,50 @@ fn parse_edits(arguments: &Value) -> Result<Vec<Edit>, ToolError> {
 
         let mut edits = Vec::with_capacity(array.len());
         for item in array {
-            let path = required_string(item, "path")?;
-            let base_token = required_string(item, "base_token")?;
-            let patch = required_string(item, "patch")?;
-            edits.push(Edit {
-                path: path.to_string(),
-                base_token: base_token.to_string(),
-                patch: patch.to_string(),
-            });
+            edits.push(edit_from_arguments(item, "path")?);
         }
         Ok(edits)
     } else if single_file {
-        let path = required_string(arguments, "file")?;
-        let base_token = required_string(arguments, "base_token")?;
-        let patch = required_string(arguments, "patch")?;
-        Ok(vec![Edit {
-            path: path.to_string(),
-            base_token: base_token.to_string(),
-            patch: patch.to_string(),
-        }])
+        Ok(vec![edit_from_arguments(arguments, "file")?])
     } else {
         Err(invalid(
-            "provide either `files` or the single-file `file`/`patch`/`base_token` form",
+            "provide either `files` or the single-file `file`/`patch`/`content`/`base_token` form",
         ))
+    }
+}
+
+fn edit_from_arguments(arguments: &Value, path_name: &str) -> Result<Edit, ToolError> {
+    let path = required_string(arguments, path_name)?;
+    let base_token = required_string(arguments, "base_token")?;
+    let op = edit_op(arguments)?;
+    Ok(Edit {
+        path: path.to_string(),
+        base_token: base_token.to_string(),
+        op,
+    })
+}
+
+/// Parses the edit operation from a single-file or `files[]` item object.
+/// `patch` must be non-empty; `content` may be empty (truncate the file).
+fn edit_op(arguments: &Value) -> Result<EditOp, ToolError> {
+    let has_patch = arguments.get("patch").is_some();
+    let has_content = arguments.get("content").is_some();
+
+    match (has_patch, has_content) {
+        (true, true) => Err(invalid("use either `patch` or `content`, not both")),
+        (true, false) => Ok(EditOp::Patch {
+            patch: required_string(arguments, "patch")?.to_string(),
+        }),
+        (false, true) => {
+            let content = arguments
+                .get("content")
+                .and_then(Value::as_str)
+                .ok_or_else(|| invalid("argument `content` must be a string"))?;
+            Ok(EditOp::Replace {
+                content: content.to_string(),
+            })
+        }
+        (false, false) => Err(invalid("each edit needs either `patch` or `content`")),
     }
 }
 
@@ -219,7 +257,8 @@ fn apply_edits_in(root: &Path, edits: &[Edit]) -> Result<Value, ToolError> {
         original_bytes: Vec<u8>,
         lines: Vec<String>,
         ends_with_newline: bool,
-        patch: ParsedPatch,
+        patch: Option<ParsedPatch>,
+        replacement: Option<String>,
     }
 
     // Phase 1: resolve, read, hash-verify, and parse every edit. Nothing is
@@ -272,7 +311,14 @@ fn apply_edits_in(root: &Path, edits: &[Edit]) -> Result<Value, ToolError> {
 
         let original = String::from_utf8(bytes.clone())
             .map_err(|_| internal(format!("file is not valid UTF-8: {}", edit.path)))?;
-        let patch = parse_patch(&edit.patch, &edit.path).map_err(invalid)?;
+
+        let (replacement, patch) = match &edit.op {
+            EditOp::Replace { content } => (Some(content.clone()), None),
+            EditOp::Patch { patch } => {
+                (None, Some(parse_patch(patch, &edit.path).map_err(invalid)?))
+            }
+        };
+
         let (lines, ends_with_newline) = split_lines(&original);
 
         prepared.push(Prepared {
@@ -283,6 +329,7 @@ fn apply_edits_in(root: &Path, edits: &[Edit]) -> Result<Value, ToolError> {
             lines,
             ends_with_newline,
             patch,
+            replacement,
         });
     }
 
@@ -294,12 +341,23 @@ fn apply_edits_in(root: &Path, edits: &[Edit]) -> Result<Value, ToolError> {
         diff: String,
     }
 
-    // Phase 2: apply every patch in memory. Any failure aborts before writes.
+    // Phase 2: apply every edit in memory. Any failure aborts before writes.
     let mut applied = Vec::with_capacity(prepared.len());
     for item in prepared {
-        let new_lines =
-            apply_hunks(&item.lines, &item.patch, &item.display_path).map_err(internal)?;
-        let new_content = join_lines(&new_lines, item.ends_with_newline);
+        let new_content = match (&item.replacement, &item.patch) {
+            (Some(content), _) => content.clone(),
+            (None, Some(patch)) => {
+                let new_lines =
+                    apply_hunks(&item.lines, patch, &item.display_path).map_err(internal)?;
+                join_lines(&new_lines, item.ends_with_newline)
+            }
+            (None, None) => {
+                return Err(internal(format!(
+                    "internal error: edit for {} has neither a patch nor replacement content",
+                    item.display_path
+                )));
+            }
+        };
         let diff = unified_diff(&item.original, &new_content, &item.display_path);
         applied.push(Applied {
             path: item.path,
@@ -486,8 +544,8 @@ fn parse_patch(patch: &str, path: &str) -> Result<ParsedPatch, String> {
             if let Some(hunk) = current.take() {
                 hunks.push(hunk);
             }
-            let (old_start, old_count, new_start, new_count) = parse_hunk_header(rest)
-                .ok_or_else(|| format!("invalid hunk header in patch for {path}: {raw}"))?;
+            let (old_start, old_count, new_start, new_count) =
+                parse_hunk_header(rest).ok_or_else(|| invalid_hunk_header(path, raw))?;
             current = Some(Hunk {
                 old_start,
                 old_count,
@@ -531,6 +589,14 @@ fn parse_patch(patch: &str, path: &str) -> Result<ParsedPatch, String> {
         return Err(format!("patch for {path} contains no hunks"));
     }
     Ok(ParsedPatch { hunks })
+}
+
+/// Renders a diagnostic for a malformed hunk header, teaching the caller the
+/// required range syntax and a minimal example.
+fn invalid_hunk_header(path: &str, raw: &str) -> String {
+    format!(
+        "invalid hunk header in patch for {path}: `{raw}` — expected `@@ -<old_start>[,<old_count>] +<new_start>[,<new_count>] @@`, for example `@@ -1,1 +1,1 @@`"
+    )
 }
 
 /// Parses the `-old,count +new,count` part of a hunk header (without the
@@ -904,6 +970,13 @@ mod tests {
     }
 
     #[test]
+    fn parse_patch_rejects_bare_hunk_header_with_helpful_message() {
+        let error = parse_patch("@@\n-old\n+new\n", "src/lib.rs").unwrap_err();
+        assert!(error.contains("invalid hunk header"));
+        assert!(error.contains("@@ -1,1 +1,1 @@"));
+    }
+
+    #[test]
     fn apply_hunks_replaces_matching_lines() {
         let (lines, _) = split_lines("fn main() {\n    old();\n}\n");
         let patch = parse_patch(
@@ -980,6 +1053,34 @@ mod tests {
     }
 
     #[test]
+    fn parse_edits_accepts_content_form() {
+        let edits = parse_edits(&json!({
+            "file": "src/lib.rs",
+            "base_token": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "content": "fn main() {}\n"
+        }))
+        .unwrap();
+        assert_eq!(edits.len(), 1);
+        assert_eq!(edits[0].path, "src/lib.rs");
+        assert!(matches!(&edits[0].op, EditOp::Replace { .. }));
+    }
+
+    #[test]
+    fn parse_edits_allows_empty_content() {
+        let edits = parse_edits(&json!({
+            "file": "src/lib.rs",
+            "base_token": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "content": ""
+        }))
+        .unwrap();
+        assert_eq!(edits.len(), 1);
+        match &edits[0].op {
+            EditOp::Replace { content } => assert_eq!(content, ""),
+            other => panic!("expected Replace, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn parse_edits_accepts_multi_file_form() {
         let edits = parse_edits(&json!({
             "files": [
@@ -991,13 +1092,14 @@ mod tests {
                 {
                     "path": "src/b.rs",
                     "base_token": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-                    "patch": "@@ -0,0 +1,1 @@\n+fn b() {}\n"
+                    "content": "fn b() {}\n"
                 }
             ]
         }))
         .unwrap();
         assert_eq!(edits.len(), 2);
         assert_eq!(edits[1].path, "src/b.rs");
+        assert!(matches!(&edits[1].op, EditOp::Replace { .. }));
     }
 
     #[test]
@@ -1005,6 +1107,19 @@ mod tests {
         let error = parse_edits(&json!({
             "file": "src/lib.rs",
             "files": []
+        }))
+        .unwrap_err();
+        assert_eq!(error.code, -32602);
+        assert!(error.message.contains("not both"));
+    }
+
+    #[test]
+    fn parse_edits_rejects_both_patch_and_content() {
+        let error = parse_edits(&json!({
+            "file": "src/lib.rs",
+            "base_token": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "patch": "@@ -0,0 +1,1 @@\n+fn main() {}\n",
+            "content": "fn main() {}\n"
         }))
         .unwrap_err();
         assert_eq!(error.code, -32602);
@@ -1031,7 +1146,9 @@ mod tests {
             path: "Cargo.toml/anything".to_string(),
             base_token: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
                 .to_string(),
-            patch: "@@ -0,0 +1,1 @@\n+fn main() {}\n".to_string(),
+            op: EditOp::Patch {
+                patch: "@@ -0,0 +1,1 @@\n+fn main() {}\n".to_string(),
+            },
         }];
         let error = apply_edits_in(&root, &edits).unwrap_err();
         assert_eq!(error.code, -32602);
@@ -1047,7 +1164,9 @@ mod tests {
         let edits = [Edit {
             path: "Cargo.toml/anything".to_string(),
             base_token: ALL_F_HASH.to_string(),
-            patch: "@@ -0,0 +1,1 @@\n+fn main() {}\n".to_string(),
+            op: EditOp::Patch {
+                patch: "@@ -0,0 +1,1 @@\n+fn main() {}\n".to_string(),
+            },
         }];
         let error = apply_edits_in(&root, &edits).unwrap_err();
         assert_eq!(error.code, -32602);
@@ -1080,7 +1199,9 @@ mod tests {
         let edits = [Edit {
             path: "new.txt".to_string(),
             base_token: workspace_fs::sha256_hex(b""),
-            patch: "@@ -0,0 +1,2 @@\n+fn main() {\n+}\n".to_string(),
+            op: EditOp::Patch {
+                patch: "@@ -0,0 +1,2 @@\n+fn main() {\n+}\n".to_string(),
+            },
         }];
         let report = apply_edits_in(&root, &edits).unwrap();
         assert_eq!(report["files_changed"], json!(1));
@@ -1098,7 +1219,9 @@ mod tests {
         let edits = [Edit {
             path: "Cargo.toml".to_string(),
             base_token: workspace_fs::sha256_hex(b"name = \"hanihi\"\n"),
-            patch: "@@ -1,1 +1,1 @@\n-name = \"hanihi\"\n+name = \"hanihi-mcp\"\n".to_string(),
+            op: EditOp::Patch {
+                patch: "@@ -1,1 +1,1 @@\n-name = \"hanihi\"\n+name = \"hanihi-mcp\"\n".to_string(),
+            },
         }];
         let report = apply_edits_in(&root, &edits).unwrap();
         assert_eq!(report["files_changed"], json!(1));
@@ -1109,6 +1232,40 @@ mod tests {
     }
 
     #[test]
+    fn apply_edits_in_replaces_whole_file_via_content() {
+        let root = temp_dir("apply_edits_in_replaces_whole_file_via_content");
+        fs::write(root.join("a.txt"), "old\n").unwrap();
+
+        let edits = [Edit {
+            path: "a.txt".to_string(),
+            base_token: workspace_fs::sha256_hex(b"old\n"),
+            op: EditOp::Replace {
+                content: "new\n".to_string(),
+            },
+        }];
+        let report = apply_edits_in(&root, &edits).unwrap();
+        assert_eq!(report["files_changed"], json!(1));
+        assert_eq!(fs::read_to_string(root.join("a.txt")).unwrap(), "new\n");
+    }
+
+    #[test]
+    fn apply_edits_in_replaces_with_empty_content() {
+        let root = temp_dir("apply_edits_in_replaces_with_empty_content");
+        fs::write(root.join("a.txt"), "old\n").unwrap();
+
+        let edits = [Edit {
+            path: "a.txt".to_string(),
+            base_token: workspace_fs::sha256_hex(b"old\n"),
+            op: EditOp::Replace {
+                content: String::new(),
+            },
+        }];
+        let report = apply_edits_in(&root, &edits).unwrap();
+        assert_eq!(report["files_changed"], json!(1));
+        assert_eq!(fs::read_to_string(root.join("a.txt")).unwrap(), "");
+    }
+
+    #[test]
     fn apply_edits_in_rejects_null_placeholder() {
         let root = temp_dir("apply_edits_in_rejects_null_placeholder");
         fs::write(root.join("a.txt"), "line one\n").unwrap();
@@ -1116,7 +1273,9 @@ mod tests {
         let edits = [Edit {
             path: "a.txt".to_string(),
             base_token: NULL_HASH.to_string(),
-            patch: "@@ -1,1 +1,1 @@\n-line one\n+line two\n".to_string(),
+            op: EditOp::Patch {
+                patch: "@@ -1,1 +1,1 @@\n-line one\n+line two\n".to_string(),
+            },
         }];
         let error = apply_edits_in(&root, &edits).unwrap_err();
         assert_eq!(error.code, -32602);
@@ -1140,7 +1299,9 @@ mod tests {
         let edits = [Edit {
             path: "a.txt".to_string(),
             base_token: ALL_F_HASH.to_string(),
-            patch: "@@ -1,1 +1,1 @@\n-line one\n+line two\n".to_string(),
+            op: EditOp::Patch {
+                patch: "@@ -1,1 +1,1 @@\n-line one\n+line two\n".to_string(),
+            },
         }];
         let error = apply_edits_in(&root, &edits).unwrap_err();
         assert_eq!(error.code, -32602);
@@ -1155,7 +1316,9 @@ mod tests {
         let edits = [Edit {
             path: "a.txt".to_string(),
             base_token: ALL_F_HASH.to_ascii_uppercase(),
-            patch: "@@ -1,1 +1,1 @@\n-line one\n+line two\n".to_string(),
+            op: EditOp::Patch {
+                patch: "@@ -1,1 +1,1 @@\n-line one\n+line two\n".to_string(),
+            },
         }];
         let error = apply_edits_in(&root, &edits).unwrap_err();
         assert_eq!(error.code, -32602);
@@ -1170,11 +1333,34 @@ mod tests {
         let edits = [Edit {
             path: "a.txt".to_string(),
             base_token: EMPTY_CONTENT_HASH.to_string(),
-            patch: "@@ -1,1 +1,1 @@\n-line one\n+line two\n".to_string(),
+            op: EditOp::Patch {
+                patch: "@@ -1,1 +1,1 @@\n-line one\n+line two\n".to_string(),
+            },
         }];
         let error = apply_edits_in(&root, &edits).unwrap_err();
         assert_eq!(error.code, -32602);
         assert!(error.message.contains("empty-content"));
+        assert_eq!(
+            fs::read_to_string(root.join("a.txt")).unwrap(),
+            "line one\n"
+        );
+    }
+
+    #[test]
+    fn apply_edits_in_rejects_content_with_wrong_base_token() {
+        let root = temp_dir("apply_edits_in_rejects_content_with_wrong_base_token");
+        fs::write(root.join("a.txt"), "line one\n").unwrap();
+
+        let edits = [Edit {
+            path: "a.txt".to_string(),
+            base_token: workspace_fs::sha256_hex(b"different\n"),
+            op: EditOp::Replace {
+                content: "line two\n".to_string(),
+            },
+        }];
+        let error = apply_edits_in(&root, &edits).unwrap_err();
+        assert_eq!(error.code, -32603);
+        assert!(error.message.contains("mismatch"));
         assert_eq!(
             fs::read_to_string(root.join("a.txt")).unwrap(),
             "line one\n"
@@ -1189,7 +1375,9 @@ mod tests {
         let edits = [Edit {
             path: "a.txt".to_string(),
             base_token: EMPTY_CONTENT_HASH.to_string(),
-            patch: "@@ -0,0 +1,2 @@\n+fn main() {\n+}\n".to_string(),
+            op: EditOp::Patch {
+                patch: "@@ -0,0 +1,2 @@\n+fn main() {\n+}\n".to_string(),
+            },
         }];
         let report = apply_edits_in(&root, &edits).unwrap();
         assert_eq!(report["files_changed"], json!(1));
