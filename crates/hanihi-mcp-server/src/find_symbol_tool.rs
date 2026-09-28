@@ -9,6 +9,7 @@
 //! This is a text-based approximation; a future version should delegate to
 //! rust-analyzer for scope-accurate results.
 
+use crate::workspace_fs;
 use regex::Regex;
 use serde_json::{Value, json};
 use std::collections::HashSet;
@@ -42,7 +43,7 @@ pub(crate) fn json() -> Value {
                 },
                 "path": {
                     "type": "string",
-                    "description": "Directory to search, relative to the repository root. Defaults to the repository root."
+                    "description": "Directory to search, relative to the workspace root. Defaults to the workspace root."
                 },
                 "max_results": {
                     "type": "integer",
@@ -198,21 +199,14 @@ fn bounded_unsigned(
 }
 
 fn resolve_root(arguments: &Value) -> Result<PathBuf, ToolError> {
-    let base = std::env::current_dir()
-        .map_err(|error| internal(format!("cannot read current directory: {error}")))?;
+    let base = workspace_fs::workspace_root().map_err(|error| internal(error.message))?;
+    resolve_root_from(&base, arguments)
+}
 
+fn resolve_root_from(base: &Path, arguments: &Value) -> Result<PathBuf, ToolError> {
     match arguments.get("path").and_then(Value::as_str) {
-        None | Some("") => Ok(base),
-        Some(relative) => {
-            let root = base.join(relative);
-            if root.is_dir() {
-                Ok(root)
-            } else {
-                Err(invalid(format!(
-                    "search path does not exist or is not a directory: {relative}"
-                )))
-            }
-        }
+        None | Some("") => Ok(base.to_path_buf()),
+        Some(relative) => workspace_fs::resolve_directory(base, relative).map_err(invalid),
     }
 }
 
@@ -703,6 +697,7 @@ fn mask_raw_string(chars: &[char], out: &mut String, hashes: usize, start: usize
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::workspace_fs::test_support::temp_dir;
 
     #[test]
     fn is_identifier_accepts_rust_identifiers() {
@@ -870,5 +865,39 @@ mod tests {
 
         assert_eq!(report.total(), 2);
         assert!(report.truncated);
+    }
+
+    #[test]
+    fn resolve_root_from_defaults_to_base() {
+        let base = temp_dir("find_symbol_root_default");
+        assert_eq!(resolve_root_from(&base, &json!({})).unwrap(), base);
+        assert_eq!(
+            resolve_root_from(&base, &json!({ "path": "" })).unwrap(),
+            base
+        );
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn resolve_root_from_resolves_existing_subdirectory() {
+        let base = temp_dir("find_symbol_root_sub");
+        let sub = base.join("src");
+        std::fs::create_dir_all(&sub).unwrap();
+
+        assert_eq!(
+            resolve_root_from(&base, &json!({ "path": "src" })).unwrap(),
+            sub.canonicalize().unwrap()
+        );
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn resolve_root_from_rejects_bad_paths_as_invalid() {
+        let base = temp_dir("find_symbol_root_bad");
+        for path in ["missing", "../outside", "/etc"] {
+            let error = resolve_root_from(&base, &json!({ "path": path })).unwrap_err();
+            assert_eq!(error.code, -32602, "{path}");
+        }
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

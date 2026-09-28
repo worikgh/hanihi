@@ -7,9 +7,15 @@
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::path::{Component, Path, PathBuf};
+use std::process::Command;
+use std::sync::OnceLock;
 
 const INVALID_PARAMS: i64 = -32602;
 const INTERNAL_ERROR: i64 = -32603;
+
+/// Cached Cargo workspace root, valid for the server's lifetime because the
+/// process never changes its working directory.
+static WORKSPACE_ROOT: OnceLock<PathBuf> = OnceLock::new();
 
 /// A recoverable tool failure carrying the JSON-RPC error code to report.
 #[derive(Debug)]
@@ -78,9 +84,158 @@ pub(crate) fn required_non_empty_string<'a>(
     Ok(value)
 }
 
+/// Returns the Cargo workspace root, discovering and caching it on first use.
 pub(crate) fn workspace_root() -> Result<PathBuf, ToolError> {
-    std::env::current_dir()
-        .map_err(|error| internal(format!("cannot read the current directory: {error}")))
+    if let Some(root) = WORKSPACE_ROOT.get() {
+        return Ok(root.clone());
+    }
+
+    let root = discover_workspace_root()?;
+    // A racing duplicate set cannot produce a different value: the process
+    // cwd and the workspace layout are fixed for the server's lifetime.
+    let _ = WORKSPACE_ROOT.set(root.clone());
+    Ok(root)
+}
+
+/// Resolves the true workspace root from the process cwd.
+///
+/// `cargo metadata` is the authority: it correctly resolves a member-crate
+/// cwd to the enclosing workspace root. When cargo is unavailable (missing
+/// binary or not a Cargo workspace), fall back to walking marker files.
+fn discover_workspace_root() -> Result<PathBuf, ToolError> {
+    let cwd = std::env::current_dir()
+        .map_err(|error| internal(format!("cannot read the current directory: {error}")))?;
+
+    match cargo_workspace_root() {
+        Ok(root) => {
+            let root = root
+                .canonicalize()
+                .map_err(|error| internal(format!("cannot resolve workspace root: {error}")))?;
+            if !root.is_dir() {
+                return Err(internal(format!(
+                    "cannot discover workspace root: {} is not a directory",
+                    root.display()
+                )));
+            }
+            Ok(root)
+        }
+        Err(_) => marker_root(&cwd).ok_or_else(|| {
+            internal(format!(
+                "cannot discover workspace root: no Cargo workspace or repository markers at or above {}",
+                cwd.display()
+            ))
+        }),
+    }
+}
+
+/// Runs `cargo metadata --no-deps --format-version 1` and returns its
+/// `workspace_root`.
+fn cargo_workspace_root() -> Result<PathBuf, String> {
+    let output = Command::new("cargo")
+        .args(["metadata", "--no-deps", "--format-version", "1"])
+        .output()
+        .map_err(|error| format!("failed to run cargo metadata: {error}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("cargo metadata failed: {}", stderr.trim()));
+    }
+
+    let metadata: Value = serde_json::from_slice(&output.stdout)
+        .map_err(|error| format!("failed to parse cargo metadata output: {error}"))?;
+
+    let workspace_root = metadata
+        .get("workspace_root")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "cargo metadata returned no workspace_root".to_string())?;
+
+    Ok(PathBuf::from(workspace_root))
+}
+
+/// Walks up from `start` to the nearest ancestor containing `Cargo.toml`;
+/// if none, the nearest ancestor containing `.git` (directory or file,
+/// covering worktrees); if none, `start` itself. The result is canonicalized.
+fn marker_root(start: &Path) -> Option<PathBuf> {
+    for marker in ["Cargo.toml", ".git"] {
+        let mut dir = Some(start);
+        while let Some(d) = dir {
+            if d.join(marker).exists() {
+                return d.canonicalize().ok();
+            }
+            dir = d.parent();
+        }
+    }
+
+    start.canonicalize().ok()
+}
+
+/// Resolves a workspace-relative directory that must already exist, refusing
+/// absolute paths, `..` traversal, and symlinks that resolve outside `root`.
+pub(crate) fn resolve_directory(root: &Path, relative: &str) -> Result<PathBuf, String> {
+    let relative_path = validate_relative(relative)?;
+    let candidate = root.join(&relative_path);
+    if !candidate.is_dir() {
+        return Err(format!(
+            "search path does not exist or is not a directory: {relative}"
+        ));
+    }
+    canonicalize_within(root, &candidate, relative)
+}
+
+/// Resolves a workspace-relative file or directory that must already exist,
+/// applying the same escape protections as `resolve_directory`. The caller
+/// decides how to treat the result based on its file type.
+pub(crate) fn resolve_existing_path(root: &Path, relative: &str) -> Result<PathBuf, String> {
+    let relative_path = validate_relative(relative)?;
+    let candidate = root.join(&relative_path);
+    if !candidate.exists() {
+        return Err(format!("search path does not exist: {relative}"));
+    }
+    canonicalize_within(root, &candidate, relative)
+}
+
+/// Rejects absolute, empty, and parent/root/prefix paths, returning the
+/// validated relative path.
+fn validate_relative(relative: &str) -> Result<PathBuf, String> {
+    let relative_path = Path::new(relative);
+    if relative_path.is_absolute() {
+        return Err(format!(
+            "path must be relative to the workspace root: {relative}"
+        ));
+    }
+    if relative.trim().is_empty() {
+        return Err("path must not be empty".to_string());
+    }
+
+    // Reject every `..`, root, and prefix component up front. This is stricter
+    // than lexically normalizing internal `..` and mirrors hanihi-core's
+    // `resolve_for_write`: callers must pass normalized relative paths.
+    for component in relative_path.components() {
+        if matches!(
+            component,
+            Component::ParentDir | Component::RootDir | Component::Prefix(_)
+        ) {
+            return Err(format!("path escapes the workspace: {relative}"));
+        }
+    }
+
+    Ok(relative_path.to_path_buf())
+}
+
+/// Canonicalizes `candidate` and verifies it stays within `root`, so symlinks
+/// pointing outside the workspace are refused.
+fn canonicalize_within(root: &Path, candidate: &Path, relative: &str) -> Result<PathBuf, String> {
+    let canonical_root = root
+        .canonicalize()
+        .map_err(|error| format!("cannot resolve workspace root: {error}"))?;
+    let canonical = candidate
+        .canonicalize()
+        .map_err(|error| format!("cannot resolve search path: {error}"))?;
+    if !canonical.starts_with(&canonical_root) {
+        return Err(format!("path escapes the workspace: {relative}"));
+    }
+
+    Ok(canonical)
 }
 
 /// Resolves a workspace-relative path to an absolute path inside the
@@ -205,6 +360,7 @@ pub(crate) fn normalize_hash(value: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::workspace_fs::test_support::temp_dir;
 
     #[test]
     fn sha256_known_vectors() {
@@ -285,6 +441,99 @@ mod tests {
         assert!(is_refused_path(Path::new("src/.gitattributes")));
         assert!(is_refused_path(Path::new(".ignore")));
         assert!(!is_refused_path(Path::new("src/main.rs")));
+    }
+
+    #[test]
+    fn marker_root_prefers_nearest_cargo_toml_ancestor() {
+        let ws = temp_dir("marker_root_cargo");
+        std::fs::write(ws.join("Cargo.toml"), "").unwrap();
+        std::fs::create_dir_all(ws.join(".git")).unwrap();
+        let deep = ws.join("src/deep");
+        std::fs::create_dir_all(&deep).unwrap();
+
+        assert_eq!(marker_root(&deep).unwrap(), ws.canonicalize().unwrap());
+        let _ = std::fs::remove_dir_all(&ws);
+    }
+
+    #[test]
+    fn marker_root_falls_back_to_git_then_start() {
+        let with_git = temp_dir("marker_root_git");
+        let git_root = with_git.join("repo");
+        let deep = git_root.join("src");
+        std::fs::create_dir_all(git_root.join(".git")).unwrap();
+        std::fs::create_dir_all(&deep).unwrap();
+        assert_eq!(
+            marker_root(&deep).unwrap(),
+            git_root.canonicalize().unwrap()
+        );
+
+        let bare = temp_dir("marker_root_bare");
+        assert_eq!(marker_root(&bare).unwrap(), bare.canonicalize().unwrap());
+
+        let _ = std::fs::remove_dir_all(&with_git);
+        let _ = std::fs::remove_dir_all(&bare);
+    }
+
+    #[test]
+    fn resolve_directory_rejects_absolute_paths() {
+        let base = temp_dir("resolve_directory_absolute");
+        for path in ["/etc", "/tmp/x"] {
+            let error = resolve_directory(&base, path).unwrap_err();
+            assert!(error.contains("relative"), "{path}: {error}");
+        }
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn resolve_directory_rejects_parent_traversal() {
+        let base = temp_dir("resolve_directory_parent");
+        for path in ["../outside", "a/../../outside", "src/../src"] {
+            let error = resolve_directory(&base, path).unwrap_err();
+            assert!(error.contains("escapes"), "{path}: {error}");
+        }
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn resolve_directory_requires_an_existing_directory() {
+        let base = temp_dir("resolve_directory_not_dir");
+        std::fs::write(base.join("file.txt"), "x").unwrap();
+
+        let error = resolve_directory(&base, "file.txt").unwrap_err();
+        assert!(error.contains("not a directory"));
+
+        let error = resolve_directory(&base, "missing").unwrap_err();
+        assert!(error.contains("not a directory"));
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn resolve_directory_returns_canonical_subdirectory() {
+        let base = temp_dir("resolve_directory_sub");
+        let sub = base.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+
+        assert_eq!(
+            resolve_directory(&base, "sub").unwrap(),
+            sub.canonicalize().unwrap()
+        );
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resolve_directory_rejects_symlink_escape() {
+        let base = temp_dir("resolve_directory_symlink");
+        let outside = temp_dir("resolve_directory_outside");
+        let link = base.join("link");
+        std::os::unix::fs::symlink(&outside, &link).unwrap();
+
+        let error = resolve_directory(&base, "link").unwrap_err();
+        assert!(error.contains("escapes"), "{error}");
+
+        let _ = std::fs::remove_dir_all(&base);
+        let _ = std::fs::remove_dir_all(&outside);
     }
 }
 

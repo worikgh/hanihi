@@ -4,6 +4,7 @@
 //! file globs, and returns each matching line together with a small window
 //! of surrounding context.
 
+use crate::workspace_fs;
 use regex::Regex;
 use serde_json::{Value, json};
 use std::fs;
@@ -44,7 +45,7 @@ pub(crate) fn json() -> Value {
     },
     "path": {
         "type": "string",
-        "description": "Directory to search, relative to the repository root. Defaults to the repository root."
+        "description": "File or directory to search, relative to the workspace root. Defaults to the workspace root. When it names an existing file, only that file is searched."
     },
     "context": {
         "type": "integer",
@@ -132,21 +133,37 @@ fn run(arguments: &Value) -> Result<String, ToolError> {
     let context = bounded_unsigned(arguments, "context", DEFAULT_CONTEXT, MAX_CONTEXT)?;
     let max_matches = bounded_unsigned(arguments, "max_matches", DEFAULT_MAX_MATCHES, MAX_MATCHES)?;
     eprintln!("{}:{}: run arguments:{arguments:?}", file!(), line!());
-    let root = resolve_root(arguments)?;
+    let base = workspace_fs::workspace_root().map_err(|error| internal(error.message))?;
+    let target = resolve_target(&base, arguments)?;
     eprintln!("{}:{}: run ", file!(), line!());
 
     let mut output = SearchOutput::new();
     eprintln!("{}:{}: run ", file!(), line!());
-    walk(
-        &root,
-        &root,
-        &globs,
-        &matcher,
-        context,
-        max_matches,
-        &mut output,
-    )
-    .map_err(|error| internal(format!("search failed: {error}")))?;
+    match target {
+        SearchTarget::File { path, relative } => {
+            search_file(
+                &path,
+                &relative,
+                &matcher,
+                context,
+                max_matches,
+                &mut output,
+            )
+            .map_err(|error| internal(format!("search failed: {error}")))?;
+        }
+        SearchTarget::Directory(root) => {
+            walk(
+                &root,
+                &root,
+                &globs,
+                &matcher,
+                context,
+                max_matches,
+                &mut output,
+            )
+            .map_err(|error| internal(format!("search failed: {error}")))?;
+        }
+    }
 
     serde_json::to_string_pretty(&output.to_value())
         .map_err(|error| internal(format!("failed to serialize results: {error}")))
@@ -183,28 +200,29 @@ fn bounded_unsigned(
     })
 }
 
-fn resolve_root(arguments: &Value) -> Result<PathBuf, ToolError> {
-    eprintln!("{}:{}: resolve_root ", file!(), line!());
-    let base = std::env::current_dir()
-        .map_err(|error| internal(format!("cannot read current directory: {error}")))?;
+/// Resolved search scope: either a single file or a directory to walk.
+#[derive(Debug)]
+enum SearchTarget {
+    /// An existing file to search directly; `relative` is the caller's path.
+    File { path: PathBuf, relative: String },
+    /// A directory to walk recursively.
+    Directory(PathBuf),
+}
 
+/// Resolves `arguments.path` against the workspace root into either a single
+/// file or a directory, refusing paths that do not exist or escape the root.
+fn resolve_target(base: &Path, arguments: &Value) -> Result<SearchTarget, ToolError> {
     match arguments.get("path").and_then(Value::as_str) {
-        None | Some("") => Ok(base),
+        None | Some("") => Ok(SearchTarget::Directory(base.to_path_buf())),
         Some(relative) => {
-            eprintln!(
-                "{}:{}: resolve_root base: {base:?} relative: {relative}",
-                file!(),
-                line!()
-            );
-            let root = base.join(relative);
-            if root.is_dir() {
-                eprintln!("{}:{}: resolve_root Ok: {root:?}", file!(), line!());
-                Ok(root)
+            let resolved = workspace_fs::resolve_existing_path(base, relative).map_err(invalid)?;
+            if resolved.is_file() {
+                Ok(SearchTarget::File {
+                    path: resolved,
+                    relative: relative.to_string(),
+                })
             } else {
-                eprintln!("{}:{}: resolve_root Error: {root:?}", file!(), line!());
-                Err(invalid(format!(
-                    "search path does not exist or is not a directory: {relative}"
-                )))
+                Ok(SearchTarget::Directory(resolved))
             }
         }
     }
@@ -469,6 +487,7 @@ fn context_lines(lines: &[&str], index: usize, count: usize, before: bool) -> Ve
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::workspace_fs::test_support::temp_dir;
 
     #[test]
     fn literal_search_is_exact() {
@@ -540,5 +559,70 @@ mod tests {
         let globs = Globs::from_arguments(&json!({ "globs": ["file.rs"] })).unwrap();
         assert!(globs.matches("file.rs"));
         assert!(!globs.matches("fileXrs"));
+    }
+
+    #[test]
+    fn resolve_target_defaults_to_the_workspace_root() {
+        let base = temp_dir("search_target_default");
+        match resolve_target(&base, &json!({})).unwrap() {
+            SearchTarget::Directory(root) => assert_eq!(root, base),
+            SearchTarget::File { .. } => panic!("expected a directory target"),
+        }
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn resolve_target_accepts_an_existing_file() {
+        let base = temp_dir("search_target_file");
+        let file = base.join("notes.txt");
+        std::fs::write(&file, "hello\n").unwrap();
+
+        match resolve_target(&base, &json!({ "path": "notes.txt" })).unwrap() {
+            SearchTarget::File { path, relative } => {
+                assert_eq!(path, file.canonicalize().unwrap());
+                assert_eq!(relative, "notes.txt");
+            }
+            SearchTarget::Directory(_) => panic!("expected a file target"),
+        }
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn resolve_target_accepts_an_existing_directory() {
+        let base = temp_dir("search_target_dir");
+        let sub = base.join("src");
+        std::fs::create_dir_all(&sub).unwrap();
+
+        match resolve_target(&base, &json!({ "path": "src" })).unwrap() {
+            SearchTarget::Directory(root) => assert_eq!(root, sub.canonicalize().unwrap()),
+            SearchTarget::File { .. } => panic!("expected a directory target"),
+        }
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn resolve_target_rejects_missing_and_escaping_paths() {
+        let base = temp_dir("search_target_bad");
+        for path in ["missing.txt", "../outside", "/etc/passwd"] {
+            let error = resolve_target(&base, &json!({ "path": path })).unwrap_err();
+            assert_eq!(error.code, -32602, "{path}");
+        }
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn search_file_reports_only_that_file() {
+        let base = temp_dir("search_file_only");
+        let file = base.join("notes.txt");
+        std::fs::write(&file, "first\nneedle here\nthird\n").unwrap();
+
+        let matcher = Matcher::compile("needle", true).unwrap();
+        let mut output = SearchOutput::new();
+        search_file(&file, "notes.txt", &matcher, 1, 200, &mut output).unwrap();
+
+        assert_eq!(output.matches.len(), 1);
+        assert_eq!(output.matches[0].path, "notes.txt");
+        assert_eq!(output.matches[0].line_number, 2);
+        let _ = std::fs::remove_dir_all(&base);
     }
 }
