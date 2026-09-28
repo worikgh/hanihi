@@ -620,6 +620,7 @@ async fn compact_if_needed<M: CompletionModel>(
     tool_defs_json: &str,
 ) -> Result<Option<CompactionRecord>, AgentError> {
     let limit = context_limit_tokens.saturating_sub(RESERVE_OUTPUT_TOKENS);
+    eprintln!("{}:{}:", file!(), line!(),);
     let before = estimate_context(
         system_prompt,
         summary.as_deref(),
@@ -669,6 +670,7 @@ async fn compact_if_needed<M: CompletionModel>(
     *summary = Some(new_summary.clone());
     *history = kept.to_vec();
 
+    eprintln!("{}:{}:", file!(), line!(),);
     let after = estimate_context(
         system_prompt,
         summary.as_deref(),

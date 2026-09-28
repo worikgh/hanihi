@@ -42,7 +42,11 @@ pub(crate) fn estimate_tokens(text: &str) -> usize {
         return 0;
     }
     match tokenizer() {
-        Some(bpe) => bpe.encode_with_special_tokens(text).len(),
+        Some(bpe) => {
+            let ret = bpe.encode_with_special_tokens(text).len();
+            eprintln!("{}:{}: tokens: {ret}", file!(), line!(),);
+            ret
+        }
         None => text.chars().count().div_ceil(4),
     }
 }
@@ -68,6 +72,7 @@ pub(crate) fn estimate_context(
     tool_defs_json: &str,
 ) -> usize {
     let mut total = estimate_tokens(system_prompt);
+    eprintln!("{}:{}: tokens for system prompt: {total}", file!(), line!(),);
     if let Some(summary) = summary {
         total += estimate_tokens(summary);
     }
@@ -345,6 +350,11 @@ mod tests {
         if let Some(bpe) = tokenizer() {
             assert!(bpe.encode_with_special_tokens(&out).len() <= 10);
         }
+    }
+
+    #[test]
+    fn test_tokenizer() {
+        assert!(tokenizer().is_some());
     }
 
     #[test]
