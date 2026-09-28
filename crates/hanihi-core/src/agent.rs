@@ -953,9 +953,10 @@ where
                         }
                         Err(e) => {
                             eprintln!(
-                                "{}:{}:execute_tool_with_cache error. {name}",
+                                "{}:{}:execute_tool_with_cache error. {name} {}",
                                 file!(),
                                 line!(),
+                                e.to_string(),
                             );
                             let _ = tx
                                 .send(StreamEvent::Error {
