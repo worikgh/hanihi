@@ -66,14 +66,14 @@ fn create_file(
     overwrite: bool,
 ) -> Result<String, ToolError> {
     if path.is_dir() {
-        return Err(workspace_fs::internal(format!(
+        return Err(workspace_fs::invalid(format!(
             "cannot create file: {display_path} is a directory"
         )));
     }
 
     let existed = path.exists();
     if existed && !overwrite {
-        return Err(workspace_fs::internal(format!(
+        return Err(workspace_fs::invalid(format!(
             "file already exists: {display_path} (pass overwrite=true to replace it)"
         )));
     }
@@ -173,7 +173,7 @@ mod tests {
         let path = dir.join("a.txt");
         std::fs::write(&path, "old").unwrap();
         let error = create_file(&path, "a.txt", "new", false).unwrap_err();
-        assert_eq!(error.code, -32603);
+        assert_eq!(error.code, -32602);
         assert!(error.message.contains("already exists"));
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "old");
         let _ = std::fs::remove_dir_all(&dir);
@@ -187,6 +187,18 @@ mod tests {
         let result = create_file(&path, "a.txt", "new", true).unwrap();
         assert!(result.contains("\"created\": false"));
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "new");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn refuses_a_directory_path() {
+        let dir = temp_dir("create_file_directory");
+        let path = dir.join("sub");
+        std::fs::create_dir_all(&path).unwrap();
+        let error = create_file(&path, "sub", "hello", false).unwrap_err();
+        assert_eq!(error.code, -32602);
+        assert!(error.message.contains("is a directory"));
+        assert!(path.is_dir());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

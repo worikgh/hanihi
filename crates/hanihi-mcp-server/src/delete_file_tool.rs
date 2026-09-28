@@ -49,7 +49,7 @@ fn delete_file(path: &Path, display_path: &str) -> Result<String, ToolError> {
     let metadata = match fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == ErrorKind::NotFound => {
-            return Err(workspace_fs::internal(format!(
+            return Err(workspace_fs::invalid(format!(
                 "file does not exist: {display_path}"
             )));
         }
@@ -61,7 +61,7 @@ fn delete_file(path: &Path, display_path: &str) -> Result<String, ToolError> {
     };
 
     if metadata.is_dir() {
-        return Err(workspace_fs::internal(format!(
+        return Err(workspace_fs::invalid(format!(
             "cannot delete: {display_path} is a directory"
         )));
     }
@@ -116,7 +116,7 @@ mod tests {
     fn a_missing_file_is_an_error() {
         let dir = temp_dir("delete_file_missing");
         let error = delete_file(&dir.join("missing.txt"), "missing.txt").unwrap_err();
-        assert_eq!(error.code, -32603);
+        assert_eq!(error.code, -32602);
         assert!(error.message.contains("does not exist"));
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -127,7 +127,7 @@ mod tests {
         let path = dir.join("sub");
         std::fs::create_dir_all(&path).unwrap();
         let error = delete_file(&path, "sub").unwrap_err();
-        assert_eq!(error.code, -32603);
+        assert_eq!(error.code, -32602);
         assert!(error.message.contains("directory"));
         assert!(path.exists());
         let _ = std::fs::remove_dir_all(&dir);

@@ -244,8 +244,7 @@ fn required_string<'a>(arguments: &'a Value, name: &str) -> Result<&'a str, Tool
 }
 
 fn apply_edits(edits: &[Edit]) -> Result<Value, ToolError> {
-    let root = std::env::current_dir()
-        .map_err(|error| internal(format!("cannot read current directory: {error}")))?;
+    let root = workspace_fs::workspace_root().map_err(|error| internal(error.message))?;
     apply_edits_in(&root, edits)
 }
 

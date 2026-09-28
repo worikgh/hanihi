@@ -61,7 +61,7 @@ fn rename_file(
     let metadata = match fs::symlink_metadata(source) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == ErrorKind::NotFound => {
-            return Err(workspace_fs::internal(format!(
+            return Err(workspace_fs::invalid(format!(
                 "source file does not exist: {source_display}"
             )));
         }
@@ -73,7 +73,7 @@ fn rename_file(
     };
 
     if metadata.is_dir() {
-        return Err(workspace_fs::internal(format!(
+        return Err(workspace_fs::invalid(format!(
             "cannot rename: {source_display} is a directory"
         )));
     }
@@ -85,7 +85,7 @@ fn rename_file(
     }
 
     if destination.exists() {
-        return Err(workspace_fs::internal(format!(
+        return Err(workspace_fs::invalid(format!(
             "destination already exists: {destination_display}"
         )));
     }
@@ -180,7 +180,7 @@ mod tests {
         let dir = temp_dir("rename_file_missing_source");
         let error =
             rename_file(&dir.join("a.txt"), "a.txt", &dir.join("b.txt"), "b.txt").unwrap_err();
-        assert_eq!(error.code, -32603);
+        assert_eq!(error.code, -32602);
         assert!(error.message.contains("does not exist"));
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -193,7 +193,7 @@ mod tests {
         std::fs::write(&source, "source").unwrap();
         std::fs::write(&destination, "dest").unwrap();
         let error = rename_file(&source, "a.txt", &destination, "b.txt").unwrap_err();
-        assert_eq!(error.code, -32603);
+        assert_eq!(error.code, -32602);
         assert!(error.message.contains("already exists"));
         assert_eq!(std::fs::read_to_string(&destination).unwrap(), "dest");
         let _ = std::fs::remove_dir_all(&dir);
@@ -216,7 +216,7 @@ mod tests {
         let source = dir.join("sub");
         std::fs::create_dir_all(&source).unwrap();
         let error = rename_file(&source, "sub", &dir.join("b.txt"), "b.txt").unwrap_err();
-        assert_eq!(error.code, -32603);
+        assert_eq!(error.code, -32602);
         assert!(error.message.contains("directory"));
         let _ = std::fs::remove_dir_all(&dir);
     }
