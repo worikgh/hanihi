@@ -31,6 +31,9 @@ pub use hanihi_core::agent::{TurnSummary, connect_chat_model};
 use crate::ui::{print_coloured, println_coloured};
 
 const DEFAULT_WORKING_DIR: &str = "./working";
+/// Text printed by `--credit`.
+const CREDIT: &str = "Designed by: fook@deepthought.galaxy";
+
 /// Default cap on model turns per request. Effectively unlimited: a sane
 /// upper bound so runaway tool-call loops still terminate, but far above any
 /// realistic working session.
@@ -118,6 +121,10 @@ struct Args {
     /// with --prompt/--prompt-file append semantics (see below).
     #[arg(long)]
     new_prompt: bool,
+
+    /// Print the design credit and exit.
+    #[arg(long)]
+    credit: bool,
 }
 
 /// Extract a short provider name from a base URL hostname.
@@ -227,6 +234,12 @@ async fn main() -> Result<(), AgentError> {
         .init();
 
     let args = Args::parse();
+
+    if args.credit {
+        println!("{CREDIT}");
+        return Ok(());
+    }
+
     let api_key = args
         .api_key
         .filter(|k| !k.is_empty())
