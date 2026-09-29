@@ -109,7 +109,6 @@ pub fn builtin_write_file(tree: Arc<SourceTree>) -> PortableDynamicTool {
                     )));
                 }
 
-                eprintln!("{}:{}: builin_write_file", file!(), line!(),);
                 // Escape/ignore checks via SourceTree (handles `..`, absolute
                 // paths, symlink escapes, and ignore rules).
                 let abs = tree
@@ -132,11 +131,6 @@ pub fn builtin_write_file(tree: Arc<SourceTree>) -> PortableDynamicTool {
                 })?;
 
                 let mut out = format!("wrote {} ({} bytes)", abs.display(), content.len());
-                eprintln!(
-                    "{}:{}: builin_write_file partial out: {out}",
-                    file!(),
-                    line!(),
-                );
                 if let Some(msg) = message {
                     git_run(tree.root(), &["add", "--", &rel])
                         .await

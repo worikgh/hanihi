@@ -884,7 +884,7 @@ fn builtin_run_command_for(
                     "{}:{}: run_command: argv: {}",
                     file!(),
                     line!(),
-                    argv.iter().fold(String::new(), |a, b| format!("{a}, {b}"))
+                    argv.iter().fold(String::new(), |a, b| format!("{a} {b}"))
                 );
                 let outcome =
                     execute_captured(&argv, tree.root(), Duration::from_secs(timeout_secs))
@@ -1133,7 +1133,7 @@ mod tests {
 
         let err = tool
             .execute(serde_json::json!({
-                "path": "working/traces/2026-09-27-remove-old-params"
+            "path": "working/traces/2026-09-27-remove-old-params"
             }))
             .await
             .expect_err("missing path must fail");

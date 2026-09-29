@@ -27,6 +27,9 @@ use crate::tool::truncate_tool_output;
 pub const DEFAULT_SYSTEM_PROMPT: &str = "You are a helpful assistant running in an agent harness. \
 You have access to tools. Use them when they help answer the user; otherwise answer directly. \
 When a tool result comes back, incorporate it into your final answer. \
+Your tool list is whatever the harness gives you, and it is authoritative: never claim you \
+lack a tool, or that a tool is unavailable, unless a tool call has actually failed and you \
+are quoting its error. \
 Do not re-run the same read-only tool with the same arguments within a turn: reuse the result \
 you already have, because the result cannot have changed and re-running wastes resources. \
 When a tool call fails or reports an error, do not stop. Report the failure, then continue \
@@ -44,7 +47,10 @@ descriptive messages. Never push. Study command output and trace files before re
 command fails, read the error and fix the cause rather than repeating it. Verify your work with \
 the build/test gates — do not assert success by eye. Before calling a tool, check whether an \
 identical read-only call with a usable result already appears in this turn; reuse it instead of \
-re-running. When a tool call fails or reports an error, do not stop. Report the failure, then \
+re-running. Your tool list is whatever the harness gives you, and it is authoritative: never \
+claim you lack a tool, or that a tool is unavailable, unless a tool call has actually failed \
+and you are quoting its error. When a tool call fails or reports an error, do not stop. Report \
+the failure, then \
 continue toward the goal by the next viable means (retry once only if the cause was transient; \
 otherwise try a different approach). Stop only when no way to continue remains, and then \
 explain what blocked you.";
@@ -736,7 +742,7 @@ async fn execute_tool_with_cache(
 ) -> Result<String, AgentError> {
     {
         let mut cache = cache.lock().expect("tool call cache lock");
-        eprintln!("{}:{}:", file!(), line!(),);
+
         match cache.lookup(name, &args) {
             ToolCallCacheLookup::Hit(rendered) => return Ok(rendered),
             ToolCallCacheLookup::DuplicateLimit { count } => {
@@ -747,7 +753,7 @@ async fn execute_tool_with_cache(
             ToolCallCacheLookup::Miss => {}
         }
     }
-    eprintln!("{}:{}:", file!(), line!(),);
+
     let tool = tools
         .iter()
         .find(|t| t.name() == name)
