@@ -3,7 +3,7 @@
 //! Tools are rig [`PortableDynamicTool`]s: name + description + JSON schema +
 //! an async callback taking raw `serde_json::Value` arguments.
 
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -98,6 +98,38 @@ pub fn builtin_list_dir(tree: Arc<SourceTree>) -> PortableDynamicTool {
                     .and_then(|v| v.as_u64())
                     .unwrap_or(1)
                     .clamp(1, 4) as usize;
+
+                // Distinguish "does not exist" from every other failure, and give the
+                // caller the nearest existing ancestor so a wrong path is one step
+                // away from correct rather than a dead end.
+                let rel_path = Path::new(rel);
+                if rel != "." {
+                    // `list_dir` is root-scoped: refuse `..` and absolute
+                    // components before touching the filesystem, matching
+                    // `SourceTree::resolve_for_write`. Without this the
+                    // existence probe and the ancestor hint would stat and name
+                    // paths outside the repository.
+                    if rel_path.components().any(|component| {
+                        matches!(
+                            component,
+                            Component::ParentDir | Component::RootDir | Component::Prefix(_)
+                        )
+                    }) {
+                        return Err(ToolExecutionError::permission_denied(format!(
+                            "path escapes the repository: {rel}"
+                        )));
+                    }
+                    let abs = tree.root().join(rel_path);
+                    if !abs.exists() {
+                        return Err(missing_directory_error(tree.root(), rel_path));
+                    }
+                    if !abs.is_dir() {
+                        return Err(ToolExecutionError::invalid_args(format!(
+                            "not a directory: {rel}"
+                        )));
+                    }
+                }
+
                 let walk = tree.walk(Path::new(rel), depth).map_err(map_source_err)?;
                 let mut lines = Vec::new();
                 for entry in walk {
@@ -121,6 +153,33 @@ pub fn builtin_list_dir(tree: Arc<SourceTree>) -> PortableDynamicTool {
             })
         },
     )
+}
+/// Builds the `list_dir` error for a path that does not exist, naming the
+/// nearest existing ancestor so the caller can correct the path in one step.
+fn missing_directory_error(root: &Path, rel: &Path) -> ToolExecutionError {
+    let message = match nearest_existing_ancestor(root, rel) {
+        Some(ancestor) => format!(
+            "no such path: {} (nearest existing ancestor: {})",
+            rel.display(),
+            ancestor.display()
+        ),
+        None => format!("no such path: {}", rel.display()),
+    };
+    ToolExecutionError::not_found(message)
+}
+
+/// The longest prefix of `rel` (joined onto `root`) that exists as a
+/// directory. Returns `None` when even the root is unusable.
+fn nearest_existing_ancestor<'a>(root: &Path, rel: &'a Path) -> Option<&'a Path> {
+    let mut candidate = rel;
+    loop {
+        let parent = candidate.parent()?;
+        let joined = root.join(parent);
+        if joined.is_dir() {
+            return (!parent.as_os_str().is_empty()).then_some(parent);
+        }
+        candidate = parent;
+    }
 }
 
 // ── run_command ──────────────────────────────────────────────────
@@ -1062,6 +1121,62 @@ mod tests {
         assert!(out.contains("Cargo.toml"), "got: {out}");
         assert!(!out.contains("target"), "got: {out}");
         assert!(!out.contains("junk"), "got: {out}");
+    }
+
+    /// A missing nested directory must name the nearest existing ancestor so
+    /// the model can correct the path in one step instead of guessing.
+    #[tokio::test]
+    async fn list_dir_reports_missing_path_with_nearest_ancestor() {
+        let fx = Fixture::new();
+        std::fs::create_dir_all(fx.dir.join("working/traces")).unwrap();
+        let tool = builtin_list_dir(fx.tree());
+
+        let err = tool
+            .execute(serde_json::json!({
+                "path": "working/traces/2026-09-27-remove-old-params"
+            }))
+            .await
+            .expect_err("missing path must fail");
+
+        let message = err.to_string();
+        assert!(message.contains("no such path"), "got: {message}");
+        assert!(
+            message.contains("nearest existing ancestor: working/traces"),
+            "got: {message}"
+        );
+    }
+
+    /// An existing but empty directory is a success with an empty listing —
+    /// distinct from the missing-path error above.
+    #[tokio::test]
+    async fn list_dir_accepts_existing_empty_directory() {
+        let fx = Fixture::new();
+        std::fs::create_dir_all(fx.dir.join("empty")).unwrap();
+        let tool = builtin_list_dir(fx.tree());
+
+        let out = tool
+            .execute(serde_json::json!({ "path": "empty" }))
+            .await
+            .expect("existing empty directory must succeed")
+            .render();
+        assert!(
+            out.trim().is_empty(),
+            "expected an empty listing, got: {out}"
+        );
+    }
+
+    /// `list_dir` is root-scoped: `..` must be refused before any filesystem
+    /// probe, so the error can never name a path outside the repository.
+    #[tokio::test]
+    async fn list_dir_refuses_paths_escaping_the_repository() {
+        let fx = Fixture::new();
+        let tool = builtin_list_dir(fx.tree());
+
+        let err = tool
+            .execute(serde_json::json!({ "path": "../outside" }))
+            .await
+            .expect_err("escaping path must fail");
+        assert!(err.to_string().contains("escapes"), "got: {err}");
     }
 
     // ── grep ──

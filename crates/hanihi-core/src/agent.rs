@@ -620,7 +620,6 @@ async fn compact_if_needed<M: CompletionModel>(
     tool_defs_json: &str,
 ) -> Result<Option<CompactionRecord>, AgentError> {
     let limit = context_limit_tokens.saturating_sub(RESERVE_OUTPUT_TOKENS);
-    eprintln!("{}:{}:", file!(), line!(),);
     let before = estimate_context(
         system_prompt,
         summary.as_deref(),
@@ -628,6 +627,12 @@ async fn compact_if_needed<M: CompletionModel>(
         turn_messages,
         user_input,
         tool_defs_json,
+    );
+    eprintln!(
+        "{}:{}: context before: {before} {:0.0}%",
+        file!(),
+        line!(),
+        100_f32 * before as f32 / limit as f32
     );
     if before <= limit {
         return Ok(None);
@@ -670,7 +675,6 @@ async fn compact_if_needed<M: CompletionModel>(
     *summary = Some(new_summary.clone());
     *history = kept.to_vec();
 
-    eprintln!("{}:{}:", file!(), line!(),);
     let after = estimate_context(
         system_prompt,
         summary.as_deref(),
@@ -679,6 +683,7 @@ async fn compact_if_needed<M: CompletionModel>(
         user_input,
         tool_defs_json,
     );
+    eprintln!("{}:{}: context after: {after}", file!(), line!(),);
     tracing::info!(
         before_tokens = before,
         after_tokens = after,
@@ -731,6 +736,7 @@ async fn execute_tool_with_cache(
 ) -> Result<String, AgentError> {
     {
         let mut cache = cache.lock().expect("tool call cache lock");
+        eprintln!("{}:{}:", file!(), line!(),);
         match cache.lookup(name, &args) {
             ToolCallCacheLookup::Hit(rendered) => return Ok(rendered),
             ToolCallCacheLookup::DuplicateLimit { count } => {
@@ -741,7 +747,7 @@ async fn execute_tool_with_cache(
             ToolCallCacheLookup::Miss => {}
         }
     }
-
+    eprintln!("{}:{}:", file!(), line!(),);
     let tool = tools
         .iter()
         .find(|t| t.name() == name)
@@ -834,12 +840,6 @@ where
 
         let preamble = build_preamble(&system_prompt, summary.as_deref());
         let messages = build_context(&preamble, history, &turn_messages, &user_input);
-        eprintln!(
-            "{}:{}: Completion ready:  message count: {}",
-            file!(),
-            line!(),
-            messages.len()
-        );
         let _ = tx
             .send(StreamEvent::CompletionRequest {
                 ts: Utc::now(),
@@ -955,10 +955,9 @@ where
                         }
                         Err(e) => {
                             eprintln!(
-                                "{}:{}:execute_tool_with_cache error. {name} {}",
+                                "{}:{}:execute_tool_with_cache error. name: {name} Error: {e}",
                                 file!(),
                                 line!(),
-                                e.to_string(),
                             );
                             let _ = tx
                                 .send(StreamEvent::Error {

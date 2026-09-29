@@ -42,11 +42,7 @@ pub(crate) fn estimate_tokens(text: &str) -> usize {
         return 0;
     }
     match tokenizer() {
-        Some(bpe) => {
-            let ret = bpe.encode_with_special_tokens(text).len();
-            eprintln!("{}:{}: tokens: {ret}", file!(), line!(),);
-            ret
-        }
+        Some(bpe) => bpe.encode_with_special_tokens(text).len(),
         None => text.chars().count().div_ceil(4),
     }
 }
