@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+API_KEY="$(<"$HOME/.keys/deepseek")"
+
+if [[ "${1:-}" == "--new" ]]; then
+  shift
+
+  if [[ $# -ne 1 ]]; then
+    echo "Usage: $0 [--new] <argument>" >&2
+    exit 1
+  fi
+
+  exec cargo run --release --bin hanihi-cli -- \
+    --mcp-command "target/release/hanihi-mcp-server-ro " \
+    --mcp-command "target/release/hanihi-mcp-server-rw" \
+    --api-key "$API_KEY" \
+    --write \
+    --new-session \
+    "$1" \
+    --prompt-file "$HOME/Documents/2026/hanihi/prompts/code_generation.md" \
+    --prompt-file "$HOME/Documents/2026/hanihi/prompts/rust_coding.md"
+else
+  if [[ $# -ne 1 ]]; then
+    echo "Usage: $0 [--new] <argument>" >&2
+    exit 1
+  fi
+
+  exec cargo run --release --bin hanihi-cli -- \
+    --mcp-command "target/release/hanihi-mcp-server-ro " \
+    --mcp-command "target/release/hanihi-mcp-server-rw" \
+    --api-key "$API_KEY" \
+    --write \
+    --session \
+    "$1"
+fi
