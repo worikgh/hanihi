@@ -27,6 +27,23 @@ pub const MAX_READ_BYTES: usize = 64 * 1024;
 /// Marker line used to recognise an existing hānihi-managed `.ignore`.
 const HANIHI_HEADER: &str = "# hānihi-managed ignore file (agent read policy)\n";
 
+/// Marker file that identifies a Cargo workspace.
+const CARGO_MARKER: &str = "Cargo.toml";
+/// Marker file that identifies a CMake project.
+const CMAKE_MARKER: &str = "CMakeLists.txt";
+
+/// The build toolchain a repository uses, as detected from marker files.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Toolchain {
+    /// `Cargo.toml` present — Rust workspace, driven by `cargo`.
+    Cargo,
+    /// `CMakeLists.txt` present — CMake project, driven by `cmake`.
+    CMake,
+    /// No recognised build system. Read/edit tools still work; build
+    /// commands are not offered.
+    Unknown,
+}
+
 /// Programming languages hānihi can recognise and write templates for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Language {
@@ -111,6 +128,7 @@ impl From<ignore::Error> for SourceError {
 pub struct SourceTree {
     root: PathBuf,
     matcher: Gitignore,
+    toolchain: Toolchain,
 }
 
 impl SourceTree {
@@ -127,15 +145,26 @@ impl SourceTree {
         if !root.join(".git").exists() {
             return Err(SourceError::NotARepository(root));
         }
+        // Detect before any filesystem writes so every field is known up front.
+        let toolchain = detect_toolchain(&root);
         // Maintain `.ignore` first so the matcher below picks it up.
         ensure_ignore_file(&root)?;
         let matcher = build_matcher(&root)?;
-        Ok(Self { root, matcher })
+        Ok(Self {
+            root,
+            matcher,
+            toolchain,
+        })
     }
 
     /// The canonical repository root.
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    /// The build toolchain detected for this repository.
+    pub fn toolchain(&self) -> Toolchain {
+        self.toolchain
     }
 
     /// Whether `abs` (an absolute path) is excluded by ignore rules.
@@ -271,6 +300,27 @@ fn find_repo_root(start: &Path) -> Option<PathBuf> {
         dir = d.parent();
     }
     None
+}
+
+/// Detect the repository's build toolchain from marker files.
+///
+/// Both markers present is resolved in favour of Cargo: a `CMakeLists.txt`
+/// inside a Cargo workspace is usually a vendored dependency or fixture, not
+/// the project's build system. Cargo also has the narrower command surface,
+/// so the conservative choice is the one that admits fewer commands.
+///
+/// Only the repository root is probed. A CMake project whose sole
+/// `CMakeLists.txt` sits in a subdirectory is therefore reported as
+/// [`Toolchain::Unknown`]; the safe failure mode is fewer commands offered,
+/// and a root-level marker is the overwhelmingly common layout.
+fn detect_toolchain(root: &Path) -> Toolchain {
+    if root.join(CARGO_MARKER).exists() {
+        Toolchain::Cargo
+    } else if root.join(CMAKE_MARKER).exists() {
+        Toolchain::CMake
+    } else {
+        Toolchain::Unknown
+    }
 }
 
 /// Build the ignore matcher from `.gitignore`, `.ignore`, and
@@ -545,5 +595,86 @@ mod tests {
         fx.tree();
         let content2 = fs::read_to_string(fx.dir.join(".ignore")).unwrap();
         assert_eq!(content, content2);
+    }
+
+    // ── toolchain detection ──
+
+    /// A git repo containing only the given marker files. `Fixture::new`
+    /// always writes a `Cargo.toml`, which would make a CMake-only repo
+    /// impossible to build.
+    fn repo_with_markers(markers: &[&str]) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("hanihi-tc-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(dir.join(".git")).unwrap();
+        fs::create_dir_all(dir.join("src")).unwrap();
+        for marker in markers {
+            let path = dir.join(marker);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).unwrap();
+            }
+            fs::write(path, "").unwrap();
+        }
+        dir
+    }
+
+    #[test]
+    fn detect_toolchain_finds_cargo() {
+        let dir = repo_with_markers(&["Cargo.toml"]);
+        assert_eq!(detect_toolchain(&dir), Toolchain::Cargo);
+        fs::remove_dir_all(&dir).unwrap_or(());
+    }
+
+    #[test]
+    fn detect_toolchain_finds_cmake() {
+        let dir = repo_with_markers(&["CMakeLists.txt"]);
+        assert_eq!(detect_toolchain(&dir), Toolchain::CMake);
+        fs::remove_dir_all(&dir).unwrap_or(());
+    }
+
+    #[test]
+    fn detect_toolchain_prefers_cargo_when_both_present() {
+        let dir = repo_with_markers(&["Cargo.toml", "CMakeLists.txt"]);
+        assert_eq!(detect_toolchain(&dir), Toolchain::Cargo);
+        fs::remove_dir_all(&dir).unwrap_or(());
+    }
+
+    #[test]
+    fn detect_toolchain_is_unknown_without_markers() {
+        let dir = repo_with_markers(&[]);
+        fs::write(dir.join("src/main.rs"), "fn main() {}\n").unwrap();
+        assert_eq!(detect_toolchain(&dir), Toolchain::Unknown);
+        fs::remove_dir_all(&dir).unwrap_or(());
+    }
+
+    /// A bare `Makefile` is not a CMake project, so it must not be handed
+    /// `cmake` commands downstream.
+    #[test]
+    fn detect_toolchain_ignores_a_makefile() {
+        let dir = repo_with_markers(&["Makefile"]);
+        assert_eq!(detect_toolchain(&dir), Toolchain::Unknown);
+        fs::remove_dir_all(&dir).unwrap_or(());
+    }
+
+    /// Detection probes the repo root only: a vendored CMake project must not
+    /// reclassify a Cargo repo.
+    #[test]
+    fn detect_toolchain_ignores_a_nested_cmake_lists() {
+        let dir = repo_with_markers(&["Cargo.toml", "vendor/dep/CMakeLists.txt"]);
+        assert_eq!(detect_toolchain(&dir), Toolchain::Cargo);
+        fs::remove_dir_all(&dir).unwrap_or(());
+    }
+
+    /// The only test that exercises the `open_at` wiring.
+    #[test]
+    fn open_at_records_the_detected_toolchain() {
+        for (markers, expected) in [
+            (&["Cargo.toml"][..], Toolchain::Cargo),
+            (&["CMakeLists.txt"][..], Toolchain::CMake),
+            (&[][..], Toolchain::Unknown),
+        ] {
+            let dir = repo_with_markers(markers);
+            let tree = SourceTree::open_at(&dir).expect("repo opens");
+            assert_eq!(tree.toolchain(), expected, "markers: {markers:?}");
+            fs::remove_dir_all(&dir).unwrap_or(());
+        }
     }
 }

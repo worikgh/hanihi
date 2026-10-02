@@ -25,7 +25,7 @@ pub use agent::{
 pub use error::AgentError;
 pub use mcp::McpClient;
 pub use session::{Session, SessionError, SessionManager};
-pub use source::{Language, MAX_READ_BYTES, SourceError, SourceTree};
+pub use source::{Language, MAX_READ_BYTES, SourceError, SourceTree, Toolchain};
 pub use tool::{
     builtin_get_time, builtin_grep, builtin_list_dir, builtin_read_session_log,
     builtin_run_command, builtin_run_command_write,
