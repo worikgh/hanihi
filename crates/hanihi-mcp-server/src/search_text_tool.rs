@@ -71,9 +71,7 @@ pub(crate) fn json() -> Value {
 /// Implements the tool. `params` carries the MCP tool call; its `arguments`
 /// object holds the search options.
 pub(crate) fn exec(params: &Value, id: Value) -> Value {
-    eprintln!("{}:{}: exec", file!(), line!());
     let arguments = params.get("arguments").unwrap_or(params);
-    eprintln!("{}:{}: exec", file!(), line!());
     match run(arguments) {
         Ok(text) => success(id, text),
         Err(error) => failure(id, error.code, error.message),
@@ -132,7 +130,24 @@ fn run(arguments: &Value) -> Result<String, ToolError> {
     let globs = Globs::from_arguments(arguments)?;
     let context = bounded_unsigned(arguments, "context", DEFAULT_CONTEXT, MAX_CONTEXT)?;
     let max_matches = bounded_unsigned(arguments, "max_matches", DEFAULT_MAX_MATCHES, MAX_MATCHES)?;
-    eprintln!("{}:{}: run arguments:{arguments:?}", file!(), line!());
+
+    if matches!(arguments, Value::Object(_)) {
+        let path = arguments
+            .get("path")
+            .and_then(Value::as_str)
+            .unwrap_or("NO PATH");
+        let pattern = arguments
+            .get("pattern")
+            .and_then(Value::as_str)
+            .unwrap_or("NO PATTERN");
+
+        eprintln!(
+            "{}:{}: run path: {path} pattern: {pattern}",
+            file!(),
+            line!()
+        );
+    }
+
     let base = workspace_fs::workspace_root().map_err(|error| internal(error.message))?;
     let target = resolve_target(&base, arguments)?;
     eprintln!("{}:{}: run ", file!(), line!());
@@ -394,7 +409,6 @@ fn walk(
     max_matches: usize,
     output: &mut SearchOutput,
 ) -> Result<(), std::io::Error> {
-    eprintln!("{}:{}: walk {root:?} ", file!(), line!(),);
     for entry in fs::read_dir(current)? {
         let entry = entry?;
         let path = entry.path();
