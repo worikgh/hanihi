@@ -5,6 +5,11 @@
 //! digest issued by `read_file`). Every file is validated before any write
 //! happens, so a failed patch never leaves a partial edit behind, and a
 //! stale token never silently overwrites a concurrent change.
+//!
+//! A successful call also returns each file's post-write token, so a caller
+//! editing the same file repeatedly can chain tokens without re-reading. The
+//! precondition is unchanged: the token must describe the file's current
+//! contents, and only the tool can vouch for what it just wrote.
 
 use crate::workspace_fs;
 use serde_json::{Value, json};
@@ -37,7 +42,7 @@ fn is_sentinel_version(hash: &str) -> bool {
 pub(crate) fn json() -> Value {
     json!({
     "name": "apply_patch",
-    "description": "Applies unified diffs or whole-file replacements to workspace files after verifying each file's current SHA-256 hash. Returns the resulting diff and refuses paths outside the workspace or protected files.",
+    "description": "Applies unified diffs or whole-file replacements to workspace files after verifying each file's current SHA-256 hash. Returns the resulting diff plus a fresh `token` per file (the hash the tool just wrote) and refuses paths outside the workspace or protected files. Chaining that returned token into a follow-up edit avoids a re-read; it does not cover a change made by anyone else, so re-read when the file may have been edited outside this tool.",
     "inputSchema": {
         "type": "object",
         "properties": {
@@ -55,7 +60,7 @@ pub(crate) fn json() -> Value {
         },
         "base_token": {
             "type": "string",
-            "description": "SHA-256 hex digest (64 hex characters) of the file's current contents. For an existing file, copy the exact `token` returned by `read_file` for this path. For a new file, use the SHA-256 of empty content (e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855). Never substitute a placeholder such as all zeros."
+            "description": "SHA-256 hex digest (64 hex characters) of the file's current contents. For an existing file, copy the exact `token` returned by `read_file` for this path, or the `token` returned by a previous successful `apply_patch` to the same path. For a new file, use the SHA-256 of empty content (e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855). Never substitute a placeholder such as all zeros, and never recompute the digest yourself: a self-computed hash asserts a version you have not seen."
         },
         "files": {
             "type": "array",
@@ -68,7 +73,7 @@ pub(crate) fn json() -> Value {
                 },
                 "base_token": {
                 "type": "string",
-                "description": "SHA-256 hex digest (64 hex characters) of the file's current contents. Copy the `token` returned by `read_file` for this path."
+                "description": "SHA-256 hex digest (64 hex characters) of the file's current contents. Copy the `token` returned by `read_file` for this path, or the `token` returned by a previous successful `apply_patch` to it."
                 },
                 "patch": {
                 "type": "string",
@@ -155,6 +160,12 @@ struct Edit {
     base_token: String,
     op: EditOp,
 }
+
+/// Result field carrying the SHA-256 of the contents the tool just wrote, so a
+/// caller editing the same file repeatedly can chain tokens without a re-read.
+/// Populated only when every write in the call succeeded; a rolled-back call
+/// leaves no token to chain.
+const NEW_TOKEN_FIELD: &str = "token";
 
 fn run(arguments: &Value) -> Result<String, ToolError> {
     let edits = parse_edits(arguments)?;
@@ -303,7 +314,7 @@ fn apply_edits_in(root: &Path, edits: &[Edit]) -> Result<Value, ToolError> {
 
         if actual != expected {
             return Err(internal(format!(
-                "base_token mismatch for {}: expected {expected}, computed {actual}; refusing to overwrite concurrent changes",
+                "base_token mismatch for {}: expected {expected}, computed {actual}; refusing to overwrite concurrent changes. The token does not describe the file's current contents — it is stale or wrong. If you edited this file yourself, re-read it (or use the `token` echoed by your previous successful `apply_patch` to it) and retry with the fresh token.",
                 edit.path
             )));
         }
@@ -381,6 +392,10 @@ fn apply_edits_in(root: &Path, edits: &[Edit]) -> Result<Value, ToolError> {
         }
     }
 
+    // Every write succeeded, so the post-write hash is authoritative: it is
+    // computed from the exact bytes just written. On any failure above we
+    // return before reaching this point, so a rolled-back call never hands
+    // out a token that describes a state the files no longer have.
     Ok(json!({
     "files_changed": applied.len(),
     "files": applied
@@ -388,6 +403,7 @@ fn apply_edits_in(root: &Path, edits: &[Edit]) -> Result<Value, ToolError> {
         .map(|entry| json!({
         "path": entry.display_path,
         "applied": true,
+        NEW_TOKEN_FIELD: workspace_fs::sha256_hex(entry.new_content.as_bytes()),
         "diff": entry.diff,
         }))
         .collect::<Vec<_>>(),
@@ -1049,6 +1065,117 @@ mod tests {
         .unwrap();
         assert_eq!(edits.len(), 1);
         assert_eq!(edits[0].path, "src/lib.rs");
+    }
+
+    /// A stale token — the failure mode that motivated the token echo: a
+    /// caller edits a file, then reuses the pre-edit token for a second edit
+    /// without re-reading.
+    #[test]
+    fn apply_edits_in_rejects_a_token_from_before_its_own_write() {
+        let root = temp_dir("apply_edits_in_rejects_a_token_from_before_its_own_write");
+        fs::write(root.join("a.txt"), "old\n").unwrap();
+        let stale = workspace_fs::sha256_hex(b"old\n");
+
+        let first = [Edit {
+            path: "a.txt".to_string(),
+            base_token: stale.clone(),
+            op: EditOp::Patch {
+                patch: "@@ -1,1 +1,1 @@\n-old\n+first\n".to_string(),
+            },
+        }];
+        apply_edits_in(&root, &first).unwrap();
+
+        // Same token again: the file is now "first\n", so this must be refused.
+        let second = [Edit {
+            path: "a.txt".to_string(),
+            base_token: stale,
+            op: EditOp::Patch {
+                patch: "@@ -1,1 +1,1 @@\n-first\n+second\n".to_string(),
+            },
+        }];
+        let error = apply_edits_in(&root, &second).unwrap_err();
+        assert_eq!(error.code, -32603);
+        assert!(error.message.contains("mismatch"), "got: {}", error.message);
+        assert!(
+            error.message.contains("re-read"),
+            "the message must name the recovery step, got: {}",
+            error.message
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("a.txt")).unwrap(),
+            "first\n",
+            "the refused edit must not have been applied"
+        );
+    }
+
+    /// The echoed token is the hash of the bytes the tool actually wrote, so
+    /// chaining it into a second edit succeeds without a re-read.
+    #[test]
+    fn apply_edits_in_returns_a_token_that_chains_into_the_next_edit() {
+        let root = temp_dir("apply_edits_in_returns_a_token_that_chains_into_the_next_edit");
+        fs::write(root.join("a.txt"), "old\n").unwrap();
+
+        let first = [Edit {
+            path: "a.txt".to_string(),
+            base_token: workspace_fs::sha256_hex(b"old\n"),
+            op: EditOp::Patch {
+                patch: "@@ -1,1 +1,1 @@\n-old\n+first\n".to_string(),
+            },
+        }];
+        let report = apply_edits_in(&root, &first).unwrap();
+        let token = report["files"][0][NEW_TOKEN_FIELD]
+            .as_str()
+            .expect("a successful apply reports the new token")
+            .to_string();
+        assert_eq!(token, workspace_fs::sha256_hex(b"first\n"));
+
+        let second = [Edit {
+            path: "a.txt".to_string(),
+            base_token: token,
+            op: EditOp::Patch {
+                patch: "@@ -1,1 +1,1 @@\n-first\n+second\n".to_string(),
+            },
+        }];
+        let report = apply_edits_in(&root, &second).unwrap();
+        assert_eq!(report["files_changed"], json!(1));
+        assert_eq!(
+            report["files"][0][NEW_TOKEN_FIELD],
+            json!(workspace_fs::sha256_hex(b"second\n"))
+        );
+        assert_eq!(fs::read_to_string(root.join("a.txt")).unwrap(), "second\n");
+    }
+
+    /// Every file in a multi-file call carries its own forward token.
+    #[test]
+    fn apply_edits_in_returns_a_token_per_file() {
+        let root = temp_dir("apply_edits_in_returns_a_token_per_file");
+
+        let edits = [
+            Edit {
+                path: "a.txt".to_string(),
+                base_token: workspace_fs::sha256_hex(b""),
+                op: EditOp::Replace {
+                    content: "a\n".to_string(),
+                },
+            },
+            Edit {
+                path: "b.txt".to_string(),
+                base_token: workspace_fs::sha256_hex(b""),
+                op: EditOp::Replace {
+                    content: "b\n".to_string(),
+                },
+            },
+        ];
+        let report = apply_edits_in(&root, &edits).unwrap();
+        assert_eq!(report["files_changed"], json!(2));
+        assert_eq!(
+            report["files"][0][NEW_TOKEN_FIELD],
+            json!(workspace_fs::sha256_hex(b"a\n"))
+        );
+        assert_eq!(
+            report["files"][1][NEW_TOKEN_FIELD],
+            json!(workspace_fs::sha256_hex(b"b\n"))
+        );
     }
 
     #[test]

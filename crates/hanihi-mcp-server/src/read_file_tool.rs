@@ -1,5 +1,8 @@
 //! `read_file` tool for Hānihi: reads a workspace file and returns its
 //! content plus the token `apply_patch` expects as `base_token`.
+//!
+//! Use this token when you have not written the file since reading it; a
+//! successful `apply_patch` returns its own token for the repeated-edit case.
 
 use crate::workspace_fs::{self, ToolError};
 use serde_json::{Value, json};
@@ -11,7 +14,7 @@ use std::path::Path;
 pub(crate) fn json() -> Value {
     json!({
     "name": "read_file",
-    "description": "Reads the file at the given workspace-relative path and returns its content, byte size, and SHA-256. The `token` value is the exact `base_token` to pass to `apply_patch` for this path.",
+    "description": "Reads the file at the given workspace-relative path and returns its content, byte size, and SHA-256. The `token` value is the exact `base_token` to pass to `apply_patch` for this path. Pass this read token only if you have not edited the file since reading it; after your own successful `apply_patch`, use the `token` that tool returned instead of this one.",
     "inputSchema": {
         "type": "object",
         "properties": {
