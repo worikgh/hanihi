@@ -76,7 +76,6 @@ fn read_file(path: &Path, display_path: &str) -> Result<String, ToolError> {
             )));
         }
     };
-    eprintln!("{}:{}: read_file", file!(), line!(),);
 
     // Invariant: hash the raw file bytes, not the decoded String. `apply_patch`
     // verifies against `fs::read` bytes, so hashing the String here would
@@ -86,7 +85,6 @@ fn read_file(path: &Path, display_path: &str) -> Result<String, ToolError> {
     let content = String::from_utf8(bytes)
         .map_err(|_| workspace_fs::internal(format!("file is not valid UTF-8: {display_path}")))?;
 
-    eprintln!("{}:{}: read_file", file!(), line!(),);
     // `token` is the forward-compatible "copy this" slot. At Level 0 it is
     // byte-identical to `sha256`; a Level 1 implementation would replace it
     // with an HMAC while keeping `sha256` as the content hash.
@@ -97,7 +95,6 @@ fn read_file(path: &Path, display_path: &str) -> Result<String, ToolError> {
     "size": size,
     "content": content,
     });
-    eprintln!("{}:{}: read_file", file!(), line!(),);
     serde_json::to_string_pretty(&report)
         .map_err(|error| workspace_fs::internal(format!("failed to serialize result: {error}")))
 }
