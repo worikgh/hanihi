@@ -119,7 +119,6 @@ fn failure(id: Value, code: i64, message: String) -> Value {
 
 fn run(arguments: &Value) -> Result<String, ToolError> {
     let pattern = required_string(arguments, "pattern")?;
-    eprintln!("{}:{}: run pattern:{pattern}", file!(), line!());
 
     let literal = arguments
         .get("literal")
@@ -150,10 +149,8 @@ fn run(arguments: &Value) -> Result<String, ToolError> {
 
     let base = workspace_fs::workspace_root().map_err(|error| internal(error.message))?;
     let target = resolve_target(&base, arguments)?;
-    eprintln!("{}:{}: run ", file!(), line!());
 
     let mut output = SearchOutput::new();
-    eprintln!("{}:{}: run ", file!(), line!());
     match target {
         SearchTarget::File { path, relative } => {
             search_file(
