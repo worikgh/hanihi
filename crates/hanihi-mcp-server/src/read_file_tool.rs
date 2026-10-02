@@ -16,15 +16,15 @@ pub(crate) fn json() -> Value {
     "name": "read_file",
     "description": "Reads the file at the given workspace-relative path and returns its content, byte size, and SHA-256. The `token` value is the exact `base_token` to pass to `apply_patch` for this path. Pass this read token only if you have not edited the file since reading it; after your own successful `apply_patch`, use the `token` that tool returned instead of this one.",
     "inputSchema": {
-        "type": "object",
-        "properties": {
-        "path": {
-            "type": "string",
-            "description": "Path of the file to read, relative to the workspace root."
-        }
-        },
-        "required": ["path"],
-        "additionalProperties": false
+    "type": "object",
+    "properties": {
+    "path": {
+        "type": "string",
+        "description": "Path of the file to read, relative to the workspace root."
+    }
+    },
+    "required": ["path"],
+    "additionalProperties": false
     }
     })
 }
