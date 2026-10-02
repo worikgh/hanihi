@@ -543,6 +543,39 @@ struct Hunk {
     lines: Vec<DiffLine>,
 }
 
+impl Hunk {
+    /// The old/new line counts implied by the hunk body: `(old, new)`, where
+    /// the old side is every non-added line and the new side every
+    /// non-removed line.
+    fn line_counts(&self) -> (usize, usize) {
+        let old = self
+            .lines
+            .iter()
+            .filter(|line| !matches!(line.kind, LineKind::Add))
+            .count();
+        let new = self
+            .lines
+            .iter()
+            .filter(|line| !matches!(line.kind, LineKind::Remove))
+            .count();
+        (old, new)
+    }
+
+    /// Fills in the counts of a hunk whose header omitted its ranges. A hunk
+    /// with explicit counts is left untouched, so only `@@`-style headers are
+    /// affected. The new side starts where the old side does; this is what
+    /// makes the header-less form unambiguous for a pure replacement.
+    fn derive_counts_from_body(&mut self) {
+        if self.old_count != 0 || self.new_count != 0 {
+            return;
+        }
+        let (old, new) = self.line_counts();
+        self.old_count = old;
+        self.new_count = new;
+        self.new_start = self.old_start;
+    }
+}
+
 #[derive(Debug)]
 struct ParsedPatch {
     hunks: Vec<Hunk>,
@@ -554,19 +587,56 @@ fn parse_patch(patch: &str, path: &str) -> Result<ParsedPatch, String> {
     let mut hunks: Vec<Hunk> = Vec::new();
     let mut current: Option<Hunk> = None;
 
-    for raw in patch.lines() {
+    // Line where a range-less hunk's old side starts: one past the end of the
+    // previous hunk, so consecutive `@@`-only headers stay unambiguous.
+    let mut next_old_start = 1usize;
+
+    for (index, raw) in patch.lines().enumerate() {
+        let line_number = index + 1;
+
         if let Some(rest) = raw.strip_prefix("@@") {
+            if rest.starts_with('@') {
+                return Err(invalid_hunk_header(
+                    path,
+                    line_number,
+                    raw,
+                    "a header starts with exactly two `@` characters",
+                ));
+            }
             if let Some(hunk) = current.take() {
+                next_old_start = hunk.old_start + hunk.old_count.max(hunk.line_counts().0);
                 hunks.push(hunk);
             }
-            let (old_start, old_count, new_start, new_count) =
-                parse_hunk_header(rest).ok_or_else(|| invalid_hunk_header(path, raw))?;
-            current = Some(Hunk {
-                old_start,
-                old_count,
-                new_start,
-                new_count,
-                lines: Vec::new(),
+            let header = parse_hunk_header(rest).ok_or_else(|| {
+                invalid_hunk_header(
+                    path,
+                    line_number,
+                    raw,
+                    "the ranges are not `<n>` or `<n>,<n>`",
+                )
+            })?;
+            current = Some(match header {
+                HunkHeader::Ranges {
+                    old_start,
+                    old_count,
+                    new_start,
+                    new_count,
+                } => Hunk {
+                    old_start,
+                    old_count,
+                    new_start,
+                    new_count,
+                    lines: Vec::new(),
+                },
+                // Ranges omitted: anchored after the previous hunk and filled
+                // in from the body once the body has been collected.
+                HunkHeader::Derive => Hunk {
+                    old_start: next_old_start,
+                    old_count: 0,
+                    new_start: next_old_start,
+                    new_count: 0,
+                    lines: Vec::new(),
+                },
             });
             continue;
         }
@@ -600,29 +670,56 @@ fn parse_patch(patch: &str, path: &str) -> Result<ParsedPatch, String> {
         hunks.push(hunk);
     }
 
+    for hunk in &mut hunks {
+        hunk.derive_counts_from_body();
+    }
+
     if hunks.is_empty() {
         return Err(format!("patch for {path} contains no hunks"));
     }
     Ok(ParsedPatch { hunks })
 }
 
-/// Renders a diagnostic for a malformed hunk header, teaching the caller the
-/// required range syntax and a minimal example.
-fn invalid_hunk_header(path: &str, raw: &str) -> String {
+/// Renders a diagnostic for a malformed hunk header, naming the offending
+/// line and reason, and teaching the required range syntax.
+fn invalid_hunk_header(path: &str, line_number: usize, raw: &str, reason: &str) -> String {
     format!(
-        "invalid hunk header in patch for {path}: `{raw}` — expected `@@ -<old_start>[,<old_count>] +<new_start>[,<new_count>] @@`, for example `@@ -1,1 +1,1 @@`"
+        "invalid hunk header in patch for {path} at line {line_number}: `{raw}` — {reason}. \
+         Expected `@@ -<old_start>[,<old_count>] +<new_start>[,<new_count>] @@`, for example \
+         `@@ -1,1 +1,1 @@`; a range-less `@@` is also accepted and its ranges are derived \
+         from the hunk body."
     )
 }
 
+/// A parsed hunk header: either explicit ranges, or a bare `@@` whose ranges
+/// are derived from the body (matching `patch(1)` and `git apply` for
+/// hand-written diffs).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HunkHeader {
+    Ranges {
+        old_start: usize,
+        old_count: usize,
+        new_start: usize,
+        new_count: usize,
+    },
+    Derive,
+}
+
 /// Parses the `-old,count +new,count` part of a hunk header (without the
-/// leading `@@`).
-fn parse_hunk_header(rest: &str) -> Option<(usize, usize, usize, usize)> {
+/// leading `@@`). `Ok(HunkHeader::Derive)` means the header carried no ranges.
+fn parse_hunk_header(rest: &str) -> Option<HunkHeader> {
     let mut parts = rest.split_whitespace();
-    let old = parts.next()?;
-    let new = parts.next()?;
+    let (Some(old), Some(new)) = (parts.next(), parts.next()) else {
+        return Some(HunkHeader::Derive);
+    };
     let (old_start, old_count) = parse_hunk_range(old)?;
     let (new_start, new_count) = parse_hunk_range(new)?;
-    Some((old_start, old_count, new_start, new_count))
+    Some(HunkHeader::Ranges {
+        old_start,
+        old_count,
+        new_start,
+        new_count,
+    })
 }
 
 fn parse_hunk_range(part: &str) -> Option<(usize, usize)> {
@@ -986,9 +1083,69 @@ mod tests {
 
     #[test]
     fn parse_patch_rejects_bare_hunk_header_with_helpful_message() {
-        let error = parse_patch("@@\n-old\n+new\n", "src/lib.rs").unwrap_err();
-        assert!(error.contains("invalid hunk header"));
-        assert!(error.contains("@@ -1,1 +1,1 @@"));
+        // `@@@` is not a header: it is a line that merely starts with `@@`, so
+        // it must be reported rather than mistaken for a hunk.
+        let error = parse_patch("@@@\n-old\n+new\n", "src/lib.rs").unwrap_err();
+        assert!(error.contains("invalid hunk header"), "got: {error}");
+        assert!(error.contains("line 1"), "got: {error}");
+        assert!(error.contains("exactly two `@`"), "got: {error}");
+        assert!(error.contains("@@ -1,1 +1,1 @@"), "got: {error}");
+    }
+
+    /// A malformed range names the offending line, so the caller can find it
+    /// without counting lines in the patch by hand.
+    #[test]
+    fn parse_patch_reports_malformed_range_with_line_number() {
+        let error = parse_patch("@@ -1,x +1,1 @@\n-old\n+new\n", "src/lib.rs").unwrap_err();
+        assert!(error.contains("invalid hunk header"), "got: {error}");
+        assert!(error.contains("line 1"), "got: {error}");
+        assert!(error.contains("-1,x"), "got: {error}");
+    }
+
+    /// A range-less `@@` header is legal: the ranges come from the body. This
+    /// is the failure that motivated the change — a hand-written or
+    /// string-escaped patch that lost its ranges must still apply.
+    #[test]
+    fn parse_patch_derives_ranges_from_a_range_less_header() {
+        let parsed = parse_patch(
+            "@@\n fn main() {\n-    old();\n+    new();\n }\n",
+            "src/lib.rs",
+        )
+        .unwrap();
+        assert_eq!(parsed.hunks.len(), 1);
+        let hunk = &parsed.hunks[0];
+        assert_eq!(hunk.old_start, 1);
+        assert_eq!(hunk.old_count, 3);
+        assert_eq!(hunk.new_start, 1);
+        assert_eq!(hunk.new_count, 3);
+
+        let (lines, _) = split_lines("fn main() {\n    old();\n}\n");
+        let result = apply_hunks(&lines, &parsed, "src/lib.rs").unwrap();
+        assert_eq!(result, vec!["fn main() {", "    new();", "}"]);
+    }
+
+    /// A second range-less hunk is anchored after the first, so consecutive
+    /// header-less hunks do not collide at line 1.
+    #[test]
+    fn parse_patch_anchors_a_second_range_less_hunk_after_the_first() {
+        let parsed = parse_patch(
+            "@@\n-fn a() {}\n+fn a() { x(); }\n@@\n-fn c() {}\n+fn c() { x(); }\n",
+            "src/lib.rs",
+        )
+        .unwrap();
+        assert_eq!(parsed.hunks.len(), 2);
+        assert_eq!(parsed.hunks[0].old_start, 1);
+        assert_eq!(parsed.hunks[1].old_start, 2);
+    }
+
+    /// An explicit header is never rewritten by the derivation pass.
+    #[test]
+    fn parse_patch_keeps_explicit_ranges() {
+        let parsed = parse_patch("@@ -7,2 +7,2 @@\n-old\n+new\n", "src/lib.rs").unwrap();
+        assert_eq!(parsed.hunks[0].old_start, 7);
+        assert_eq!(parsed.hunks[0].old_count, 2);
+        assert_eq!(parsed.hunks[0].new_start, 7);
+        assert_eq!(parsed.hunks[0].new_count, 2);
     }
 
     #[test]
