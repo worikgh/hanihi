@@ -30,36 +30,36 @@ pub(crate) fn json() -> Value {
     "type": "object",
     "properties": {
     "pattern": {
-        "type": "string",
-        "description": "The text to search for. Treated as a regular expression unless `literal` is true."
+    "type": "string",
+    "description": "The text to search for. Treated as a regular expression unless `literal` is true."
     },
     "literal": {
-        "type": "boolean",
-        "description": "Treat `pattern` as a fixed string instead of a regular expression.",
-        "default": false
+    "type": "boolean",
+    "description": "Treat `pattern` as a fixed string instead of a regular expression.",
+    "default": false
     },
     "globs": {
-        "type": "array",
-        "items": { "type": "string" },
-        "description": "File globs limiting which files are searched, e.g. \"*.rs\", \"src/**/*.rs\", \"tests/**/*.rs\". Defaults to all files."
+    "type": "array",
+    "items": { "type": "string" },
+    "description": "File globs limiting which files are searched, e.g. \"*.rs\", \"src/**/*.rs\", \"tests/**/*.rs\". Defaults to all files."
     },
     "path": {
-        "type": "string",
-        "description": "File or directory to search, relative to the workspace root. Defaults to the workspace root. When it names an existing file, only that file is searched."
+    "type": "string",
+    "description": "File or directory to search, relative to the workspace root. Defaults to the workspace root. When it names an existing file, only that file is searched."
     },
     "context": {
-        "type": "integer",
-        "description": "Number of context lines to show before and after each match.",
-        "default": DEFAULT_CONTEXT,
-        "minimum": 0,
-        "maximum": MAX_CONTEXT
+    "type": "integer",
+    "description": "Number of context lines to show before and after each match.",
+    "default": DEFAULT_CONTEXT,
+    "minimum": 0,
+    "maximum": MAX_CONTEXT
     },
     "max_matches": {
-        "type": "integer",
-        "description": "Maximum number of matching lines to report.",
-        "default": DEFAULT_MAX_MATCHES,
-        "minimum": 1,
-        "maximum": MAX_MATCHES
+    "type": "integer",
+    "description": "Maximum number of matching lines to report.",
+    "default": DEFAULT_MAX_MATCHES,
+    "minimum": 1,
+    "maximum": MAX_MATCHES
     }
     },
     "required": ["pattern"],
