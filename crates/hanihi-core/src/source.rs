@@ -22,7 +22,7 @@ use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use ignore::{Match, Walk, WalkBuilder};
 
 /// Maximum number of bytes [`SourceTree::read`] returns for one file.
-pub const MAX_READ_BYTES: usize = 64 * 1024;
+pub const MAX_READ_BYTES: usize = 128 * 1024;
 
 /// Marker line used to recognise an existing hānihi-managed `.ignore`.
 const HANIHI_HEADER: &str = "# hānihi-managed ignore file (agent read policy)\n";
@@ -60,10 +60,10 @@ impl Language {
             Language::Rust => "target/\n**/*.rs.bk\n",
             Language::C => {
                 "build/\ncmake-build-*/\nCMakeFiles/\n\
-                 *.o\n*.obj\n*.a\n*.so\n*.dylib\n*.exe\n\
-                 *.gcda\n*.gcno\n\
-                 a.out\n.cache/\n\
-                 # compile_commands.json — sometimes committed; useful for the agent\n"
+		 *.o\n*.obj\n*.a\n*.so\n*.dylib\n*.exe\n\
+		 *.gcda\n*.gcno\n\
+		 a.out\n.cache/\n\
+		 # compile_commands.json — sometimes committed; useful for the agent\n"
             }
         }
     }
