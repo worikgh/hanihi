@@ -325,7 +325,12 @@ fn check_command_argv_mode(argv: &[String], mode: CommandMode) -> Result<(), Str
     let allowed_non_mutating = NON_MUTATING;
     let allowed: Vec<&str> = allowed_non_mutating
         .iter()
-        .chain(["cargo", "git", "find"].iter())
+        .chain(
+            [
+                "cargo", "git", "find", "cmake", "ctest", "g++", "gcc", "clang++", "clang",
+            ]
+            .iter(),
+        )
         .copied()
         .collect();
 
@@ -341,6 +346,9 @@ fn check_command_argv_mode(argv: &[String], mode: CommandMode) -> Result<(), Str
             val if allowed_non_mutating.contains(&program.as_str()) && val == program.as_str() => {
                 Ok(())
             }
+            "cmake" => check_cmake_argv(argv),
+            "ctest" => check_ctest_argv(argv),
+            "g++" | "gcc" | "clang++" | "clang" => check_compiler_argv(argv),
             "cargo" => {
                 let Some(sub) = argv.get(1) else {
                     return Err(
@@ -572,7 +580,7 @@ fn check_command_argv_mode(argv: &[String], mode: CommandMode) -> Result<(), Str
                 }
             }
             other => Err(format!(
-                "command '{other}' is not allowed (only cargo and git)"
+                "command '{other}' is not allowed (only cargo, git, cmake, ctest, and g++/gcc/clang)"
             )),
         }
     }
@@ -582,6 +590,324 @@ fn check_command_argv_mode(argv: &[String], mode: CommandMode) -> Result<(), Str
 const GIT_COMMIT_AMEND_OK: &[&str] = &["--amend", "--no-edit"];
 /// `git commit` message flags; each consumes the following argv element.
 const GIT_COMMIT_MESSAGE_FLAGS: &[&str] = &["-m", "--message"];
+
+// ── cmake / ctest / compilers ────────────────────────────────────
+
+/// The only build directory the agent may touch. Out-of-source builds are the
+/// supported layout, and this is enforced, not merely documented: a `-B` (or a
+/// `--build`) argument that is not this directory, or a path under it, is
+/// refused.
+const BUILD_DIR: &str = "build";
+
+/// Numeric argument accepted by `-j`/`--parallel`.
+fn is_positive_integer(arg: &str) -> bool {
+    !arg.is_empty() && arg.bytes().all(|b| b.is_ascii_digit())
+}
+
+/// True when `arg` is `build` or a relative path whose first component is
+/// `build`.
+///
+/// Rejects absolute paths, `..`, and any other escape attempt before the value
+/// reaches CMake. This mirrors `SourceTree::resolve_for_write`: the path is
+/// inspected as components, so `build/../../etc` cannot slip through a
+/// string-matching check. A backslash is treated as an ordinary character;
+/// only `/` separates components on the target platforms.
+fn is_under_build_dir(arg: &str) -> bool {
+    let mut components = Path::new(arg).components();
+    match components.next() {
+        Some(Component::Normal(first)) if first == BUILD_DIR => {}
+        _ => return false,
+    }
+    components.all(|component| matches!(component, Component::Normal(_)))
+}
+
+/// Refuse a `-D` cache variable that names a program or an install location.
+fn check_cmake_define(value: &str) -> Result<(), String> {
+    const FORBIDDEN: [&str; 4] = [
+        "CMAKE_INSTALL_PREFIX=",
+        "CMAKE_CXX_COMPILER=",
+        "CMAKE_C_COMPILER=",
+        "CMAKE_MAKE_PROGRAM=",
+    ];
+    for name in FORBIDDEN {
+        if value.starts_with(name) || value.starts_with(&format!("{name}:")) {
+            return Err(format!(
+                "cmake -D {name}... is not allowed (it names a program or an install path)"
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Validate a `cmake` argv: configure into `build/`, or build `build/`.
+///
+/// Only the out-of-source `build/` convention is supported, driven from the
+/// pinned cwd. Anything that runs arbitrary CMake code (`-P`, `--script`),
+/// redirects the source or build root (`-S`, `--source`, and any `-B`/`--build`
+/// outside `build/`), selects a generator, or writes outside the repository
+/// (`--install`, `--prefix`, the `CMAKE_*` program/prefix variables) is refused
+/// with a message naming the reason.
+fn check_cmake_argv(argv: &[String]) -> Result<(), String> {
+    let args = &argv[1..];
+    let Some(first) = args.first().map(String::as_str) else {
+        return Err(
+	    "cmake requires arguments (configure with `cmake -B build`, build with `cmake --build build`)"
+		.into(),
+	);
+    };
+
+    if first == "--build" {
+        return check_cmake_build_args(&args[1..]);
+    }
+
+    // Configure: every argument is either a validated flag or refused.
+    let mut iter = args.iter().peekable();
+    while let Some(arg) = iter.next() {
+        let arg = arg.as_str();
+        match arg {
+            "-B" => {
+                let Some(dir) = iter.next().map(String::as_str) else {
+                    return Err("cmake -B requires a directory argument".into());
+                };
+                if !is_under_build_dir(dir) {
+                    return Err(format!(
+                        "cmake -B {dir} is not allowed (the build directory must be `{BUILD_DIR}` or a path under it)"
+                    ));
+                }
+            }
+            _ if arg.starts_with("-B") && arg.len() > 2 => {
+                let dir = &arg[2..];
+                if !is_under_build_dir(dir) {
+                    return Err(format!(
+                        "cmake -B {dir} is not allowed (the build directory must be `{BUILD_DIR}` or a path under it)"
+                    ));
+                }
+            }
+            "-D" => {
+                let Some(definition) = iter.next().map(String::as_str) else {
+                    return Err("cmake -D requires a NAME=VALUE argument".into());
+                };
+                check_cmake_define(definition)?;
+            }
+            _ if arg.starts_with("-D") && arg.len() > 2 => check_cmake_define(&arg[2..])?,
+            "-P" | "--script" => {
+                return Err(format!(
+                    "cmake {arg} is not allowed (it runs arbitrary CMake code)"
+                ));
+            }
+            "-S" | "--source" => {
+                return Err(format!(
+                    "cmake {arg} is not allowed (out-of-source builds run from the repository root)"
+                ));
+            }
+            "--install" => {
+                return Err(
+                    "cmake --install is not allowed (it writes outside the repository)".into(),
+                );
+            }
+            "--prefix" => {
+                return Err(
+                    "cmake --prefix is not allowed (it writes outside the repository)".into(),
+                );
+            }
+            "-G" => {
+                return Err("cmake -G is not allowed (the default generator is used)".into());
+            }
+            "-E" | "-H" | "--fresh" | "-U" => {
+                return Err(format!("cmake {arg} is not allowed"));
+            }
+            _ => return Err(format!("cmake argument '{arg}' is not allowed")),
+        }
+    }
+
+    Ok(())
+}
+
+/// Validate the arguments of `cmake --build <dir>`.
+fn check_cmake_build_args(args: &[String]) -> Result<(), String> {
+    let Some(dir) = args.first().map(String::as_str) else {
+        return Err(format!(
+            "cmake --build requires a build directory (`cmake --build {BUILD_DIR}`)"
+        ));
+    };
+    if !is_under_build_dir(dir) {
+        return Err(format!(
+            "cmake --build {dir} is not allowed (the build directory must be `{BUILD_DIR}` or a path under it)"
+        ));
+    }
+
+    let mut iter = args[1..].iter().peekable();
+    while let Some(arg) = iter.next() {
+        let arg = arg.as_str();
+        match arg {
+            "--target" | "-t" => {
+                if iter.next().is_none() {
+                    return Err("cmake --build --target requires a name".into());
+                }
+            }
+            "--config" | "-C" => {
+                if iter.next().is_none() {
+                    return Err("cmake --build --config requires a name".into());
+                }
+            }
+            "-j" | "--parallel" => {
+                match iter.peek().map(|s| s.as_str()) {
+                    Some(n) if is_positive_integer(n) => {
+                        iter.next();
+                    }
+                    // `-j` without a count means "all cores", which is bounded.
+                    Some(_) => {
+                        return Err("cmake --build -j requires a numeric argument".into());
+                    }
+                    None => {}
+                }
+            }
+            "--install" => {
+                return Err(
+                    "cmake --build --install is not allowed (it writes outside the repository)"
+                        .into(),
+                );
+            }
+            _ => return Err(format!("cmake --build argument '{arg}' is not allowed")),
+        }
+    }
+
+    Ok(())
+}
+
+/// Validate a `ctest` argv: run the tests in `build/`.
+fn check_ctest_argv(argv: &[String]) -> Result<(), String> {
+    let args = &argv[1..];
+    if args.is_empty() {
+        return Err(format!(
+            "ctest requires arguments (`ctest --test-dir {BUILD_DIR}`)"
+        ));
+    }
+
+    let mut iter = args.iter().peekable();
+    let mut saw_test_dir = false;
+    while let Some(arg) = iter.next() {
+        let arg = arg.as_str();
+        match arg {
+            "--test-dir" | "-T" => {
+                let Some(dir) = iter.next().map(|s| s.as_str()) else {
+                    return Err("ctest --test-dir requires a directory argument".into());
+                };
+                if !is_under_build_dir(dir) {
+                    return Err(format!(
+                        "ctest --test-dir {dir} is not allowed (the test directory must be `{BUILD_DIR}` or a path under it)"
+                    ));
+                }
+                saw_test_dir = true;
+            }
+            "--output-on-failure" => {}
+            "-j" | "--parallel" => match iter.peek().map(|s| s.as_str()) {
+                Some(n) if is_positive_integer(n) => {
+                    iter.next();
+                }
+                Some(_) => return Err("ctest -j requires a numeric argument".into()),
+                None => {}
+            },
+            _ => return Err(format!("ctest argument '{arg}' is not allowed")),
+        }
+    }
+
+    if !saw_test_dir {
+        return Err(format!(
+            "ctest requires --test-dir {BUILD_DIR} (the cwd is the repository root)"
+        ));
+    }
+    Ok(())
+}
+
+/// Flags that make a compiler load, run, or write to a caller-named path.
+///
+/// Both the joined (`-MFfoo`) and separated (`-MF foo`) forms are rejected, as
+/// is `@file` (a response file pulls arbitrary flags from disk).
+fn compiler_argv_is_forbidden(arg: &str) -> bool {
+    const FORBIDDEN_PREFIXES: [&str; 5] = ["-MF", "-MT", "-MQ", "-MJ", "-Wl,"];
+    const FORBIDDEN_EXACT: [&str; 9] = [
+        "-o",
+        "-Xclang",
+        "-Xlinker",
+        "-wrapper",
+        "--serialize-diagnostics",
+        "-fplugin=",
+        "-B",
+        "-Xpreprocessor",
+        "-Xassembler",
+    ];
+
+    arg.starts_with('@')
+        || arg.starts_with("-fplugin=")
+        || FORBIDDEN_PREFIXES.iter().any(|p| arg.starts_with(p))
+        || FORBIDDEN_EXACT.contains(&arg)
+}
+
+/// Validate a single-translation-unit compile: `<compiler> -c <file>`.
+///
+/// `-c` is mandatory. Compile-and-link is what `cmake --build` is for, and a
+/// bare `g++ foo.cpp -o /tmp/x` would produce an executable at an arbitrary
+/// path. Everything that names an output file, loads a plugin, or hands the
+/// compiler another program is refused; every other flag is admitted, since it
+/// can only affect the compilation of the one input file.
+///
+/// The input operand must be inside the repository: the compiler can already
+/// read a header outside it via `-I`, but compiling an arbitrary file and
+/// writing its object next to it is a wider capability than that.
+fn check_compiler_argv(argv: &[String]) -> Result<(), String> {
+    let args = &argv[1..];
+
+    if !args.iter().any(|a| a == "-c") {
+        return Err(
+	    "-c is required (build the project with `cmake --build build`; this tool only compiles one translation unit)"
+		.into(),
+	);
+    }
+
+    let mut inputs = 0usize;
+    // `-c` and the input file are positional-free; everything else is either a
+    // flag or the input operand.
+    for arg in args {
+        let arg = arg.as_str();
+        if arg == "-c" || arg == "-fsyntax-only" {
+            continue;
+        }
+        if compiler_argv_is_forbidden(arg) {
+            return Err(format!("compiler argument '{arg}' is not allowed"));
+        }
+
+        // A bare `-` names stdin. It is checked before the generic flag branch
+        // below, because it starts with `-` but is an input, not a flag.
+        if arg == "-" {
+            return Err("compiling from stdin ('-') is not allowed".into());
+        }
+
+        if arg.starts_with('-') {
+            // A compilation flag: `-I`, `-isystem`, `-D`, `-std=`, `-O2`, ...
+            // admitted because it affects only this translation unit.
+            continue;
+        }
+
+        // An input operand.
+        if Path::new(arg).components().any(|component| {
+            matches!(
+                component,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        }) {
+            return Err(format!(
+                "compiler input '{arg}' is not allowed (it escapes the repository)"
+            ));
+        }
+        inputs += 1;
+    }
+
+    if inputs == 0 {
+        return Err("compiling requires an input file".into());
+    }
+    Ok(())
+}
 
 /// True when `arg` is `flag` exactly, or `flag=value`.
 fn arg_is_flag(arg: &str, flag: &str) -> bool {
@@ -797,9 +1123,12 @@ const RUN_COMMAND_DESC_WRITE: &str = "Run an allowlisted command inside the repo
 No shell: the command is split on whitespace into argv. cargo subcommands: check, build, test, \
 clippy, fmt, doc, run -p hanihi-eval. git subcommands: status, diff, log, show, apply --check; \
 write mode also allows git add, git restore --staged, git rm --cached, git commit, and git \
-commit --amend. cwd is pinned to the repo root; the environment is scrubbed (PATH, HOME, \
-CARGO_* only); output is capped at 64 KiB; the full output is written to a trace file. Returns \
-exit code, duration, stdout/stderr (truncated), and the trace path.";
+commit --amend. cmake: `cmake -B build` to configure and `cmake --build build` to build; ctest: \
+`ctest --test-dir build`. Compilers (g++/gcc/clang++/clang) with `-c <file>` compile one \
+translation unit; add `-fsyntax-only` for a fast parse check. cwd is pinned to the repo root; \
+the environment is scrubbed (PATH, HOME, CARGO_* only); output is capped at 64 KiB; the full \
+output is written to a trace file. Returns exit code, duration, stdout/stderr (truncated), and \
+the trace path.";
 
 /// Tool: run an allowlisted `cargo`/`git` command inside the repo root.
 ///
@@ -832,11 +1161,14 @@ fn builtin_run_command_for(
     let description = match mode {
         CommandMode::ReadOnly => {
             "Run an allowlisted command inside the repository root. No shell: the command is \
-	 split on whitespace into argv. cargo subcommands: check, build, test, clippy, fmt, \
-	 doc, run -p hanihi-eval. git subcommands: status, diff, log, show, apply --check. \
-	 cwd is pinned to the repo root; the environment is scrubbed (PATH, HOME, CARGO_* \
-	 only); output is capped at 64 KiB; the full output is written to a trace file. \
-	 Returns exit code, duration, stdout/stderr (truncated), and the trace path."
+	     split on whitespace into argv. cargo subcommands: check, build, test, clippy, fmt, \
+	     doc, run -p hanihi-eval. git subcommands: status, diff, log, show, apply --check. \
+	     cmake: `cmake -B build` to configure and `cmake --build build` to build; ctest: \
+	     `ctest --test-dir build`. Compilers (g++/gcc/clang++/clang) with `-c <file>` \
+	     compile one translation unit; add `-fsyntax-only` for a fast parse check. cwd is \
+	     pinned to the repo root; the environment is scrubbed (PATH, HOME, CARGO_* only); \
+	     output is capped at 64 KiB; the full output is written to a trace file. Returns \
+	     exit code, duration, stdout/stderr (truncated), and the trace path."
         }
         CommandMode::Write => RUN_COMMAND_DESC_WRITE,
     };
@@ -1453,6 +1785,271 @@ mod tests {
                 CommandMode::Write
             )
             .is_err()
+        );
+    }
+
+    // ── cmake / ctest / compilers ──
+    //
+    // These admissions are toolchain- and mode-independent: the gate is a pure
+    // function of argv, so every allowed command must hold in both modes and
+    // every refusal must too.
+
+    /// Assert `cmd` is admitted in both modes.
+    fn assert_allowed_both_modes(cmd: &[String]) {
+        for mode in [CommandMode::ReadOnly, CommandMode::Write] {
+            check_command_argv_mode(cmd, mode)
+                .unwrap_or_else(|e| panic!("must allow {cmd:?} in {mode:?}: {e}"));
+        }
+    }
+
+    /// Assert `cmd` is refused in both modes, and that the refusal names
+    /// `expected` — the specific rule that should have fired. Asserting the
+    /// message (rather than merely that it is not the generic fallback) is what
+    /// makes a deny-test fail if the rule is deleted: an unknown binary, or a
+    /// rule that stopped matching, produces a different message.
+    fn assert_denied_both_modes(cmd: &[String], expected: &str) {
+        for mode in [CommandMode::ReadOnly, CommandMode::Write] {
+            let err = check_command_argv_mode(cmd, mode)
+                .expect_err(&format!("must deny {cmd:?} in {mode:?}"));
+            assert!(
+                err.contains(expected),
+                "refusal for {cmd:?} should mention {expected:?}, got: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn command_allowlist_accepts_cmake_configure_and_build() {
+        let cases = [
+            argv(&["cmake", "-B", "build"]),
+            argv(&["cmake", "-B", "build/Debug"]),
+            argv(&["cmake", "--build", "build"]),
+            argv(&["cmake", "--build", "build", "--target", "mylib"]),
+            argv(&["cmake", "--build", "build", "-j", "8"]),
+            argv(&["cmake", "--build", "build", "--parallel", "8"]),
+            argv(&["cmake", "--build", "build", "--config", "Release"]),
+            argv(&["cmake", "--build", "build/Debug", "--target", "mylib"]),
+        ];
+        for cmd in cases {
+            assert_allowed_both_modes(&cmd);
+        }
+    }
+
+    #[test]
+    fn command_allowlist_accepts_ctest() {
+        let cases = [
+            argv(&["ctest", "--test-dir", "build"]),
+            argv(&["ctest", "--test-dir", "build", "--output-on-failure"]),
+            argv(&["ctest", "--test-dir", "build", "-j", "4"]),
+        ];
+        for cmd in cases {
+            assert_allowed_both_modes(&cmd);
+        }
+    }
+
+    #[test]
+    fn command_allowlist_accepts_per_file_compile() {
+        let cases = [
+            argv(&[
+                "g++",
+                "-c",
+                "src/foo.cpp",
+                "-Iinclude",
+                "-std=c++20",
+                "-Wall",
+                "-Werror",
+            ]),
+            argv(&["g++", "-c", "src/foo.cpp", "-fsyntax-only"]),
+            argv(&["clang++", "-c", "src/foo.cpp", "-DNDEBUG"]),
+            argv(&["gcc", "-c", "src/foo.c"]),
+            argv(&["clang", "-c", "src/foo.c"]),
+        ];
+        for cmd in cases {
+            assert_allowed_both_modes(&cmd);
+        }
+    }
+
+    #[test]
+    fn command_allowlist_denies_cmake_escapes_and_scripts() {
+        // Each case pairs the argv with the rule that must refuse it, so a
+        // passing deny-test cannot be a test of "the binary is unknown".
+        let cases: &[(&[&str], &str)] = &[
+            (&["cmake"], "cmake requires arguments"),
+            (
+                &["cmake", "-P", "script.cmake"],
+                "runs arbitrary CMake code",
+            ),
+            (
+                &["cmake", "--script", "script.cmake"],
+                "runs arbitrary CMake code",
+            ),
+            (
+                &["cmake", "-P", "../../evil.cmake"],
+                "runs arbitrary CMake code",
+            ),
+            (
+                &["cmake", "-S", ".", "-B", "build"],
+                "out-of-source builds run from",
+            ),
+            (
+                &["cmake", "-S", "/etc", "-B", "build"],
+                "out-of-source builds run from",
+            ),
+            (&["cmake", "--source", "."], "out-of-source builds run from"),
+            (&["cmake", "-B", "/tmp/build"], "build directory must be"),
+            (&["cmake", "-B", "../build"], "build directory must be"),
+            (
+                &["cmake", "-B", "build/../../etc"],
+                "build directory must be",
+            ),
+            (
+                &["cmake", "-B", "build", "-B", "/tmp"],
+                "build directory must be",
+            ),
+            (&["cmake", "--build", "/etc"], "build directory must be"),
+            (&["cmake", "--build", "../build"], "build directory must be"),
+            (
+                &["cmake", "--build", "build", "--install", "build"],
+                "writes outside the repository",
+            ),
+            (
+                &["cmake", "--install", "build"],
+                "writes outside the repository",
+            ),
+            (
+                &["cmake", "--install", "build", "--prefix", "/usr"],
+                "writes outside the repository",
+            ),
+            (
+                &["cmake", "-D", "CMAKE_INSTALL_PREFIX=/usr", "-B", "build"],
+                "names a program or an install path",
+            ),
+            (
+                &[
+                    "cmake",
+                    "-D",
+                    "CMAKE_CXX_COMPILER=/usr/bin/evil",
+                    "-B",
+                    "build",
+                ],
+                "names a program or an install path",
+            ),
+            (
+                &["cmake", "-D", "CMAKE_C_COMPILER=evil", "-B", "build"],
+                "names a program or an install path",
+            ),
+            (
+                &["cmake", "-D", "CMAKE_MAKE_PROGRAM=evil", "-B", "build"],
+                "names a program or an install path",
+            ),
+            (
+                &["cmake", "-G", "Ninja", "-B", "build"],
+                "default generator is used",
+            ),
+            (
+                &["cmake", "-E", "rm", "-rf", "build"],
+                "cmake -E is not allowed",
+            ),
+            (
+                &["cmake", "--fresh", "-B", "build"],
+                "cmake --fresh is not allowed",
+            ),
+            (
+                &["cmake", "-H.", "-Bbuild"],
+                "cmake argument '-H.' is not allowed",
+            ),
+        ];
+        for (args, expected) in cases {
+            assert_denied_both_modes(&argv(args), expected);
+        }
+    }
+
+    #[test]
+    fn command_allowlist_denies_compiler_passthrough_and_outputs() {
+        let cases: &[(&[&str], &str)] = &[
+            (&["g++", "src/foo.cpp"], "-c is required"),
+            (
+                &["g++", "-c", "src/foo.cpp", "-o", "/tmp/x.o"],
+                "compiler argument '-o'",
+            ),
+            (
+                &["g++", "-c", "src/foo.cpp", "-o", "foo.o"],
+                "compiler argument '-o'",
+            ),
+            (
+                &["g++", "-c", "src/foo.cpp", "-MF", "dep.d"],
+                "compiler argument '-MF'",
+            ),
+            (
+                &["g++", "-c", "src/foo.cpp", "-MT", "target"],
+                "compiler argument '-MT'",
+            ),
+            (
+                &["g++", "-c", "src/foo.cpp", "-MQ", "target"],
+                "compiler argument '-MQ'",
+            ),
+            (
+                &["g++", "-c", "src/foo.cpp", "-MJ", "out.json"],
+                "compiler argument '-MJ'",
+            ),
+            (
+                &["g++", "-c", "src/foo.cpp", "-fplugin=evil.so"],
+                "compiler argument '-fplugin=evil.so'",
+            ),
+            (
+                &["g++", "-c", "src/foo.cpp", "-B", "/usr/lib/evil"],
+                "compiler argument '-B'",
+            ),
+            (
+                &["g++", "-c", "src/foo.cpp", "-wrapper", "evil"],
+                "compiler argument '-wrapper'",
+            ),
+            (
+                &["g++", "-c", "src/foo.cpp", "@args.rsp"],
+                "compiler argument '@args.rsp'",
+            ),
+            (&["g++", "-c", "-"], "stdin"),
+            (&["g++", "-c"], "requires an input file"),
+            (
+                &["clang++", "-c", "src/foo.cpp", "-Xclang", "-load"],
+                "compiler argument '-Xclang'",
+            ),
+            (
+                &["clang++", "-c", "src/foo.cpp", "-Xlinker", "-e"],
+                "compiler argument '-Xlinker'",
+            ),
+            (
+                &["clang++", "-c", "src/foo.cpp", "-Wl,-rpath,/tmp"],
+                "compiler argument '-Wl,-rpath,/tmp'",
+            ),
+            (
+                &[
+                    "clang++",
+                    "-c",
+                    "src/foo.cpp",
+                    "--serialize-diagnostics",
+                    "out.dia",
+                ],
+                "compiler argument '--serialize-diagnostics'",
+            ),
+            (&["g++", "-c", "../outside.cpp"], "escapes the repository"),
+            (&["g++", "-c", "/etc/passwd.cpp"], "escapes the repository"),
+            (&["gcc", "-c", "../../outside.c"], "escapes the repository"),
+        ];
+        for (args, expected) in cases {
+            assert_denied_both_modes(&argv(args), expected);
+        }
+    }
+
+    /// `-B` means "build directory" to CMake and "program search prefix" to
+    /// GCC/Clang. The two live in different arms; this test exists so a future
+    /// refactor cannot merge them.
+    #[test]
+    fn cmake_and_compiler_disagree_about_dash_b() {
+        assert_allowed_both_modes(&argv(&["cmake", "-B", "build"]));
+        assert_denied_both_modes(
+            &argv(&["g++", "-c", "src/foo.cpp", "-B", "build"]),
+            "compiler argument '-B'",
         );
     }
 
