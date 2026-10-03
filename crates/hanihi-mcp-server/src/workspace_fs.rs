@@ -77,8 +77,8 @@ pub(crate) fn success(id: Value, text: String) -> Value {
     "jsonrpc": "2.0",
     "id": id,
     "result": {
-        "content": [{ "type": "text", "text": text }],
-        "isError": false
+    "content": [{ "type": "text", "text": text }],
+    "isError": false
     }
     })
 }
@@ -185,24 +185,24 @@ fn discover_workspace_root() -> Result<PathBuf, ToolError> {
         .map_err(|error| internal(format!("cannot read the current directory: {error}")))?;
 
     match cargo_workspace_root() {
-        Ok(root) => {
-            let root = root
-                .canonicalize()
-                .map_err(|error| internal(format!("cannot resolve workspace root: {error}")))?;
-            if !root.is_dir() {
-                return Err(internal(format!(
-                    "cannot discover workspace root: {} is not a directory",
-                    root.display()
-                )));
-            }
-            Ok(root)
-        }
-        Err(_) => marker_root(&cwd).ok_or_else(|| {
-            internal(format!(
-                "cannot discover workspace root: no Cargo workspace or repository markers at or above {}",
-                cwd.display()
-            ))
-        }),
+	Ok(root) => {
+	    let root = root
+		.canonicalize()
+		.map_err(|error| internal(format!("cannot resolve workspace root: {error}")))?;
+	    if !root.is_dir() {
+		return Err(internal(format!(
+		    "cannot discover workspace root: {} is not a directory",
+		    root.display()
+		)));
+	    }
+	    Ok(root)
+	}
+	Err(_) => marker_root(&cwd).ok_or_else(|| {
+	    internal(format!(
+		"cannot discover workspace root: no Cargo workspace or repository markers at or above {}",
+		cwd.display()
+	    ))
+	}),
     }
 }
 
