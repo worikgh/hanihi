@@ -337,11 +337,6 @@ pub(crate) fn resolve_workspace_path(root: &Path, relative: &str) -> Result<Path
             .parent()
             .ok_or_else(|| format!("path has no existing ancestor: {relative}"))?;
     }
-    eprintln!(
-        "{}:{}: resolve_workspace_path: existing: {existing:?}",
-        file!(),
-        line!(),
-    );
     let canonical_existing = existing
         .canonicalize()
         .map_err(|error| format!("cannot resolve path ancestor: {error}"))?;

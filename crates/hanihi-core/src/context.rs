@@ -68,7 +68,6 @@ pub(crate) fn estimate_context(
     tool_defs_json: &str,
 ) -> usize {
     let mut total = estimate_tokens(system_prompt);
-    eprintln!("{}:{}: tokens for system prompt: {total}", file!(), line!(),);
     if let Some(summary) = summary {
         total += estimate_tokens(summary);
     }
