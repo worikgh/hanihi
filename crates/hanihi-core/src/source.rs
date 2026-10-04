@@ -217,6 +217,17 @@ impl SourceTree {
 
         let total_len = fs::metadata(&canon).map_err(SourceError::Io)?.len() as usize;
         let mut bytes = Vec::with_capacity(MAX_READ_BYTES + 1);
+        if let Ok(md) = std::fs::metadata(&canon)
+            && md.len() as usize > MAX_READ_BYTES
+        {
+            eprintln!(
+                "{}:{}: {canon:?} has {} bytes and will be truncated to {MAX_READ_BYTES}",
+                file!(),
+                line!(),
+                md.len()
+            );
+        }
+
         File::open(&canon)
             .map_err(SourceError::Io)?
             .take((MAX_READ_BYTES + 1) as u64)

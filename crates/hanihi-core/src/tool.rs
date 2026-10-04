@@ -52,6 +52,12 @@ pub(crate) fn truncate_tool_output(s: &str) -> String {
     if s.len() <= MAX_TOOL_RESULT_BYTES {
         s.to_string()
     } else {
+        eprintln!(
+            "{}:{}: Truncated tool output {} -> {MAX_TOOL_RESULT_BYTES}",
+            file!(),
+            line!(),
+            s.len()
+        );
         let cut = s.floor_char_boundary(MAX_TOOL_RESULT_BYTES);
         let mut out = String::with_capacity(cut + 64);
         out.push_str(&s[..cut]);
