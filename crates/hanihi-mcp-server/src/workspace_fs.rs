@@ -249,25 +249,24 @@ fn marker_root(start: &Path) -> Option<PathBuf> {
 
 /// Resolves a workspace-relative directory that must already exist, refusing
 /// absolute paths, `..` traversal, and symlinks that resolve outside `root`.
-pub(crate) fn resolve_directory(root: &Path, relative: &str) -> Result<PathBuf, String> {
-    let relative_path = validate_relative(relative)?;
-    let candidate = root.join(&relative_path);
-    if !candidate.is_dir() {
-        return Err(format!(
-            "search path does not exist or is not a directory: {relative}"
-        ));
-    }
-    canonicalize_within(root, &candidate, relative)
-}
-
 /// Resolves a workspace-relative file or directory that must already exist,
-/// applying the same escape protections as `resolve_directory`. The caller
-/// decides how to treat the result based on its file type.
+/// refusing absolute paths, `..` traversal, and symlinks that resolve outside
+/// `root`.
+///
+/// A file is a legitimate target: `find_symbol` accepts one file as its whole
+/// scope, and `search_text` scans one file. The caller decides how to treat the
+/// result based on its file type.
+///
+/// The refusal message names "directory" only because it predates file scopes,
+/// and is kept verbatim: callers must not see different wording depending on
+/// which scope check ran.
 pub(crate) fn resolve_existing_path(root: &Path, relative: &str) -> Result<PathBuf, String> {
     let relative_path = validate_relative(relative)?;
     let candidate = root.join(&relative_path);
     if !candidate.exists() {
-        return Err(format!("search path does not exist: {relative}"));
+        return Err(format!(
+            "search path does not exist or is not a directory: {relative}"
+        ));
     }
     canonicalize_within(root, &candidate, relative)
 }
@@ -577,47 +576,55 @@ mod tests {
     }
 
     #[test]
-    fn resolve_directory_rejects_absolute_paths() {
-        let base = temp_dir("resolve_directory_absolute");
+    fn resolve_existing_path_rejects_absolute_paths() {
+        let base = temp_dir("resolve_existing_path_absolute");
         for path in ["/etc", "/tmp/x"] {
-            let error = resolve_directory(&base, path).unwrap_err();
+            let error = resolve_existing_path(&base, path).unwrap_err();
             assert!(error.contains("relative"), "{path}: {error}");
         }
         let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
-    fn resolve_directory_rejects_parent_traversal() {
-        let base = temp_dir("resolve_directory_parent");
+    fn resolve_existing_path_rejects_parent_traversal() {
+        let base = temp_dir("resolve_existing_path_parent");
         for path in ["../outside", "a/../../outside", "src/../src"] {
-            let error = resolve_directory(&base, path).unwrap_err();
+            let error = resolve_existing_path(&base, path).unwrap_err();
             assert!(error.contains("escapes"), "{path}: {error}");
         }
         let _ = std::fs::remove_dir_all(&base);
     }
 
+    /// A file that exists resolves; only a missing path is refused, and the
+    /// refusal keeps the historical wording.
     #[test]
-    fn resolve_directory_requires_an_existing_directory() {
-        let base = temp_dir("resolve_directory_not_dir");
+    fn resolve_existing_path_requires_an_existing_path() {
+        let base = temp_dir("resolve_existing_path_not_dir");
         std::fs::write(base.join("file.txt"), "x").unwrap();
 
-        let error = resolve_directory(&base, "file.txt").unwrap_err();
-        assert!(error.contains("not a directory"));
+        assert_eq!(
+            resolve_existing_path(&base, "file.txt").unwrap(),
+            base.join("file.txt").canonicalize().unwrap()
+        );
 
-        let error = resolve_directory(&base, "missing").unwrap_err();
+        let error = resolve_existing_path(&base, "missing").unwrap_err();
         assert!(error.contains("not a directory"));
+        assert_eq!(
+            error,
+            "search path does not exist or is not a directory: missing"
+        );
 
         let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
-    fn resolve_directory_returns_canonical_subdirectory() {
-        let base = temp_dir("resolve_directory_sub");
+    fn resolve_existing_path_returns_canonical_subdirectory() {
+        let base = temp_dir("resolve_existing_path_sub");
         let sub = base.join("sub");
         std::fs::create_dir_all(&sub).unwrap();
 
         assert_eq!(
-            resolve_directory(&base, "sub").unwrap(),
+            resolve_existing_path(&base, "sub").unwrap(),
             sub.canonicalize().unwrap()
         );
         let _ = std::fs::remove_dir_all(&base);
@@ -625,13 +632,13 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn resolve_directory_rejects_symlink_escape() {
-        let base = temp_dir("resolve_directory_symlink");
-        let outside = temp_dir("resolve_directory_outside");
+    fn resolve_existing_path_rejects_symlink_escape() {
+        let base = temp_dir("resolve_existing_path_symlink");
+        let outside = temp_dir("resolve_existing_path_outside");
         let link = base.join("link");
         std::os::unix::fs::symlink(&outside, &link).unwrap();
 
-        let error = resolve_directory(&base, "link").unwrap_err();
+        let error = resolve_existing_path(&base, "link").unwrap_err();
         assert!(error.contains("escapes"), "{error}");
 
         let _ = std::fs::remove_dir_all(&base);

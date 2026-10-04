@@ -293,9 +293,8 @@ LLM_API_KEY=*** cargo run -p hanihi-eval -- --case 001-basic-echo
 ```
 
 `cargo clippy --workspace --all-targets -- -D warnings` is intended to be
-clean. `hanihi-mcp-server` currently emits one `dead_code` warning
-(`resolve_directory` in `workspace_fs.rs` is unused) with default
-`--all-targets`; fix or remove that function to keep the gate honest.
+clean, and is clean as of this writing. Treat any new warning as a regression
+to fix rather than a baseline to tolerate.
 
 ## Known TODOs
 

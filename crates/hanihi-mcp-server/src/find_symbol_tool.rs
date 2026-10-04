@@ -206,7 +206,10 @@ fn resolve_root(arguments: &Value) -> Result<PathBuf, ToolError> {
 fn resolve_root_from(base: &Path, arguments: &Value) -> Result<PathBuf, ToolError> {
     match arguments.get("path").and_then(Value::as_str) {
         None | Some("") => Ok(base.to_path_buf()),
-        Some(relative) => workspace_fs::resolve_directory(base, relative).map_err(invalid),
+        // A file is a legitimate scope: scanning one file is a valid request,
+        // not an error. Resolution accepts either and `walk` decides how to
+        // traverse the result.
+        Some(relative) => workspace_fs::resolve_existing_path(base, relative).map_err(invalid),
     }
 }
 
@@ -374,6 +377,28 @@ fn walk(
     max_results: usize,
     report: &mut SymbolReport<'_>,
 ) -> Result<(), std::io::Error> {
+    // A scope may name a single file rather than a directory. Scanning it
+    // directly avoids `read_dir`, which fails with ENOTDIR on a file. No
+    // extension filter is applied here: an explicitly named file is scanned
+    // as given, matching the caller's stated intent.
+    if current.is_file() {
+        let relative = current
+            .strip_prefix(root)
+            .unwrap_or(current)
+            .to_string_lossy()
+            .replace('\\', "/");
+        scan_file(
+            current,
+            &relative,
+            identifier_regex,
+            patterns,
+            kind_filter,
+            max_results,
+            report,
+        )?;
+        return Ok(());
+    }
+
     for entry in fs::read_dir(current)? {
         let entry = entry?;
         let path = entry.path();
@@ -899,5 +924,106 @@ mod tests {
             assert_eq!(error.code, -32602, "{path}");
         }
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// A file path is a legitimate scope, not an error. This is the
+    /// regression guard for the reported failure: `find_symbol` on
+    /// `crates/hanihi-core/src/source.rs` returned
+    /// `-32602: search path does not exist or is not a directory`.
+    #[test]
+    fn resolve_root_from_accepts_an_existing_file() {
+        let base = temp_dir("find_symbol_root_file");
+        let file = base.join("source.rs");
+        std::fs::write(&file, "fn main() {}\n").unwrap();
+
+        assert_eq!(
+            resolve_root_from(&base, &json!({ "path": "source.rs" })).unwrap(),
+            file.canonicalize().unwrap()
+        );
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// No extension discrimination: a named file is scanned as given, so a
+    /// file without a `.rs` extension still resolves.
+    #[test]
+    fn resolve_root_from_accepts_a_file_without_a_rust_extension() {
+        let base = temp_dir("find_symbol_root_file_no_ext");
+        let file = base.join("module.inc");
+        std::fs::write(&file, "fn helper() {}\n").unwrap();
+
+        assert_eq!(
+            resolve_root_from(&base, &json!({ "path": "module.inc" })).unwrap(),
+            file.canonicalize().unwrap()
+        );
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// The error text for a non-existent path is unchanged by the file-scope
+    /// support, so callers see no difference between the two scope checks.
+    #[test]
+    fn resolve_root_from_keeps_the_missing_path_message() {
+        let base = temp_dir("find_symbol_root_missing_msg");
+        let error = resolve_root_from(&base, &json!({ "path": "missing" })).unwrap_err();
+        assert_eq!(error.code, -32602);
+        assert_eq!(
+            error.message,
+            "search path does not exist or is not a directory: missing"
+        );
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// End-to-end through `run`: naming a single file scopes the search to it
+    /// and does not reach sibling files in the same directory.
+    ///
+    /// Driven through the pure `walk` seam rather than `run`: `run` resolves
+    /// its scope against the Cargo workspace root, so a temp-dir fixture is not
+    /// reachable from it.
+    #[test]
+    fn walk_scopes_to_a_single_named_file() {
+        let base = temp_dir("find_symbol_walk_file_scope");
+        let scoped = base.join("a.rs");
+        std::fs::write(&scoped, "fn target() {}\n").unwrap();
+        std::fs::write(base.join("b.rs"), "fn target() {}\n").unwrap();
+
+        let report = walk_report(&base, &scoped, "target");
+
+        assert_eq!(report.definitions.len(), 1);
+        assert_eq!(report.definitions[0].path, "a.rs");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// A directory scope still recurses, and the existing `.rs` filter on
+    /// discovered files is unchanged by the file-scope support.
+    #[test]
+    fn walk_still_recurses_a_directory_scope() {
+        let base = temp_dir("find_symbol_walk_dir_scope");
+        std::fs::create_dir_all(base.join("nested")).unwrap();
+        std::fs::write(base.join("nested/deep.rs"), "fn target() {}\n").unwrap();
+        std::fs::write(base.join("ignored.txt"), "fn target() {}\n").unwrap();
+
+        let report = walk_report(&base, &base, "target");
+
+        assert_eq!(report.definitions.len(), 1);
+        assert_eq!(report.definitions[0].path, "nested/deep.rs");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// Runs `walk` over `current` with `base` as the path relativization root,
+    /// the same way `run` invokes it.
+    fn walk_report(base: &Path, current: &Path, symbol: &str) -> SymbolReport<'static> {
+        let identifier_regex = Regex::new(&format!(r"\b{}\b", regex::escape(symbol))).unwrap();
+        let patterns = DefinitionPatterns::compile();
+        let mut report = SymbolReport::new(Box::leak(symbol.to_string().into_boxed_str()));
+        walk(
+            base,
+            current,
+            &identifier_regex,
+            &patterns,
+            None,
+            DEFAULT_MAX_RESULTS,
+            &mut report,
+        )
+        .expect("walk succeeds");
+        report
     }
 }
