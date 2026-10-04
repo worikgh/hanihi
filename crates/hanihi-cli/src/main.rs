@@ -30,6 +30,27 @@ pub use hanihi_core::agent::{TurnSummary, connect_chat_model};
 
 use crate::ui::{print_coloured, println_coloured};
 
+/// The glyph that closes the `🔧 name` line for a tool call.
+///
+/// The payload, not the event, carries the verdict: a completed round trip can
+/// still mean the tool refused. Two failure shapes arrive this way, and both
+/// must render as a failure rather than as `✅`:
+///
+/// - a tool-result error — `{"result": {"isError": true}}` — which is how the
+///   MCP servers report refusals, so the structured refusal fields survive;
+/// - a JSON-RPC protocol error — `{"error": {...}}` — with no `result` key.
+///
+/// A payload that is not JSON is a rendered tool error string, so it is also a
+/// failure.
+fn tool_result_glyph(result: &str) -> &'static str {
+    match serde_json::from_str::<serde_json::Value>(result) {
+        Ok(value) if value.get("error").is_some() => " ❌]",
+        Ok(value) if value["result"]["isError"] == serde_json::Value::Bool(true) => " ❌]",
+        Ok(_) => " ✅]",
+        Err(_) => " ❌]",
+    }
+}
+
 const DEFAULT_WORKING_DIR: &str = "./working";
 /// Text printed by `--credit`.
 const CREDIT: &str = "Designed by: fook@deepthought.galaxy";
@@ -483,7 +504,9 @@ async fn main() -> Result<(), AgentError> {
                 StreamEvent::ToolCallStart { name, .. } => print_coloured!("\n[🔧 {name}"),
                 StreamEvent::ToolCallArgs { .. } => {}
                 StreamEvent::ToolCallReady { .. } => {}
-                StreamEvent::ToolResult { .. } => println_coloured!(" ✅]"),
+                StreamEvent::ToolResult { result, .. } => {
+                    println_coloured!("{}", tool_result_glyph(&result))
+                }
                 StreamEvent::Compaction { .. }
                 | StreamEvent::CompletionRequest { .. }
                 | StreamEvent::CompletionResponse { .. } => {}
@@ -683,7 +706,9 @@ async fn run_turn<M: CompletionModel + 'static>(
                     StreamEvent::ToolCallStart { name, .. } => print_coloured!("\n[🔧 {name}"),
                     StreamEvent::ToolCallArgs { .. } => {}
                     StreamEvent::ToolCallReady { .. } => {}
-                    StreamEvent::ToolResult { .. } => println_coloured!(" ✅]"),
+                    StreamEvent::ToolResult { result, .. } => {
+                        println_coloured!("{}", tool_result_glyph(&result))
+                    }
                     StreamEvent::Compaction { .. }
                     | StreamEvent::CompletionRequest { .. }
                     | StreamEvent::CompletionResponse { .. } => (),

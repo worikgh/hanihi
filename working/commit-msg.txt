@@ -1,0 +1,24 @@
+Make tool results legible and observable at the harness edge
+
+Two failures this session were hard to diagnose for the same reason: the
+harness reported less than it knew.
+
+read_file_tool::exec emitted no trace on entry. When its MCP server was
+killed mid-call the log showed nothing at all from read_file, so an
+observer could not tell whether the tool had started. apply_patch_tool,
+find_symbol_tool, echo_tool, and workspace_info_tool all print an entry
+line; read_file was the one that did not, and it was the one whose
+termination was hardest to explain.
+
+The CLI printed a green tick for every completed tool event. A tool-result
+error is not a protocol error: the MCP servers report a refusal as
+"result": { "isError": true } so the structured refusal fields survive, and
+a refusal still completes the round trip. The tick therefore marked
+transport success as tool success, which is how a refused find_symbol came
+to be read as a successful call.
+
+tool_result_glyph now inspects the payload and renders a failure both for a
+tool-result error and for a JSON-RPC protocol error, and treats a
+non-JSON payload as a failure since that is a rendered tool error string.
+
+Hānihi
