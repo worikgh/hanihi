@@ -322,7 +322,7 @@ fn canonicalize_within(root: &Path, candidate: &Path, relative: &str) -> Result<
 pub(crate) fn resolve_workspace_path(root: &Path, relative: &str) -> Result<PathBuf, String> {
     let (candidate, normalized) = normalize_relative(root, relative)?;
     if is_refused_path(&normalized) {
-        return Err(format!("refusing to modify protected path: {relative}"));
+        return Err(format!("refusing to access protected path: {relative}"));
     }
 
     let canonical_root = root
