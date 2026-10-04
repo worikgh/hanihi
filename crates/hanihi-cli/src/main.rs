@@ -143,6 +143,10 @@ struct Args {
     #[arg(long)]
     new_prompt: bool,
 
+    /// If specified prompt the system to keep pushing past decision points
+    #[arg(long)]
+    yolo: bool,
+
     /// Print the design credit and exit.
     #[arg(long)]
     credit: bool,
@@ -358,6 +362,14 @@ async fn main() -> Result<(), AgentError> {
         let stored = stored_session_prompt(&working_dir, &session_name)
             .unwrap_or_else(|| base_prompt.to_string());
         (stored, false)
+    };
+
+    let session_prompt = if args.yolo {
+        format!(
+            "{session_prompt} In this session, for which I am about to give you a task, it is imperative that you keep running as long as you can.  So when at a fork in the road, where there are a set of choices you face, document the choice, make a decision on which choice to make, document your decision and reasons, and continue.  DO NOT STOP TO ASK!!"
+        )
+    } else {
+        session_prompt
     };
 
     // Create or open the session.
