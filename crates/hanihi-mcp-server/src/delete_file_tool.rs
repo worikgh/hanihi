@@ -31,7 +31,7 @@ pub(crate) fn exec(params: &Value, id: Value) -> Value {
     let result = workspace_fs::arguments(params).and_then(run);
     match result {
         Ok(text) => workspace_fs::success(id, text),
-        Err(error) => workspace_fs::failure(id, error.code, error.message),
+        Err(error) => workspace_fs::failure(id, &error),
     }
 }
 

@@ -1,17 +1,19 @@
 //! `apply_patch` tool for Hānihi.
 //!
-//! Applies unified diffs to workspace files after verifying each file's
-//! current contents against a caller-supplied `base_token` (a SHA-256
-//! digest issued by `read_file`). Every file is validated before any write
-//! happens, so a failed patch never leaves a partial edit behind, and a
-//! stale token never silently overwrites a concurrent change.
+//! Applies unified diffs or whole-file replacements to workspace files after
+//! verifying each file's current contents against a caller-supplied version:
+//! an opaque `{ "id": n }` handle, the legacy 64-hex digest, or `"auto"` for
+//! the ledger's current version of the path. Every file is validated before
+//! any write happens, so a failed patch never leaves a partial edit behind,
+//! and a stale version never silently overwrites a concurrent change.
 //!
-//! A successful call also returns each file's post-write token, so a caller
-//! editing the same file repeatedly can chain tokens without re-reading. The
-//! precondition is unchanged: the token must describe the file's current
+//! A successful call returns each file's post-write version, so a caller
+//! editing the same file repeatedly can chain edits without re-reading. The
+//! precondition is unchanged: the version must describe the file's current
 //! contents, and only the tool can vouch for what it just wrote.
 
-use crate::workspace_fs;
+use crate::version_ledger::{FileVersion, VersionLedger};
+use crate::workspace_fs::{self, ToolError, failure, internal, invalid, success};
 use serde_json::{Value, json};
 use std::fs;
 use std::io::ErrorKind;
@@ -42,7 +44,7 @@ fn is_sentinel_version(hash: &str) -> bool {
 pub(crate) fn json() -> Value {
     json!({
     "name": "apply_patch",
-    "description": "Applies unified diffs or whole-file replacements to workspace files after verifying each file's current SHA-256 hash. Returns the resulting diff plus a fresh `token` per file (the hash the tool just wrote) and refuses paths outside the workspace or protected files. Chaining that returned token into a follow-up edit avoids a re-read; it does not cover a change made by anyone else, so re-read when the file may have been edited outside this tool.",
+    "description": "Applies unified diffs or whole-file replacements to workspace files after verifying each file's current version. `base_token` accepts `\"auto\"` (the ledger's latest version for the path), an opaque `{ \"id\": n }` handle, or the legacy 64-hex SHA-256 digest. `dry_run: true` runs every check and returns the would-be result without writing. Returns each file's post-write version plus the resulting diff, and refuses paths outside the workspace or protected files.",
     "inputSchema": {
         "type": "object",
         "properties": {
@@ -59,8 +61,12 @@ pub(crate) fn json() -> Value {
             "description": "Replace the entire file with this UTF-8 text. Use together with `file` and `base_token`. Mutually exclusive with `patch`; the returned diff is computed by the server. An empty string truncates the file."
         },
         "base_token": {
-            "type": "string",
-            "description": "SHA-256 hex digest (64 hex characters) of the file's current contents. For an existing file, copy the exact `token` returned by `read_file` for this path, or the `token` returned by a previous successful `apply_patch` to the same path. For a new file, use the SHA-256 of empty content (e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855). Never substitute a placeholder such as all zeros, and never recompute the digest yourself: a self-computed hash asserts a version you have not seen."
+            "type": ["string", "object"],
+            "description": "Version the file must currently have: `\"auto\"` to use the ledger's latest observed version for this path, an opaque `{ \"id\": n }` handle minted by `read_file` or a previous `apply_patch` to this same path, or the legacy 64-hex SHA-256 digest. For a new file, use the empty-content hash (e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855); never substitute a placeholder such as all zeros."
+        },
+        "dry_run": {
+            "type": "boolean",
+            "description": "When true, perform every check (path resolution, version verification, patch parsing, hunk matching, diff computation) and return the would-be result without writing anything."
         },
         "files": {
             "type": "array",
@@ -72,8 +78,8 @@ pub(crate) fn json() -> Value {
                 "description": "Path to edit, relative to the workspace root."
                 },
                 "base_token": {
-                "type": "string",
-                "description": "SHA-256 hex digest (64 hex characters) of the file's current contents. Copy the `token` returned by `read_file` for this path, or the `token` returned by a previous successful `apply_patch` to it."
+                "type": ["string", "object"],
+                "description": "Version the file must currently have: `\"auto\"`, an opaque `{ \"id\": n }` handle minted by `read_file` or a previous `apply_patch` to this same path, or the legacy 64-hex SHA-256 digest."
                 },
                 "patch": {
                 "type": "string",
@@ -103,47 +109,8 @@ pub(crate) fn exec(params: &Value, id: Value) -> Value {
     let arguments = params.get("arguments").unwrap_or(params);
     match run(arguments) {
         Ok(text) => success(id, text),
-        Err(error) => failure(id, error.code, error.message),
+        Err(error) => failure(id, &error),
     }
-}
-
-#[derive(Debug)]
-struct ToolError {
-    code: i64,
-    message: String,
-}
-
-fn invalid(message: impl Into<String>) -> ToolError {
-    ToolError {
-        code: -32602,
-        message: message.into(),
-    }
-}
-
-fn internal(message: impl Into<String>) -> ToolError {
-    ToolError {
-        code: -32603,
-        message: message.into(),
-    }
-}
-
-fn success(id: Value, text: String) -> Value {
-    json!({
-    "jsonrpc": "2.0",
-    "id": id,
-    "result": {
-        "content": [{ "type": "text", "text": text }],
-        "isError": false
-    }
-    })
-}
-
-fn failure(id: Value, code: i64, message: String) -> Value {
-    json!({
-    "jsonrpc": "2.0",
-    "id": id,
-    "error": { "code": code, "message": message }
-    })
 }
 
 /// One requested edit: either a unified diff to apply or a whole-file
@@ -154,26 +121,41 @@ enum EditOp {
     Replace { content: String },
 }
 
+/// The version the caller claims a file currently has.
+#[derive(Debug)]
+enum BaseVersion {
+    /// Resolve to the ledger's most recent observed version for the path.
+    Auto,
+    /// An opaque handle minted by `read_file` or a prior `apply_patch`.
+    Handle { id: u64 },
+    /// Legacy form: a 64-hex SHA-256 digest.
+    Digest(String),
+}
+
 #[derive(Debug)]
 struct Edit {
     path: String,
-    base_token: String,
+    base_token: BaseVersion,
     op: EditOp,
 }
 
-/// Result field carrying the SHA-256 of the contents the tool just wrote, so a
-/// caller editing the same file repeatedly can chain tokens without a re-read.
-/// Populated only when every write in the call succeeded; a rolled-back call
-/// leaves no token to chain.
+/// Legacy result field carrying the post-write SHA-256 digest, so existing
+/// callers that chain the raw digest keep working.
 const NEW_TOKEN_FIELD: &str = "token";
+/// Structured post-write version: `{ id, digest, len }`.
+const VERSION_FIELD: &str = "version";
 
 fn run(arguments: &Value) -> Result<String, ToolError> {
     let edits = parse_edits(arguments)?;
     if edits.is_empty() {
         return Err(invalid("at least one file edit is required"));
     }
+    let dry_run = arguments
+        .get("dry_run")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
 
-    let report = apply_edits(&edits)?;
+    let report = apply_edits(&edits, dry_run)?;
     serde_json::to_string_pretty(&report)
         .map_err(|error| internal(format!("failed to serialize results: {error}")))
 }
@@ -213,13 +195,43 @@ fn parse_edits(arguments: &Value) -> Result<Vec<Edit>, ToolError> {
 
 fn edit_from_arguments(arguments: &Value, path_name: &str) -> Result<Edit, ToolError> {
     let path = required_string(arguments, path_name)?;
-    let base_token = required_string(arguments, "base_token")?;
+    let base = base_version(arguments)?;
     let op = edit_op(arguments)?;
     Ok(Edit {
         path: path.to_string(),
-        base_token: base_token.to_string(),
+        base_token: base,
         op,
     })
+}
+
+/// Parses the `base_token` argument: a string (`auto` or a 64-hex digest) or
+/// an opaque object handle `{ "id": n }`.
+fn base_version(arguments: &Value) -> Result<BaseVersion, ToolError> {
+    let value = arguments
+        .get("base_token")
+        .ok_or_else(|| invalid("missing required argument: base_token"))?;
+
+    if let Some(text) = value.as_str() {
+        if text.is_empty() {
+            return Err(invalid("argument `base_token` must not be empty"));
+        }
+        if text == "auto" {
+            return Ok(BaseVersion::Auto);
+        }
+        return Ok(BaseVersion::Digest(text.to_string()));
+    }
+
+    if let Some(object) = value.as_object() {
+        let id = object
+            .get("id")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| invalid("argument `base_token` object must have a numeric `id`"))?;
+        return Ok(BaseVersion::Handle { id });
+    }
+
+    Err(invalid(
+        "argument `base_token` must be a string (`auto` or a 64-hex digest) or an object `{ \"id\": n }`",
+    ))
 }
 
 /// Parses the edit operation from a single-file or `files[]` item object.
@@ -254,12 +266,110 @@ fn required_string<'a>(arguments: &'a Value, name: &str) -> Result<&'a str, Tool
         .ok_or_else(|| invalid(format!("missing required string argument: {name}")))
 }
 
-fn apply_edits(edits: &[Edit]) -> Result<Value, ToolError> {
+fn apply_edits(edits: &[Edit], dry_run: bool) -> Result<Value, ToolError> {
     let root = workspace_fs::workspace_root().map_err(|error| internal(error.message))?;
-    apply_edits_in(&root, edits)
+    let ledger = VersionLedger::for_root(&root).map_err(internal)?;
+    apply_edits_with(&root, &ledger, edits, dry_run)
 }
 
+#[cfg(test)]
 fn apply_edits_in(root: &Path, edits: &[Edit]) -> Result<Value, ToolError> {
+    let ledger = VersionLedger::for_root(root).map_err(internal)?;
+    apply_edits_with(root, &ledger, edits, false)
+}
+
+#[cfg(test)]
+fn apply_edits_in_dry_run(root: &Path, edits: &[Edit]) -> Result<Value, ToolError> {
+    let ledger = VersionLedger::for_root(root).map_err(internal)?;
+    apply_edits_with(root, &ledger, edits, true)
+}
+
+/// Verifies the caller-supplied version against the file's current bytes.
+/// The legacy digest form keeps its placeholder checks; `auto` and handles
+/// resolve through the ledger, which is authoritative because the harness
+/// wrote it.
+fn verify_version(
+    ledger: &VersionLedger,
+    edit: &Edit,
+    bytes: &[u8],
+    actual: &str,
+) -> Result<(), ToolError> {
+    let expected = match &edit.base_token {
+        BaseVersion::Digest(text) => {
+            let normalized = workspace_fs::normalize_hash(text).ok_or_else(|| {
+                invalid(format!(
+                    "argument `base_token` must be a 64-character hex digest, got {text:?}"
+                ))
+            })?;
+            if is_sentinel_version(&normalized) {
+                return Err(invalid(format!(
+                    "argument `base_token` for {} is a placeholder ({normalized}), not a file version. Copy the `token` returned by `read_file` for this path (current: {actual}), or use the empty-content hash ({EMPTY_CONTENT_HASH}) for a new file.",
+                    edit.path
+                )));
+            }
+            if normalized == EMPTY_CONTENT_HASH && !bytes.is_empty() {
+                return Err(invalid(format!(
+                    "argument `base_token` for {} is the empty-content hash, but the file has content ({} bytes). For an existing file, copy the `token` returned by `read_file` (current: {actual}); the empty-content hash is only valid for a new or empty file.",
+                    edit.path,
+                    bytes.len()
+                )));
+            }
+            normalized
+        }
+        BaseVersion::Auto => match ledger.lookup(&edit.path).map_err(internal)? {
+            Some(version) => version.digest,
+            None => {
+                return Err(invalid(format!(
+                    "no observed version for {}: base_token auto has nothing to resolve",
+                    edit.path
+                ))
+                .with_file(edit.path.clone())
+                .with_recovery("read the file first"));
+            }
+        },
+        BaseVersion::Handle { id } => match ledger.lookup(&edit.path).map_err(internal)? {
+            Some(version) if version.id == Some(*id) => version.digest,
+            Some(version) => {
+                let current = version
+                    .id
+                    .map_or_else(|| "none".to_string(), |value| value.to_string());
+                return Err(invalid(format!(
+                    "handle {id} does not belong to {}: the ledger's current version has id {current}",
+                    edit.path
+                ))
+                .with_file(edit.path.clone())
+                .with_recovery("use base_token auto, or read the file first"));
+            }
+            None => {
+                return Err(invalid(format!(
+                    "handle {id} does not belong to {}: no version is recorded for this file",
+                    edit.path
+                ))
+                .with_file(edit.path.clone())
+                .with_recovery("read the file first"));
+            }
+        },
+    };
+
+    if actual != expected {
+        return Err(internal(format!(
+            "base_token mismatch for {}: expected {expected}, computed {actual}; refusing to overwrite concurrent changes. The token does not describe the file's current contents — it is stale or wrong. If you edited this file yourself, re-read it (or use the `token` echoed by your previous successful `apply_patch` to it) and retry with the fresh token.",
+            edit.path
+        ))
+        .with_file(edit.path.clone())
+        .with_actual(FileVersion::new(actual.to_string(), bytes.len() as u64))
+        .with_recovery("pass this actual value as base_token, or use base_token auto"));
+    }
+
+    Ok(())
+}
+
+fn apply_edits_with(
+    root: &Path,
+    ledger: &VersionLedger,
+    edits: &[Edit],
+    dry_run: bool,
+) -> Result<Value, ToolError> {
     struct Prepared {
         path: PathBuf,
         display_path: String,
@@ -271,8 +381,8 @@ fn apply_edits_in(root: &Path, edits: &[Edit]) -> Result<Value, ToolError> {
         replacement: Option<String>,
     }
 
-    // Phase 1: resolve, read, hash-verify, and parse every edit. Nothing is
-    // written yet, so one bad edit cannot leave a partial change behind.
+    // Phase 1: resolve, read, version-verify, and parse every edit. Nothing
+    // is written yet, so one bad edit cannot leave a partial change behind.
     let mut prepared = Vec::with_capacity(edits.len());
     for edit in edits {
         let path = resolve_within_root(root, &edit.path).map_err(invalid)?;
@@ -289,35 +399,8 @@ fn apply_edits_in(root: &Path, edits: &[Edit]) -> Result<Value, ToolError> {
             Err(error) => return Err(internal(format!("cannot read {}: {error}", edit.path))),
         };
 
-        let expected = workspace_fs::normalize_hash(&edit.base_token).ok_or_else(|| {
-            invalid(format!(
-                "argument `base_token` must be a 64-character hex digest, got {:?}",
-                edit.base_token
-            ))
-        })?;
         let actual = workspace_fs::sha256_hex(&bytes);
-
-        if is_sentinel_version(&expected) {
-            return Err(invalid(format!(
-                "argument `base_token` for {} is a placeholder ({expected}), not a file version. Copy the `token` returned by `read_file` for this path (current: {actual}), or use the empty-content hash ({EMPTY_CONTENT_HASH}) for a new file.",
-                edit.path
-            )));
-        }
-
-        if expected == EMPTY_CONTENT_HASH && !bytes.is_empty() {
-            return Err(invalid(format!(
-                "argument `base_token` for {} is the empty-content hash, but the file has content ({} bytes). For an existing file, copy the `token` returned by `read_file` (current: {actual}); the empty-content hash is only valid for a new or empty file.",
-                edit.path,
-                bytes.len()
-            )));
-        }
-
-        if actual != expected {
-            return Err(internal(format!(
-                "base_token mismatch for {}: expected {expected}, computed {actual}; refusing to overwrite concurrent changes. The token does not describe the file's current contents — it is stale or wrong. If you edited this file yourself, re-read it (or use the `token` echoed by your previous successful `apply_patch` to it) and retry with the fresh token.",
-                edit.path
-            )));
-        }
+        verify_version(ledger, edit, &bytes, &actual)?;
 
         let original = String::from_utf8(bytes.clone())
             .map_err(|_| internal(format!("file is not valid UTF-8: {}", edit.path)))?;
@@ -380,30 +463,67 @@ fn apply_edits_in(root: &Path, edits: &[Edit]) -> Result<Value, ToolError> {
 
     // Phase 3: commit all writes. Validation above is all-or-nothing; if a
     // write fails partway, earlier writes are rolled back to their originals.
-    for (index, entry) in applied.iter().enumerate() {
-        if let Err(error) = fs::write(&entry.path, entry.new_content.as_bytes()) {
-            for previous in &applied[..index] {
-                let _ = fs::write(&previous.path, &previous.original_bytes);
+    if !dry_run {
+        for (index, entry) in applied.iter().enumerate() {
+            if let Err(error) = fs::write(&entry.path, entry.new_content.as_bytes()) {
+                for previous in &applied[..index] {
+                    let _ = fs::write(&previous.path, &previous.original_bytes);
+                }
+                return Err(internal(format!(
+                    "cannot write {}: {error}; rolled back {index} earlier write(s)",
+                    entry.display_path
+                )));
             }
-            return Err(internal(format!(
-                "cannot write {}: {error}; rolled back {index} earlier write(s)",
-                entry.display_path
-            )));
         }
     }
 
-    // Every write succeeded, so the post-write hash is authoritative: it is
-    // computed from the exact bytes just written. On any failure above we
-    // return before reaching this point, so a rolled-back call never hands
-    // out a token that describes a state the files no longer have.
+    // The post-write digest is computed from the exact bytes that would be or
+    // were written. A real write also records the version into the ledger so a
+    // later `base_token: "auto"` resolves without a re-read; a dry run returns
+    // the would-be version without minting an id.
+    let mut versions = Vec::with_capacity(applied.len());
+    for entry in &applied {
+        let digest = workspace_fs::sha256_hex(entry.new_content.as_bytes());
+        let len = entry.new_content.len() as u64;
+        if dry_run {
+            versions.push(FileVersion::new(digest, len));
+            continue;
+        }
+        versions.push(
+            ledger
+                .record(&entry.display_path, &digest, len)
+                .unwrap_or_else(|_| FileVersion::new(digest, len)),
+        );
+    }
+
+    if dry_run {
+        let would_change = applied
+            .iter()
+            .any(|entry| entry.original_bytes.as_slice() != entry.new_content.as_bytes());
+        return Ok(json!({
+            "would_change": would_change,
+            "files": applied
+                .iter()
+                .zip(&versions)
+                .map(|(entry, version)| json!({
+                    "path": entry.display_path,
+                    VERSION_FIELD: workspace_fs::version_to_json(version),
+                    "diff": entry.diff,
+                }))
+                .collect::<Vec<_>>(),
+        }));
+    }
+
     Ok(json!({
     "files_changed": applied.len(),
     "files": applied
         .iter()
-        .map(|entry| json!({
+        .zip(&versions)
+        .map(|(entry, version)| json!({
         "path": entry.display_path,
         "applied": true,
-        NEW_TOKEN_FIELD: workspace_fs::sha256_hex(entry.new_content.as_bytes()),
+        NEW_TOKEN_FIELD: version.digest,
+        VERSION_FIELD: workspace_fs::version_to_json(version),
         "diff": entry.diff,
         }))
         .collect::<Vec<_>>(),
@@ -1235,7 +1355,7 @@ mod tests {
 
         let first = [Edit {
             path: "a.txt".to_string(),
-            base_token: stale.clone(),
+            base_token: BaseVersion::Digest(stale.clone()),
             op: EditOp::Patch {
                 patch: "@@ -1,1 +1,1 @@\n-old\n+first\n".to_string(),
             },
@@ -1245,7 +1365,7 @@ mod tests {
         // Same token again: the file is now "first\n", so this must be refused.
         let second = [Edit {
             path: "a.txt".to_string(),
-            base_token: stale,
+            base_token: BaseVersion::Digest(stale),
             op: EditOp::Patch {
                 patch: "@@ -1,1 +1,1 @@\n-first\n+second\n".to_string(),
             },
@@ -1274,7 +1394,7 @@ mod tests {
 
         let first = [Edit {
             path: "a.txt".to_string(),
-            base_token: workspace_fs::sha256_hex(b"old\n"),
+            base_token: BaseVersion::Digest(workspace_fs::sha256_hex(b"old\n")),
             op: EditOp::Patch {
                 patch: "@@ -1,1 +1,1 @@\n-old\n+first\n".to_string(),
             },
@@ -1288,7 +1408,7 @@ mod tests {
 
         let second = [Edit {
             path: "a.txt".to_string(),
-            base_token: token,
+            base_token: BaseVersion::Digest(token),
             op: EditOp::Patch {
                 patch: "@@ -1,1 +1,1 @@\n-first\n+second\n".to_string(),
             },
@@ -1310,14 +1430,14 @@ mod tests {
         let edits = [
             Edit {
                 path: "a.txt".to_string(),
-                base_token: workspace_fs::sha256_hex(b""),
+                base_token: BaseVersion::Digest(workspace_fs::sha256_hex(b"")),
                 op: EditOp::Replace {
                     content: "a\n".to_string(),
                 },
             },
             Edit {
                 path: "b.txt".to_string(),
-                base_token: workspace_fs::sha256_hex(b""),
+                base_token: BaseVersion::Digest(workspace_fs::sha256_hex(b"")),
                 op: EditOp::Replace {
                     content: "b\n".to_string(),
                 },
@@ -1427,8 +1547,9 @@ mod tests {
 
         let edits = [Edit {
             path: "Cargo.toml/anything".to_string(),
-            base_token: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-                .to_string(),
+            base_token: BaseVersion::Digest(
+                "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string(),
+            ),
             op: EditOp::Patch {
                 patch: "@@ -0,0 +1,1 @@\n+fn main() {}\n".to_string(),
             },
@@ -1446,7 +1567,7 @@ mod tests {
 
         let edits = [Edit {
             path: "Cargo.toml/anything".to_string(),
-            base_token: ALL_F_HASH.to_string(),
+            base_token: BaseVersion::Digest(ALL_F_HASH.to_string()),
             op: EditOp::Patch {
                 patch: "@@ -0,0 +1,1 @@\n+fn main() {}\n".to_string(),
             },
@@ -1481,7 +1602,7 @@ mod tests {
 
         let edits = [Edit {
             path: "new.txt".to_string(),
-            base_token: workspace_fs::sha256_hex(b""),
+            base_token: BaseVersion::Digest(workspace_fs::sha256_hex(b"")),
             op: EditOp::Patch {
                 patch: "@@ -0,0 +1,2 @@\n+fn main() {\n+}\n".to_string(),
             },
@@ -1501,7 +1622,7 @@ mod tests {
 
         let edits = [Edit {
             path: "Cargo.toml".to_string(),
-            base_token: workspace_fs::sha256_hex(b"name = \"hanihi\"\n"),
+            base_token: BaseVersion::Digest(workspace_fs::sha256_hex(b"name = \"hanihi\"\n")),
             op: EditOp::Patch {
                 patch: "@@ -1,1 +1,1 @@\n-name = \"hanihi\"\n+name = \"hanihi-mcp\"\n".to_string(),
             },
@@ -1521,7 +1642,7 @@ mod tests {
 
         let edits = [Edit {
             path: "a.txt".to_string(),
-            base_token: workspace_fs::sha256_hex(b"old\n"),
+            base_token: BaseVersion::Digest(workspace_fs::sha256_hex(b"old\n")),
             op: EditOp::Replace {
                 content: "new\n".to_string(),
             },
@@ -1538,7 +1659,7 @@ mod tests {
 
         let edits = [Edit {
             path: "a.txt".to_string(),
-            base_token: workspace_fs::sha256_hex(b"old\n"),
+            base_token: BaseVersion::Digest(workspace_fs::sha256_hex(b"old\n")),
             op: EditOp::Replace {
                 content: String::new(),
             },
@@ -1555,7 +1676,7 @@ mod tests {
 
         let edits = [Edit {
             path: "a.txt".to_string(),
-            base_token: NULL_HASH.to_string(),
+            base_token: BaseVersion::Digest(NULL_HASH.to_string()),
             op: EditOp::Patch {
                 patch: "@@ -1,1 +1,1 @@\n-line one\n+line two\n".to_string(),
             },
@@ -1581,7 +1702,7 @@ mod tests {
 
         let edits = [Edit {
             path: "a.txt".to_string(),
-            base_token: ALL_F_HASH.to_string(),
+            base_token: BaseVersion::Digest(ALL_F_HASH.to_string()),
             op: EditOp::Patch {
                 patch: "@@ -1,1 +1,1 @@\n-line one\n+line two\n".to_string(),
             },
@@ -1598,7 +1719,7 @@ mod tests {
 
         let edits = [Edit {
             path: "a.txt".to_string(),
-            base_token: ALL_F_HASH.to_ascii_uppercase(),
+            base_token: BaseVersion::Digest(ALL_F_HASH.to_ascii_uppercase()),
             op: EditOp::Patch {
                 patch: "@@ -1,1 +1,1 @@\n-line one\n+line two\n".to_string(),
             },
@@ -1615,7 +1736,7 @@ mod tests {
 
         let edits = [Edit {
             path: "a.txt".to_string(),
-            base_token: EMPTY_CONTENT_HASH.to_string(),
+            base_token: BaseVersion::Digest(EMPTY_CONTENT_HASH.to_string()),
             op: EditOp::Patch {
                 patch: "@@ -1,1 +1,1 @@\n-line one\n+line two\n".to_string(),
             },
@@ -1636,7 +1757,7 @@ mod tests {
 
         let edits = [Edit {
             path: "a.txt".to_string(),
-            base_token: workspace_fs::sha256_hex(b"different\n"),
+            base_token: BaseVersion::Digest(workspace_fs::sha256_hex(b"different\n")),
             op: EditOp::Replace {
                 content: "line two\n".to_string(),
             },
@@ -1657,7 +1778,7 @@ mod tests {
 
         let edits = [Edit {
             path: "a.txt".to_string(),
-            base_token: EMPTY_CONTENT_HASH.to_string(),
+            base_token: BaseVersion::Digest(EMPTY_CONTENT_HASH.to_string()),
             op: EditOp::Patch {
                 patch: "@@ -0,0 +1,2 @@\n+fn main() {\n+}\n".to_string(),
             },
@@ -1668,5 +1789,116 @@ mod tests {
             fs::read_to_string(root.join("a.txt")).unwrap(),
             "fn main() {\n}"
         );
+    }
+
+    /// Two edits in a row, the second using `auto`, must both land: the ledger
+    /// records the first write, so `auto` resolves without a re-read.
+    #[test]
+    fn apply_patch_chains_two_edits_with_auto() {
+        let root = temp_dir("apply_patch_chains_two_edits_with_auto");
+        fs::write(root.join("a.txt"), "old\n").unwrap();
+
+        let first = [Edit {
+            path: "a.txt".to_string(),
+            base_token: BaseVersion::Digest(workspace_fs::sha256_hex(b"old\n")),
+            op: EditOp::Patch {
+                patch: "@@ -1,1 +1,1 @@\n-old\n+first\n".to_string(),
+            },
+        }];
+        apply_edits_in(&root, &first).unwrap();
+
+        let second = [Edit {
+            path: "a.txt".to_string(),
+            base_token: BaseVersion::Auto,
+            op: EditOp::Patch {
+                patch: "@@ -1,1 +1,1 @@\n-first\n+second\n".to_string(),
+            },
+        }];
+        let report = apply_edits_in(&root, &second).unwrap();
+        assert_eq!(report["files_changed"], json!(1));
+        assert_eq!(fs::read_to_string(root.join("a.txt")).unwrap(), "second\n");
+    }
+
+    /// A handle minted for one path must refuse to verify a different path.
+    #[test]
+    fn opaque_handle_is_bound_to_its_path() {
+        let root = temp_dir("opaque_handle_is_bound_to_its_path");
+        fs::write(root.join("a.txt"), "one\n").unwrap();
+        fs::write(root.join("b.txt"), "two\n").unwrap();
+
+        let ledger = VersionLedger::for_root(&root).unwrap();
+        let handle = ledger
+            .record("a.txt", &workspace_fs::sha256_hex(b"one\n"), 4)
+            .unwrap();
+
+        let edits = [Edit {
+            path: "b.txt".to_string(),
+            base_token: BaseVersion::Handle {
+                id: handle.id.unwrap(),
+            },
+            op: EditOp::Patch {
+                patch: "@@ -1,1 +1,1 @@\n-two\n+three\n".to_string(),
+            },
+        }];
+        let error = apply_edits_with(&root, &ledger, &edits, false).unwrap_err();
+        assert!(
+            error.message.contains("does not belong to b.txt"),
+            "got: {}",
+            error.message
+        );
+        assert_eq!(error.file.as_deref(), Some("b.txt"));
+        assert_eq!(fs::read_to_string(root.join("b.txt")).unwrap(), "two\n");
+    }
+
+    /// A mismatch returns a structured refusal payload: `actual` is the version
+    /// the tree has, and `recovery` is the imperative retry.
+    #[test]
+    fn mismatch_returns_structured_refusal_payload() {
+        let root = temp_dir("mismatch_returns_structured_refusal_payload");
+        fs::write(root.join("a.txt"), "now\n").unwrap();
+        let now_digest = workspace_fs::sha256_hex(b"now\n");
+
+        let edits = [Edit {
+            path: "a.txt".to_string(),
+            base_token: BaseVersion::Digest(workspace_fs::sha256_hex(b"stale\n")),
+            op: EditOp::Replace {
+                content: "other\n".to_string(),
+            },
+        }];
+        let error = apply_edits_in(&root, &edits).unwrap_err();
+        assert_eq!(error.code, -32603);
+        assert_eq!(error.file.as_deref(), Some("a.txt"));
+        assert_eq!(
+            error.actual.as_ref().map(|v| v.digest.as_str()),
+            Some(now_digest.as_str())
+        );
+        assert_eq!(
+            error.recovery.as_deref(),
+            Some("pass this actual value as base_token, or use base_token auto")
+        );
+        assert_eq!(fs::read_to_string(root.join("a.txt")).unwrap(), "now\n");
+    }
+
+    /// A dry run performs every check and reports the would-be version, but
+    /// writes nothing.
+    #[test]
+    fn dry_run_writes_nothing_but_reports_the_would_be_version() {
+        let root = temp_dir("dry_run_writes_nothing_but_reports_the_would_be_version");
+        fs::write(root.join("a.txt"), "old\n").unwrap();
+
+        let edits = [Edit {
+            path: "a.txt".to_string(),
+            base_token: BaseVersion::Digest(workspace_fs::sha256_hex(b"old\n")),
+            op: EditOp::Patch {
+                patch: "@@ -1,1 +1,1 @@\n-old\n+new\n".to_string(),
+            },
+        }];
+        let report = apply_edits_in_dry_run(&root, &edits).unwrap();
+        assert_eq!(report["would_change"], json!(true));
+        assert_eq!(
+            report["files"][0]["version"]["digest"],
+            json!(workspace_fs::sha256_hex(b"new\n"))
+        );
+        assert_eq!(fs::read_to_string(root.join("a.txt")).unwrap(), "old\n");
     }
 }

@@ -22,6 +22,11 @@ use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use ignore::{Match, Walk, WalkBuilder};
 
 /// Maximum number of bytes [`SourceTree::read`] returns for one file.
+///
+/// This is the per-file read cap. The agent-layer backstop
+/// [`crate::tool::MAX_TOOL_RESULT_BYTES`] is applied separately to every
+/// rendered result and may clip body text further, but never changes the
+/// per-file policy here.
 pub const MAX_READ_BYTES: usize = 128 * 1024;
 
 /// Marker line used to recognise an existing hānihi-managed `.ignore`.

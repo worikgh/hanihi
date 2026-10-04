@@ -24,6 +24,7 @@ mod read_file_tool;
 mod rename_file_tool;
 mod search_text_tool;
 mod tool;
+mod version_ledger;
 mod workspace_fs;
 mod workspace_info_tool;
 

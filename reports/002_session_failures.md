@@ -119,6 +119,12 @@ That is a legitimate criticism. The workaround is available today:
 
 I should have proposed that instead of declining.
 
+**Status (plan 026):** the `write_file` → `git commit -F` route above is the
+interim workaround, not the fix. The real gap — no way to supply a multi-line
+string to `run_command` as a single, safe argv element — is documented here but
+deliberately left open. A staged-text channel (`$SCRATCH_n` substitution) is
+owned by plan 027 and is out of scope for this plan.
+
 ### 1.7 What went right
 
 Worth stating, because it shapes the fix:

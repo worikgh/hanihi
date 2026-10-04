@@ -72,7 +72,7 @@ enum ToolCallCacheLookup {
     /// An earlier identical call succeeded; reuse this rendered result.
     Hit(String),
     /// The identical read-only call has already been made too many times.
-    DuplicateLimit { count: usize },
+    DuplicateLimit,
     /// Not cacheable, or the first time this call has been seen.
     Miss,
 }
@@ -102,7 +102,7 @@ impl ToolCallCache {
         let count = self.counts.entry(key.clone()).or_insert(0);
         *count += 1;
         if *count >= 3 {
-            return ToolCallCacheLookup::DuplicateLimit { count: *count };
+            return ToolCallCacheLookup::DuplicateLimit;
         }
         match self.results.get(&key) {
             Some(rendered) => ToolCallCacheLookup::Hit(rendered.clone()),
@@ -723,7 +723,7 @@ pub(crate) fn build_context(
     msgs.push(ContextMessage::System(system_prompt.to_string()));
 
     for m in history.iter().chain(turn_messages.iter()) {
-        msgs.push(ContextMessage::Message(m.clone()));
+        msgs.push(ContextMessage::Message(Box::new(m.clone())));
     }
 
     // Current user message.
@@ -745,9 +745,14 @@ async fn execute_tool_with_cache(
 
         match cache.lookup(name, &args) {
             ToolCallCacheLookup::Hit(rendered) => return Ok(rendered),
-            ToolCallCacheLookup::DuplicateLimit { count } => {
+            ToolCallCacheLookup::DuplicateLimit => {
+                let target = args
+                    .get("path")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_string)
+                    .unwrap_or_else(|| name.to_string());
                 return Ok(format!(
-                    "duplicate call skipped: '{name}' with identical arguments was already called {count} times this turn; reuse an earlier result"
+                    "duplicate read of {target} this turn: reuse the earlier result, or vary the arguments (for example request a different offset/limit range)"
                 ));
             }
             ToolCallCacheLookup::Miss => {}
@@ -1201,15 +1206,15 @@ mod tests {
         );
         assert_eq!(
             prepared.log_messages[1],
-            ContextMessage::Message(Message::user("earlier"))
+            ContextMessage::Message(Box::new(Message::user("earlier")))
         );
         assert_eq!(
             prepared.log_messages[2],
-            ContextMessage::Message(Message::assistant("earlier-a"))
+            ContextMessage::Message(Box::new(Message::assistant("earlier-a")))
         );
         assert_eq!(
             prepared.log_messages[3],
-            ContextMessage::Message(Message::assistant("partial"))
+            ContextMessage::Message(Box::new(Message::assistant("partial")))
         );
         assert_eq!(prepared.log_messages[4], ContextMessage::User("now".into()));
     }
@@ -1369,10 +1374,13 @@ mod tests {
 
         assert_eq!(messages.len(), 4);
         assert_eq!(messages[0], ContextMessage::System("system".into()));
-        assert_eq!(messages[1], ContextMessage::Message(history[0].clone()));
+        assert_eq!(
+            messages[1],
+            ContextMessage::Message(Box::new(history[0].clone()))
+        );
         assert_eq!(
             messages[2],
-            ContextMessage::Message(turn_messages[0].clone())
+            ContextMessage::Message(Box::new(turn_messages[0].clone()))
         );
         assert_eq!(messages[3], ContextMessage::User("now".into()));
     }

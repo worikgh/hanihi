@@ -38,8 +38,11 @@ pub(crate) fn map_source_err(e: SourceError) -> ToolExecutionError {
 /// Maximum bytes of any rendered tool result fed back to the model.
 ///
 /// This is the agent-layer backstop. Per-tool caps (file reads, grep,
-/// command output) are the primary policy; this catches any path that
-/// renders an unbounded result, in particular MCP tools.
+/// command output, and the MCP `read_file` per-file cap) are the primary
+/// policy; this catches any path that renders an unbounded result, in
+/// particular MCP tools. For `read_file` specifically, the MCP server
+/// serializes the version fields before the (large) `content` field, so this
+/// backstop can only ever clip body text, never the usable token.
 pub(crate) const MAX_TOOL_RESULT_BYTES: usize = 64 * 1024;
 
 /// Cap a rendered tool result, appending a note with the original byte count

@@ -41,7 +41,11 @@ pub enum ContextMessage {
     /// System preamble. Not a `rig` `Message`: it travels as `preamble()`.
     System(String),
     /// A prior-turn or in-progress-turn message (`rig::completion::Message`).
-    Message(Message),
+    ///
+    /// Boxed because `rig::completion::Message` is much larger than the
+    /// plain string variants; this keeps [`ContextMessage`] small when it is
+    /// copied through the agent loop and logged.
+    Message(Box<Message>),
     /// The current turn's user input, appended last on every model call.
     User(String),
 }
@@ -90,22 +94,22 @@ impl ContextMessage {
         match role {
             "system" => match content {
                 serde_json::Value::String(text) => Ok(ContextMessage::System(text)),
-                other => Ok(ContextMessage::Message(
+                other => Ok(ContextMessage::Message(Box::new(
                     serde_json::from_value(rebuild_message_json("system", other))
                         .map_err(|e| e.to_string())?,
-                )),
+                ))),
             },
             "user" => match content {
                 serde_json::Value::String(text) => Ok(ContextMessage::User(text)),
-                other => Ok(ContextMessage::Message(
+                other => Ok(ContextMessage::Message(Box::new(
                     serde_json::from_value(rebuild_message_json("user", other))
                         .map_err(|e| e.to_string())?,
-                )),
+                ))),
             },
-            other => Ok(ContextMessage::Message(
+            other => Ok(ContextMessage::Message(Box::new(
                 serde_json::from_value(rebuild_message_json(other, content))
                     .map_err(|e| e.to_string())?,
-            )),
+            ))),
         }
     }
 }
@@ -1073,8 +1077,8 @@ mod tests {
             model: "deepseek-chat".into(),
             messages: vec![
                 ContextMessage::System("sys".into()),
-                ContextMessage::Message(Message::user("earlier")),
-                ContextMessage::Message(Message::assistant("partial")),
+                ContextMessage::Message(Box::new(Message::user("earlier"))),
+                ContextMessage::Message(Box::new(Message::assistant("partial"))),
                 ContextMessage::User("now".into()),
             ],
             tool_definitions: serde_json::json!([]),
@@ -1116,10 +1120,10 @@ mod tests {
         );
         let messages = vec![
             ContextMessage::System("sys".into()),
-            ContextMessage::Message(Message::Assistant {
+            ContextMessage::Message(Box::new(Message::Assistant {
                 id: None,
                 content: rig::OneOrMany::one(rig::completion::AssistantContent::ToolCall(call)),
-            }),
+            })),
             ContextMessage::User("now".into()),
         ];
         let entry = LogEntry::llm_prompt(
@@ -1183,7 +1187,7 @@ mod tests {
             1,
             "d".into(),
             "m".into(),
-            vec![ContextMessage::Message(original)],
+            vec![ContextMessage::Message(Box::new(original))],
             serde_json::json!([]),
         );
 
@@ -1193,7 +1197,10 @@ mod tests {
 
         match &parsed {
             LogEntry::LlmPrompt { data, .. } => match &data.messages[0] {
-                ContextMessage::Message(Message::Assistant { id, .. }) => assert_eq!(*id, None),
+                ContextMessage::Message(msg) => match msg.as_ref() {
+                    Message::Assistant { id, .. } => assert_eq!(*id, None),
+                    other => panic!("expected an assistant message, got {other:?}"),
+                },
                 other => panic!("expected an assistant message, got {other:?}"),
             },
             other => panic!("expected LlmPrompt, got {other:?}"),

@@ -4,6 +4,7 @@
 //! envelopes so `create_file`, `delete_file`, and `rename_file` apply the
 //! same safety rules.
 
+use crate::version_ledger::FileVersion;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::path::{Component, Path, PathBuf};
@@ -17,17 +18,47 @@ const INTERNAL_ERROR: i64 = -32603;
 /// process never changes its working directory.
 static WORKSPACE_ROOT: OnceLock<PathBuf> = OnceLock::new();
 
-/// A recoverable tool failure carrying the JSON-RPC error code to report.
+/// A recoverable tool failure carrying everything the caller needs to
+/// recover mechanically, not by parsing prose.
 #[derive(Debug)]
 pub(crate) struct ToolError {
     pub(crate) code: i64,
     pub(crate) message: String,
+    /// Present when the failure names a file the caller can act on.
+    pub(crate) file: Option<String>,
+    /// Present on a token mismatch: the version the tree actually has. This
+    /// is the field the caller copies into its next `read_file` or
+    /// `apply_patch` retry. Boxed to keep [`ToolError`] small on the hot
+    /// `Result` error path.
+    pub(crate) actual: Option<Box<FileVersion>>,
+    /// One imperative sentence stating what would make the call succeed.
+    pub(crate) recovery: Option<String>,
+}
+
+impl ToolError {
+    pub(crate) fn with_file(mut self, file: impl Into<String>) -> Self {
+        self.file = Some(file.into());
+        self
+    }
+
+    pub(crate) fn with_actual(mut self, version: FileVersion) -> Self {
+        self.actual = Some(Box::new(version));
+        self
+    }
+
+    pub(crate) fn with_recovery(mut self, recovery: impl Into<String>) -> Self {
+        self.recovery = Some(recovery.into());
+        self
+    }
 }
 
 pub(crate) fn invalid(message: impl Into<String>) -> ToolError {
     ToolError {
         code: INVALID_PARAMS,
         message: message.into(),
+        file: None,
+        actual: None,
+        recovery: None,
     }
 }
 
@@ -35,6 +66,9 @@ pub(crate) fn internal(message: impl Into<String>) -> ToolError {
     ToolError {
         code: INTERNAL_ERROR,
         message: message.into(),
+        file: None,
+        actual: None,
+        recovery: None,
     }
 }
 
@@ -49,12 +83,42 @@ pub(crate) fn success(id: Value, text: String) -> Value {
     })
 }
 
-pub(crate) fn failure(id: Value, code: i64, message: String) -> Value {
-    json!({
-    "jsonrpc": "2.0",
-    "id": id,
-    "error": { "code": code, "message": message }
-    })
+pub(crate) fn failure(id: Value, error: &ToolError) -> Value {
+    let mut error_object = serde_json::Map::new();
+    error_object.insert("code".to_string(), json!(error.code));
+    error_object.insert("message".to_string(), json!(error.message));
+    if let Some(file) = &error.file {
+        error_object.insert("file".to_string(), json!(file));
+    }
+    if let Some(actual) = &error.actual {
+        error_object.insert("actual".to_string(), json!(actual));
+    }
+    if let Some(recovery) = &error.recovery {
+        error_object.insert("recovery".to_string(), json!(recovery));
+    }
+
+    let mut response = serde_json::Map::new();
+    response.insert("jsonrpc".to_string(), json!("2.0"));
+    response.insert("id".to_string(), id);
+    response.insert("error".to_string(), Value::Object(error_object));
+    Value::Object(response)
+}
+
+/// Renders a [`FileVersion`] as the JSON object both `read_file` and
+/// `apply_patch` return. The opaque `id` is omitted when the harness did not
+/// mint one (for example on a dry run or when the ledger is unavailable).
+pub(crate) fn version_to_json(version: &FileVersion) -> Value {
+    match version.id {
+        Some(id) => json!({
+            "id": id,
+            "digest": version.digest.clone(),
+            "len": version.len,
+        }),
+        None => json!({
+            "digest": version.digest.clone(),
+            "len": version.len,
+        }),
+    }
 }
 
 /// Extracts the MCP `tools/call` arguments object from the params.
