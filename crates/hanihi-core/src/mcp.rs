@@ -68,16 +68,19 @@ impl McpClient {
                     .call_tool(params)
                     .await
                     .map_err(ToolExecutionError::from_error)?;
-                if result.is_error == Some(true) {
-                    return Err(ToolExecutionError::from_error(AgentError::Tool {
-                        name: call_name,
-                        message: render_call_result(&result),
-                    }));
-                }
-                Ok(ToolOutput::text(render_call_result(&result)))
+                Ok(call_result_output(&result))
             })
         })
     }
+}
+
+/// Render an MCP tool result into the output the agent sees.
+///
+/// Tool-level failures (`isError: true`) stay as ordinary text results so the
+/// model can retry from the self-describing refusal within the same turn. Only
+/// a protocol-level failure (the `call_tool` error path above) aborts a turn.
+fn call_result_output(result: &CallToolResult) -> ToolOutput {
+    ToolOutput::text(render_call_result(result))
 }
 
 /// Render an MCP call result as plain text: text content blocks joined, plus
@@ -128,6 +131,19 @@ mod tests {
     fn test_render_call_result_empty() {
         let result = CallToolResult::success(vec![]);
         assert_eq!(render_call_result(&result), "(no output)");
+    }
+
+    #[test]
+    fn test_tool_level_error_is_surfaced_as_an_ordinary_result() {
+        let result = CallToolResult::error(vec![ContentBlock::text(
+            "{\"code\":-32603,\"message\":\"base_token mismatch\",\"recovery\":\"read the file first\"}",
+        )]);
+        assert_eq!(result.is_error, Some(true));
+
+        let output = call_result_output(&result);
+        let rendered = output.render();
+        assert!(rendered.contains("\"recovery\""), "got: {rendered}");
+        assert!(rendered.contains("read the file first"), "got: {rendered}");
     }
 
     #[test]

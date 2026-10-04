@@ -83,25 +83,39 @@ pub(crate) fn success(id: Value, text: String) -> Value {
     })
 }
 
-pub(crate) fn failure(id: Value, error: &ToolError) -> Value {
-    let mut error_object = serde_json::Map::new();
-    error_object.insert("code".to_string(), json!(error.code));
-    error_object.insert("message".to_string(), json!(error.message));
+/// Renders a [`ToolError`] as the structured refusal payload the caller
+/// receives. `file`, `actual`, and `recovery` are the mechanical retry path.
+fn tool_error_payload(error: &ToolError) -> Value {
+    let mut payload = serde_json::Map::new();
+    payload.insert("code".to_string(), json!(error.code));
+    payload.insert("message".to_string(), json!(error.message));
     if let Some(file) = &error.file {
-        error_object.insert("file".to_string(), json!(file));
+        payload.insert("file".to_string(), json!(file));
     }
     if let Some(actual) = &error.actual {
-        error_object.insert("actual".to_string(), json!(actual));
+        payload.insert("actual".to_string(), json!(actual));
     }
     if let Some(recovery) = &error.recovery {
-        error_object.insert("recovery".to_string(), json!(recovery));
+        payload.insert("recovery".to_string(), json!(recovery));
     }
+    Value::Object(payload)
+}
 
-    let mut response = serde_json::Map::new();
-    response.insert("jsonrpc".to_string(), json!("2.0"));
-    response.insert("id".to_string(), id);
-    response.insert("error".to_string(), Value::Object(error_object));
-    Value::Object(response)
+/// Tool failures are returned as MCP tool-result errors (`isError: true`),
+/// not JSON-RPC protocol errors. A protocol error is collapsed by the client
+/// to a bare message and drops the structured fields above.
+pub(crate) fn failure(id: Value, error: &ToolError) -> Value {
+    let payload = tool_error_payload(error);
+    let text = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| error.message.clone());
+
+    json!({
+    "jsonrpc": "2.0",
+    "id": id,
+    "result": {
+        "content": [{ "type": "text", "text": text }],
+        "isError": true
+    }
+    })
 }
 
 /// Renders a [`FileVersion`] as the JSON object both `read_file` and
@@ -479,6 +493,35 @@ mod tests {
         let error = required_non_empty_string(&json!({ "path": "" }), "path").unwrap_err();
         assert_eq!(error.code, INVALID_PARAMS);
         assert!(error.message.contains("empty"));
+    }
+
+    /// Tool failures must be MCP tool-result errors, not JSON-RPC protocol
+    /// errors: the client collapses protocol errors to a bare message and
+    /// drops the structured refusal fields the caller needs to retry.
+    #[test]
+    fn failure_keeps_structured_refusal_fields_in_tool_result() {
+        let error = internal("base_token mismatch for a.txt")
+            .with_file("a.txt")
+            .with_actual(FileVersion::new("abc123", 7))
+            .with_recovery("read the file first");
+
+        let response = failure(json!(7), &error);
+
+        assert!(response.get("error").is_none());
+        assert_eq!(response["result"]["isError"], json!(true));
+        let text = response["result"]["content"][0]["text"]
+            .as_str()
+            .expect("structured payload text");
+        let payload: Value = serde_json::from_str(text).expect("payload is JSON");
+        assert_eq!(payload["code"].as_i64(), Some(-32603));
+        assert_eq!(
+            payload["message"].as_str(),
+            Some("base_token mismatch for a.txt")
+        );
+        assert_eq!(payload["file"].as_str(), Some("a.txt"));
+        assert_eq!(payload["actual"]["digest"].as_str(), Some("abc123"));
+        assert_eq!(payload["actual"]["len"].as_u64(), Some(7));
+        assert_eq!(payload["recovery"].as_str(), Some("read the file first"));
     }
 
     #[test]
