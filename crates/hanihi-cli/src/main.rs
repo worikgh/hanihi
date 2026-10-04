@@ -17,9 +17,9 @@ use hanihi_core::agent::Agent;
 use hanihi_core::error::AgentError;
 use hanihi_core::session::SessionManager;
 use hanihi_core::{
-    McpClient, SourceTree, StreamEvent, builtin_get_time, builtin_grep, builtin_list_dir,
-    builtin_read_session_log, builtin_run_command, builtin_run_command_write, builtin_write_file,
-    connect_chat_model_with_prompt,
+    McpClient, SourceTree, StreamEvent, Toolchain, builtin_get_time, builtin_grep,
+    builtin_list_dir, builtin_read_session_log, builtin_run_command, builtin_run_command_write,
+    builtin_write_file, connect_chat_model_with_prompt,
 };
 use nu_ansi_term::Color;
 use reedline::{DefaultPrompt, FileBackedHistory, Reedline, Signal};
@@ -276,11 +276,27 @@ async fn main() -> Result<(), AgentError> {
     let mut mgr = SessionManager::new(&working_dir);
     let provider = provider_from_url(&args.base_url);
 
+    // Open the source tree once, before the prompt is resolved: the detected
+    // toolchain decides which verification workflow the prompt carries, and
+    // the same handle is reused below to register the source-tree tools. A
+    // missing repository is not fatal — it degrades to `Toolchain::Unknown`
+    // and the source tools stay unregistered.
+    let tree = match SourceTree::open() {
+        Ok(tree) => Some(Arc::new(tree)),
+        Err(error) => {
+            println!("source tools disabled (no git repository): {error}");
+            None
+        }
+    };
+    let toolchain = tree
+        .as_ref()
+        .map_or(Toolchain::Unknown, |tree| tree.toolchain());
+
     let task_mode = args.task.is_some();
-    let base_prompt: &str = if task_mode {
-        hanihi_core::agent::TASK_SYSTEM_PROMPT
+    let base_prompt: String = if task_mode {
+        hanihi_core::agent::task_system_prompt(toolchain)
     } else {
-        hanihi_core::agent::DEFAULT_SYSTEM_PROMPT
+        hanihi_core::agent::DEFAULT_SYSTEM_PROMPT.to_string()
     };
 
     // Determine session name and whether to auto-create.
@@ -386,36 +402,35 @@ async fn main() -> Result<(), AgentError> {
     // repository, plus a window into this session's own event log. Ignore
     // rules (.gitignore, .ignore) filter what the agent can see. Write tools
     // (apply_patch, write_file) are registered only with --write.
-    match SourceTree::open() {
-        Ok(tree) => {
-            let tree = Arc::new(tree);
-            let traces_dir = working_dir.join("traces").join(&session_name);
-            let log_path = working_dir
-                .join("sessions")
-                .join(&session_name)
-                .join("events.jsonl");
-            agent.add_tool(builtin_list_dir(tree.clone()));
-            agent.add_tool(builtin_grep(tree.clone()));
-            if args.write {
-                agent.add_tool(builtin_run_command_write(tree.clone(), traces_dir));
-            } else {
-                agent.add_tool(builtin_run_command(tree.clone(), traces_dir));
-            }
-            agent.add_tool(builtin_read_session_log(log_path));
-            if args.write {
-                agent.add_tool(builtin_write_file(tree));
-            }
-            eprintln!(
-                "{}:{}: Tools: {}",
-                file!(),
-                line!(),
-                agent
-                    .tool_definitions()
-                    .iter()
-                    .fold(String::new(), |a, b| format!("{a}, {}", b.name))
-            );
+    //
+    // The tree was opened before the prompt was resolved, so the toolchain it
+    // reported could select the verification workflow.
+    if let Some(tree) = tree {
+        let traces_dir = working_dir.join("traces").join(&session_name);
+        let log_path = working_dir
+            .join("sessions")
+            .join(&session_name)
+            .join("events.jsonl");
+        agent.add_tool(builtin_list_dir(tree.clone()));
+        agent.add_tool(builtin_grep(tree.clone()));
+        if args.write {
+            agent.add_tool(builtin_run_command_write(tree.clone(), traces_dir));
+        } else {
+            agent.add_tool(builtin_run_command(tree.clone(), traces_dir));
         }
-        Err(e) => println!("source tools disabled (no git repository): {e}"),
+        agent.add_tool(builtin_read_session_log(log_path));
+        if args.write {
+            agent.add_tool(builtin_write_file(tree));
+        }
+        eprintln!(
+            "{}:{}: Tools: {}",
+            file!(),
+            line!(),
+            agent
+                .tool_definitions()
+                .iter()
+                .fold(String::new(), |a, b| format!("{a}, {}", b.name))
+        );
     }
 
     for command in &args.mcp_commands {

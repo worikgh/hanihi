@@ -21,6 +21,7 @@ use crate::context::{
 };
 use crate::error::AgentError;
 use crate::session::log::{ContextMessage, UsageData};
+use crate::source::Toolchain;
 use crate::tool::truncate_tool_output;
 
 /// Default system prompt used when none is supplied.
@@ -39,11 +40,17 @@ explain what blocked you.";
 
 /// System prompt for task mode: long-horizon self-improvement work with
 /// explicit workflow gates (mirrors the project's Rust workflow rules).
-pub const TASK_SYSTEM_PROMPT: &str = "You are hānihi in task mode: a coding agent working on a Rust codebase. \
-Work in small steps and verify with the build before declaring success. Workflow gates: \
-run `cargo fmt` before staging changes; `cargo test` before committing; `cargo build` must pass; \
-run `cargo clippy -- -D warnings` before finishing. Make changes as small git commits with \
-descriptive messages. Never push. Study command output and trace files before retrying: if a \
+///
+/// This is the invariant part of the task preamble — everything that is true
+/// regardless of the repository's build toolchain. The verification sequence
+/// is appended per toolchain by [`task_system_prompt`].
+pub const TASK_SYSTEM_PROMPT: &str = "You are hānihi in task mode: a coding agent. \
+Work in small steps and verify with the build before declaring success. ";
+
+/// Task-mode preamble suffix, identical for every toolchain: retry discipline,
+/// tool-list authority, and the never-push contract.
+const TASK_SYSTEM_PROMPT_SUFFIX: &str = " \
+Study command output and trace files before retrying: if a \
 command fails, read the error and fix the cause rather than repeating it. Verify your work with \
 the build/test gates — do not assert success by eye. Before calling a tool, check whether an \
 identical read-only call with a usable result already appears in this turn; reuse it instead of \
@@ -54,6 +61,37 @@ the failure, then \
 continue toward the goal by the next viable means (retry once only if the cause was transient; \
 otherwise try a different approach). Stop only when no way to continue remains, and then \
 explain what blocked you.";
+
+/// Rust (Cargo) verification workflow. Byte-identical to the workflow
+/// sentences the preamble carried before they became toolchain-dependent.
+const CARGO_VERIFICATION_PREAMBLE: &str = "Workflow gates: run `cargo fmt` before staging changes; \
+`cargo test` before committing; `cargo build` must pass; \
+run `cargo clippy -- -D warnings` before finishing. Make changes as small git commits with \
+descriptive messages. Never push.";
+
+/// C++ (CMake) verification workflow.
+///
+/// Deliberately weaker than the Rust variant: no formatter and no linter are
+/// nameable here. No formatter is admitted by the command allowlist, and
+/// `clang-tidy` additionally needs a `compile_commands.json` from a
+/// successful configure. Rather than name tools that cannot be invoked, this
+/// variant states which gates *are* checkable — compiles and tests pass — and
+/// leaves style to matching the surrounding code.
+const CMAKE_VERIFICATION_PREAMBLE: &str = "Workflow gates: configure with `cmake -B build`, \
+then build with `cmake --build build`. For a fast per-file check, compile the file with the \
+compiler's `-c -fsyntax-only` flags — it is cheaper than a full build and catches parse and \
+type errors immediately. Run the test suite with `ctest --test-dir build` when the project \
+defines tests. Compiles and tests pass are the gates you can verify here; no formatter or \
+linter is available, so match the surrounding style and do not reformat code you did not \
+change. Make changes as small git commits with descriptive messages. Never push.";
+
+/// No recognised build system. Naming no tool is the point: a model that
+/// invents `make` or `./configure` in a repository with no marker file
+/// produces confusing refusals.
+const UNKNOWN_VERIFICATION_PREAMBLE: &str = "Workflow gates: no build or test command is \
+available for this repository — no recognised build system was detected. Say so rather than \
+guessing at one: commands you invent will be refused. Match the surrounding style, keep changes \
+small, and commit your work as small git commits with descriptive messages. Never push.";
 
 /// Hard cap on tool executions within a single turn. Additional to
 /// [`Agent::max_turns`]: a turn may legally make many tool calls across
@@ -605,6 +643,31 @@ fn build_preamble(system_prompt: &str, summary: Option<&str>) -> String {
         }
         None => system_prompt.to_string(),
     }
+}
+
+/// The build/verify workflow paragraph for `toolchain`, appended to the
+/// invariant preamble.
+///
+/// One `&'static str` per variant: this runs once per model request, so the
+/// text is borrowed rather than allocated. `Toolchain::Unknown` names no
+/// build tool at all, so a model in an unrecognised repository reports the
+/// gap instead of guessing at `make` or `./configure`.
+fn verification_preamble(toolchain: Toolchain) -> &'static str {
+    match toolchain {
+        Toolchain::Cargo => CARGO_VERIFICATION_PREAMBLE,
+        Toolchain::CMake => CMAKE_VERIFICATION_PREAMBLE,
+        Toolchain::Unknown => UNKNOWN_VERIFICATION_PREAMBLE,
+    }
+}
+
+/// The task-mode system prompt for a repository using `toolchain`: the
+/// invariant task preamble, the per-toolchain verification workflow, then the
+/// toolchain-independent suffix.
+pub fn task_system_prompt(toolchain: Toolchain) -> String {
+    format!(
+        "{TASK_SYSTEM_PROMPT}{}{TASK_SYSTEM_PROMPT_SUFFIX}",
+        verification_preamble(toolchain)
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1383,5 +1446,117 @@ mod tests {
             ContextMessage::Message(Box::new(turn_messages[0].clone()))
         );
         assert_eq!(messages[3], ContextMessage::User("now".into()));
+    }
+
+    // ── toolchain-aware verification preamble ──
+
+    /// The Rust workflow sentences must survive the split into
+    /// `verification_preamble` unchanged. This literal is the pre-change
+    /// text, copied verbatim; a failure here means the Rust variant drifted.
+    #[test]
+    fn preamble_rust_is_unchanged() {
+        assert_eq!(
+            verification_preamble(Toolchain::Cargo),
+            "Workflow gates: run `cargo fmt` before staging changes; \
+`cargo test` before committing; `cargo build` must pass; \
+run `cargo clippy -- -D warnings` before finishing. Make changes as small git commits with \
+descriptive messages. Never push."
+        );
+    }
+
+    #[test]
+    fn preamble_rust_names_cargo_workflow() {
+        let text = verification_preamble(Toolchain::Cargo);
+        for expected in [
+            "cargo fmt",
+            "cargo test",
+            "cargo build",
+            "cargo clippy -- -D warnings",
+        ] {
+            assert!(text.contains(expected), "missing {expected:?} in {text:?}");
+        }
+    }
+
+    #[test]
+    fn preamble_cmake_names_cmake_workflow() {
+        let text = verification_preamble(Toolchain::CMake);
+        for expected in [
+            "cmake -B build",
+            "cmake --build build",
+            "-fsyntax-only",
+            "ctest",
+        ] {
+            assert!(text.contains(expected), "missing {expected:?} in {text:?}");
+        }
+    }
+
+    /// The point of this plan: a C++ prompt that names `cargo` sends the model
+    /// after a tool the repository does not have.
+    #[test]
+    fn preamble_cmake_does_not_name_cargo() {
+        let text = verification_preamble(Toolchain::CMake);
+        assert!(!text.contains("cargo"), "C++ variant names cargo: {text:?}");
+        assert!(
+            !text.contains("clippy"),
+            "C++ variant names clippy: {text:?}"
+        );
+    }
+
+    /// `clang-format` and `clang-tidy` are not invocable — no formatter is
+    /// admitted by the allowlist, and clang-tidy needs a compile database.
+    /// If a future plan admits them, this fails deliberately.
+    #[test]
+    fn preamble_cmake_does_not_name_unavailable_linters() {
+        let text = verification_preamble(Toolchain::CMake);
+        for tool in ["clang-format", "clang-tidy"] {
+            assert!(!text.contains(tool), "C++ variant names {tool}: {text:?}");
+        }
+    }
+
+    #[test]
+    fn preamble_unknown_names_no_build_tool() {
+        let text = verification_preamble(Toolchain::Unknown);
+        for tool in ["cargo", "cmake", "ctest", "make", "ninja"] {
+            assert!(
+                !text.contains(tool),
+                "Unknown variant names {tool}: {text:?}"
+            );
+        }
+    }
+
+    /// A future edit must not drop an invariant in one variant only.
+    #[test]
+    fn preamble_variants_share_the_invariant_text() {
+        for toolchain in [Toolchain::Cargo, Toolchain::CMake, Toolchain::Unknown] {
+            let text = verification_preamble(toolchain);
+            assert!(
+                text.contains("Never push"),
+                "{toolchain:?} lost the never-push contract: {text:?}"
+            );
+            assert!(
+                text.contains("small git commits"),
+                "{toolchain:?} lost the small-change guidance: {text:?}"
+            );
+        }
+    }
+
+    /// The compaction summary must compose *after* the workflow text, not
+    /// before it, for every variant.
+    #[test]
+    fn preamble_summary_follows_the_workflow_text() {
+        for toolchain in [Toolchain::Cargo, Toolchain::CMake, Toolchain::Unknown] {
+            let prompt = task_system_prompt(toolchain);
+            let preamble = build_preamble(&prompt, Some("earlier context"));
+            let workflow_at = preamble
+                .find(verification_preamble(toolchain))
+                .expect("workflow text present");
+            let summary_at = preamble
+                .find("## Summary of the conversation so far:")
+                .expect("summary heading present");
+            assert!(
+                workflow_at < summary_at,
+                "{toolchain:?}: summary must follow the workflow text"
+            );
+        }
     }
 }

@@ -1,0 +1,36 @@
+Make the verification preamble depend on the build toolchain
+
+The system preamble named `cargo` four times and no other tool, so a
+session in a C++ repository was told to run a tool the repository does
+not have — and to run it through a `run_command` that would refuse it.
+The model either burned turns on refusals or discarded the preamble and
+lost the workflow guidance with it.
+
+Split the task preamble into an invariant part and a per-toolchain
+workflow paragraph, selected by the same `match` on a mode enum that
+`run_command`'s two descriptions already use. `verification_preamble`
+returns a `&'static str` per variant so nothing is allocated on a path
+that runs once per request.
+
+The Cargo variant is the pre-existing text verbatim, so a Rust session's
+preamble is byte-identical to what it was; `preamble_rust_is_unchanged`
+pins that as a literal, and a deliberate wording change now has to update
+the test. The CMake variant names only commands the allowlist admits and
+says plainly that compiles and tests pass are the gates it can verify —
+no formatter or linter is named, because none can be invoked. The Unknown
+variant names no build tool at all and tells the agent to report the gap
+rather than guess at `make`.
+
+Toolchain selection reaches the preamble from the repository, not a flag.
+The CLI opened the source tree after resolving the prompt, so the tree is
+now opened once, before prompt resolution, and reused to register the
+source-tree tools; a missing repository degrades to `Toolchain::Unknown`
+instead of falling back to the Rust workflow.
+
+A session's prompt is still stored in session.json at creation and
+replayed unchanged on resume, so a session carried between repositories
+keeps the workflow text of the repository it was created in. That hazard
+is recorded in reports/004-resume-prompt-drift.md and deliberately not
+resolved here; changing what the stored field means is a separate choice.
+
+Hānihi
