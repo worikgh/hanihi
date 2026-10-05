@@ -130,23 +130,6 @@ fn run(arguments: &Value) -> Result<String, ToolError> {
     let context = bounded_unsigned(arguments, "context", DEFAULT_CONTEXT, MAX_CONTEXT)?;
     let max_matches = bounded_unsigned(arguments, "max_matches", DEFAULT_MAX_MATCHES, MAX_MATCHES)?;
 
-    if matches!(arguments, Value::Object(_)) {
-        let path = arguments
-            .get("path")
-            .and_then(Value::as_str)
-            .unwrap_or("NO PATH");
-        let pattern = arguments
-            .get("pattern")
-            .and_then(Value::as_str)
-            .unwrap_or("NO PATTERN");
-
-        eprintln!(
-            "{}:{}: run path: {path} pattern: {pattern}",
-            file!(),
-            line!()
-        );
-    }
-
     let base = workspace_fs::workspace_root().map_err(|error| internal(error.message))?;
     let target = resolve_target(&base, arguments)?;
 
@@ -165,7 +148,7 @@ fn run(arguments: &Value) -> Result<String, ToolError> {
         }
         SearchTarget::Directory(root) => {
             walk(
-                &root,
+                &base,
                 &root,
                 &globs,
                 &matcher,
@@ -397,6 +380,13 @@ impl ContextLine {
     }
 }
 
+/// Recursively searches `current`, reporting every match relative to `root`.
+///
+/// `root` and `current` are deliberately separate: `current` is the caller's
+/// search *scope* (which may be a subdirectory named by `path`), while `root`
+/// is the workspace root that matched paths and globs are expressed against.
+/// Relativizing to the scope instead would return paths the caller cannot act
+/// on, since every other workspace tool reports root-relative paths.
 fn walk(
     root: &Path,
     current: &Path,
@@ -634,6 +624,77 @@ mod tests {
         assert_eq!(output.matches.len(), 1);
         assert_eq!(output.matches[0].path, "notes.txt");
         assert_eq!(output.matches[0].line_number, 2);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// Runs `walk` the way `run` does: `base` is the workspace root used to
+    /// relativize reported paths, `scope` is the resolved `path` argument.
+    fn walk_fixture(base: &Path, scope: &Path, globs: &Globs, pattern: &str) -> SearchOutput {
+        let matcher = Matcher::compile(pattern, true).unwrap();
+        let mut output = SearchOutput::new();
+        walk(base, scope, globs, &matcher, 1, 200, &mut output).unwrap();
+        output
+    }
+
+    /// A `path` naming a subdirectory scopes the search to it, but reported
+    /// paths stay relative to the workspace root so callers can feed them
+    /// straight back into `read_file` or `apply_patch`.
+    #[test]
+    fn walk_reports_paths_relative_to_the_workspace_root() {
+        let base = temp_dir("search_walk_root_relative");
+        let scope = base.join("crates/core");
+        std::fs::create_dir_all(scope.join("src")).unwrap();
+        std::fs::write(scope.join("src/lib.rs"), "needle here\n").unwrap();
+        std::fs::write(base.join("top.rs"), "needle here\n").unwrap();
+
+        let output = walk_fixture(
+            &base,
+            &scope,
+            &Globs::from_arguments(&json!({})).unwrap(),
+            "needle",
+        );
+
+        assert_eq!(output.matches.len(), 1);
+        assert_eq!(output.matches[0].path, "crates/core/src/lib.rs");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// Globs are matched against workspace-root-relative paths, so the
+    /// documented `src/**/*.rs` form means the same thing regardless of which
+    /// subdirectory `path` scopes the search to.
+    #[test]
+    fn walk_matches_globs_against_workspace_relative_paths() {
+        let base = temp_dir("search_walk_globs");
+        let scope = base.join("crates/core");
+        std::fs::create_dir_all(scope.join("src")).unwrap();
+        std::fs::write(scope.join("src/lib.rs"), "needle here\n").unwrap();
+        std::fs::write(scope.join("notes.txt"), "needle here\n").unwrap();
+
+        let globs = Globs::from_arguments(&json!({ "globs": ["crates/**/*.rs"] })).unwrap();
+        let output = walk_fixture(&base, &scope, &globs, "needle");
+
+        assert_eq!(output.matches.len(), 1);
+        assert_eq!(output.matches[0].path, "crates/core/src/lib.rs");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// With no `path`, the scope is the workspace root itself, so relativizing
+    /// against the root still yields plain repo-relative paths.
+    #[test]
+    fn walk_at_the_workspace_root_keeps_repo_relative_paths() {
+        let base = temp_dir("search_walk_at_root");
+        std::fs::create_dir_all(base.join("src")).unwrap();
+        std::fs::write(base.join("src/lib.rs"), "needle here\n").unwrap();
+
+        let output = walk_fixture(
+            &base,
+            &base,
+            &Globs::from_arguments(&json!({})).unwrap(),
+            "needle",
+        );
+
+        assert_eq!(output.matches.len(), 1);
+        assert_eq!(output.matches[0].path, "src/lib.rs");
         let _ = std::fs::remove_dir_all(&base);
     }
 }

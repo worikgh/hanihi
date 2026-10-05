@@ -7,7 +7,7 @@
 //! invisible to both directory listing and targeted reads.
 //!
 //! hānihi maintains its own `.ignore` file at the repo root (see
-//! [`ensure_ignore_file`]): same syntax as `.gitignore`, but git-agnostic
+//! `ensure_ignore_file`): same syntax as `.gitignore`, but git-agnostic
 //! and managed by hānihi. The repo's `.gitignore` is respected but never
 //! written.
 
@@ -24,7 +24,7 @@ use ignore::{Match, Walk, WalkBuilder};
 /// Maximum number of bytes [`SourceTree::read`] returns for one file.
 ///
 /// This is the per-file read cap. The agent-layer backstop
-/// [`crate::tool::MAX_TOOL_RESULT_BYTES`] is applied separately to every
+/// `crate::tool::MAX_TOOL_RESULT_BYTES` is applied separately to every
 /// rendered result and may clip body text further, but never changes the
 /// per-file policy here.
 pub const MAX_READ_BYTES: usize = 128 * 1024;
@@ -61,9 +61,9 @@ pub enum Language {
 impl Language {
     /// `.ignore`-syntax patterns for generated artifacts of this language.
     ///
-    /// Emitted once, by [`ensure_ignore_file`] at first open, and not
+    /// Emitted once, by `ensure_ignore_file` at first open, and not
     /// retroactive: a repository whose `.ignore` already carries
-    /// [`HANIHI_HEADER`] keeps the patterns it was first given, so later
+    /// `HANIHI_HEADER` keeps the patterns it was first given, so later
     /// revisions of this template do not reach it.
     pub fn template(self) -> &'static str {
         match self {
@@ -266,7 +266,7 @@ impl SourceTree {
 
     /// Resolve a repository-relative path for writing, refusing escapes.
     ///
-    /// Unlike [`SourceTree::resolve`], the target need not exist yet: the
+    /// Unlike `SourceTree::resolve`, the target need not exist yet: the
     /// nearest existing ancestor is canonicalized (resolving any symlinks)
     /// and the non-existent tail is re-appended. Absolute paths and any
     /// `..` component are refused before touching the filesystem.

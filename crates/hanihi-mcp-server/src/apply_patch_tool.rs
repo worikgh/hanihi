@@ -13,7 +13,7 @@
 //! contents, and only the tool can vouch for what it just wrote.
 
 use crate::version_ledger::{FileVersion, VersionLedger};
-use crate::workspace_fs::{self, ToolError, failure, internal, invalid, success};
+use crate::workspace_fs::{self, LineMismatch, ToolError, failure, internal, invalid, success};
 use serde_json::{Value, json};
 use std::fs;
 use std::io::ErrorKind;
@@ -25,6 +25,14 @@ const DIFF_CONTEXT: usize = 3;
 /// Maximum LCS table size before falling back to a whole-file replacement
 /// diff, keeping memory bounded for very large files.
 const LCS_CELL_LIMIT: usize = 4_000_000;
+
+/// How far a matching hunk may sit from its anchor before the drift report is
+/// suppressed. Chosen against `DIFF_CONTEXT`: a hunk whose context is 3 lines
+/// wide can plausibly be re-anchored by hand within a few lines of where the
+/// caller expected it, but a match hundreds of lines away is a coincidence
+/// rather than a location, and naming it would be noise the caller cannot act
+/// on. The tool reports the distance; it never re-anchors the hunk itself.
+const MAX_ACTIONABLE_DRIFT: usize = 5;
 
 /// SHA-256 of empty content; the documented `base_token` for a new file.
 /// Keep in sync with the same literal in `json()`'s description.
@@ -440,8 +448,8 @@ fn apply_edits_with(
         let new_content = match (&item.replacement, &item.patch) {
             (Some(content), _) => content.clone(),
             (None, Some(patch)) => {
-                let new_lines =
-                    apply_hunks(&item.lines, patch, &item.display_path).map_err(internal)?;
+                let new_lines = apply_hunks(&item.lines, patch, &item.display_path)
+                    .map_err(|failure| failure.into_tool_error(&item.display_path))?;
                 join_lines(&new_lines, item.ends_with_newline)
             }
             (None, None) => {
@@ -860,18 +868,31 @@ fn parse_hunk_range(part: &str) -> Option<(usize, usize)> {
 /// Applies all hunks in order, locating each hunk by content match around its
 /// expected position. A running offset accounts for earlier hunks changing
 /// line numbers.
-fn apply_hunks(lines: &[String], patch: &ParsedPatch, path: &str) -> Result<Vec<String>, String> {
+///
+/// A refusal carries the pre-existing message plus, where one was located, the
+/// first file line that disagreed with the hunk. Reporting the difference is
+/// the whole point: a tab typed as spaces is otherwise invisible.
+fn apply_hunks(
+    lines: &[String],
+    patch: &ParsedPatch,
+    path: &str,
+) -> Result<Vec<String>, HunkFailure> {
     let mut current = lines.to_vec();
     let mut offset_shift: isize = 0;
 
     for hunk in &patch.hunks {
         let anchor = (hunk.old_start as isize - 1 + offset_shift).max(0) as usize;
-        let position = find_hunk_position(&current, hunk, anchor).ok_or_else(|| {
+        let message = || {
             format!(
                 "patch for {path} does not apply: hunk @@ -{},{} +{},{} @@ does not match the current file contents",
                 hunk.old_start, hunk.old_count, hunk.new_start, hunk.new_count
             )
-        })?;
+        };
+
+        let position = anchor;
+        if !hunk_matches(&current, anchor, hunk) {
+            return Err(refusal_for(&current, hunk, anchor, message));
+        }
 
         current = apply_one_hunk(&current, position, hunk);
 
@@ -891,26 +912,206 @@ fn apply_hunks(lines: &[String], patch: &ParsedPatch, path: &str) -> Result<Vec<
     Ok(current)
 }
 
+/// Why a hunk was refused, carrying the unchanged historical message plus any
+/// diagnostic the refusal path managed to locate.
+#[derive(Debug)]
+struct HunkFailure {
+    /// The historical refusal sentence. Kept verbatim; existing callers and
+    /// tests match on it.
+    message: String,
+    /// Set when the hunk matched nowhere and the first differing line could be
+    /// named. Absent when nothing more could be determined.
+    line_mismatch: Option<LineMismatch>,
+    /// One imperative sentence naming the recovery.
+    recovery: Option<String>,
+}
+
+impl HunkFailure {
+    fn message(message: String) -> Self {
+        Self {
+            message,
+            line_mismatch: None,
+            recovery: None,
+        }
+    }
+
+    /// The hunk matches the file, but `distance` lines away from the anchor.
+    fn drifted(message: String, found: HunkMatch) -> Self {
+        Self {
+            recovery: Some(format!(
+                "the hunk matches {} line(s) {} the anchor; re-read the file and re-anchor the hunk \
+                 (the tool does not relocate a hunk for you)",
+                found.distance,
+                if found.offset > 0 { "below" } else { "above" }
+            )),
+            ..Self::message(message)
+        }
+    }
+
+    /// The hunk matches nowhere; its line `hunk_index` differs from the file's
+    /// line `file_index`. Both sides are rendered escaped so a whitespace-only
+    /// difference stays visible.
+    fn line_mismatch(
+        message: String,
+        hunk_index: usize,
+        file_index: usize,
+        lines: &[String],
+        hunk: &Hunk,
+    ) -> Self {
+        let expected = hunk.lines.get(hunk_index).map(|line| &line.text);
+        let found = lines.get(file_index);
+        let recovery = Some(format!(
+            "the context line differs at line {}: re-read the file and rebuild the hunk from its \
+             actual text (expected and found are shown escaped, so `\\t` is a tab and a literal \
+             space is a space)",
+            file_index + 1
+        ));
+
+        Self {
+            line_mismatch: Some(LineMismatch {
+                // 1-based, matching how the rest of the tool reports lines.
+                line: file_index + 1,
+                expected: expected.map_or_else(String::new, |text| render_for_diagnostic(text)),
+                found: found.map_or_else(String::new, |text| render_for_diagnostic(text)),
+            }),
+            recovery,
+            ..Self::message(message)
+        }
+    }
+
+    /// Converts the refusal into the caller-facing error, attaching the file
+    /// the caller was editing so the payload always names its subject.
+    fn into_tool_error(self, file: &str) -> ToolError {
+        let error = invalid(self.message).with_file(file);
+        let error = match self.recovery {
+            Some(recovery) => error.with_recovery(recovery),
+            None => error,
+        };
+        match self.line_mismatch {
+            Some(mismatch) => {
+                error.with_line_mismatch(mismatch.line, mismatch.expected, mismatch.found)
+            }
+            None => error,
+        }
+    }
+}
+
+/// Builds the refusal for a hunk that does not match at `anchor`. Prefers the
+/// most specific explanation available, in order:
+///
+/// 1. The hunk matches elsewhere in the file, close enough that the caller can
+///    re-anchor it by hand — report the drift.
+/// 2. The hunk matches nowhere, but its context differs from the file at the
+///    anchor — report the first differing line so a whitespace change is
+///    visible.
+/// 3. Otherwise the historical message alone.
+fn refusal_for(
+    lines: &[String],
+    hunk: &Hunk,
+    anchor: usize,
+    message: impl Fn() -> String,
+) -> HunkFailure {
+    // A hunk that matches a few lines from the anchor is a stale anchor: the
+    // caller moved the code, or re-read a stale copy. Report the distance so
+    // it can re-anchor by hand. Beyond the threshold the closest match is a
+    // coincidence rather than a location, so prefer the per-line report.
+    if let Some(found) = find_hunk_position(lines, hunk, anchor)
+        && found.distance > 0
+        && found.distance <= MAX_ACTIONABLE_DRIFT
+    {
+        return HunkFailure::drifted(message(), found);
+    }
+
+    refusal_for_line(lines, hunk, anchor, message)
+}
+
+/// Reports the first file line whose content disagrees with the hunk, so a
+/// whitespace-only difference is visible. Falls back to the message alone when
+/// the hunk agrees at the anchor but still failed, which should not happen and
+/// is therefore reported without speculation.
+fn refusal_for_line(
+    lines: &[String],
+    hunk: &Hunk,
+    anchor: usize,
+    message: impl Fn() -> String,
+) -> HunkFailure {
+    match first_differing_line(lines, hunk, anchor) {
+        Some((hunk_index, file_index)) => {
+            HunkFailure::line_mismatch(message(), hunk_index, file_index, lines, hunk)
+        }
+        None => HunkFailure::message(message()),
+    }
+}
+
+/// A hunk that matched somewhere in the file, and how far that position sits
+/// from the anchor the caller asked for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct HunkMatch {
+    /// Index of the file line where the hunk's first context or removed line
+    /// matched.
+    offset: usize,
+    /// Absolute line distance between [`HunkMatch::offset`] and the anchor.
+    /// Zero means the hunk matched exactly where it was anchored.
+    distance: usize,
+}
+
 /// Returns the closest offset at which the hunk's context and removed lines
-/// match, searching the whole file but preferring `anchor`.
-fn find_hunk_position(lines: &[String], hunk: &Hunk, anchor: usize) -> Option<usize> {
+/// match, searching the whole file but preferring `anchor`. The distance is
+/// carried alongside the offset so a caller can report drift rather than
+/// silently relocating the hunk.
+fn find_hunk_position(lines: &[String], hunk: &Hunk, anchor: usize) -> Option<HunkMatch> {
     let anchor = anchor.min(lines.len());
-    let mut best: Option<(usize, usize)> = None;
+    let mut best: Option<HunkMatch> = None;
 
     for offset in 0..=lines.len() {
         if hunk_matches(lines, offset, hunk) {
             let distance = offset.abs_diff(anchor);
             let better = match best {
-                Some((best_distance, _)) => distance < best_distance,
+                Some(best) => distance < best.distance,
                 None => true,
             };
             if better {
-                best = Some((distance, offset));
+                best = Some(HunkMatch { offset, distance });
             }
         }
     }
 
-    best.map(|(_, offset)| offset)
+    best
+}
+
+/// Renders a line for a refusal so whitespace is visible. `{:?}` escapes tabs
+/// and newlines and quotes the result, which is what makes a tab-versus-spaces
+/// difference legible instead of invisible. Both sides of a mismatch go
+/// through this so the caller compares like with like.
+fn render_for_diagnostic(line: &str) -> String {
+    format!("{line:?}")
+}
+
+/// Finds the first line where a hunk's context or removed lines disagree with
+/// the file at `offset`, returning the 0-based index within the hunk and the
+/// file line that should have matched. `None` when every compared line
+/// matches, which is what distinguishes drift from a content difference.
+///
+/// A position past the end of the file yields `None` as well: there is no file
+/// line to name there, and reporting a line number that does not exist would
+/// send the caller looking for text that is not in the file.
+fn first_differing_line(lines: &[String], hunk: &Hunk, offset: usize) -> Option<(usize, usize)> {
+    let mut index = offset;
+    for (hunk_index, line) in hunk.lines.iter().enumerate() {
+        match line.kind {
+            LineKind::Context | LineKind::Remove => {
+                if index >= lines.len() {
+                    return None;
+                }
+                if lines[index] != line.text {
+                    return Some((hunk_index, index));
+                }
+                index += 1;
+            }
+            LineKind::Add => {}
+        }
+    }
+    None
 }
 
 fn hunk_matches(lines: &[String], offset: usize, hunk: &Hunk) -> bool {
@@ -1289,7 +1490,7 @@ mod tests {
         )
         .unwrap();
         let error = apply_hunks(&lines, &patch, "src/lib.rs").unwrap_err();
-        assert!(error.contains("does not apply"));
+        assert!(error.message.contains("does not apply"));
     }
 
     #[test]
@@ -1850,8 +2051,184 @@ mod tests {
         assert_eq!(fs::read_to_string(root.join("b.txt")).unwrap(), "two\n");
     }
 
-    /// A mismatch returns a structured refusal payload: `actual` is the version
-    /// the tree has, and `recovery` is the imperative retry.
+    /// A hunk whose context differs from the file names the first differing
+    /// line, escaped on both sides, so the caller can see what disagrees.
+    #[test]
+    fn mismatch_names_the_first_differing_line() {
+        let root = temp_dir("mismatch_names_the_first_differing_line");
+        // Line 2 is "BRAVO"; the patch below expects "bravo".
+        fs::write(root.join("a.txt"), "alpha\nBRAVO\ncharlie\n").unwrap();
+
+        let edits = [Edit {
+            path: "a.txt".to_string(),
+            base_token: BaseVersion::Digest(workspace_fs::sha256_hex(b"alpha\nBRAVO\ncharlie\n")),
+            op: EditOp::Patch {
+                // A removed line that the file does not contain at line 2.
+                patch: "@@ -1,3 +1,3 @@\n alpha\n-bravo\n+BRAVO\n charlie\n".to_string(),
+            },
+        }];
+        let error = apply_edits_in(&root, &edits).unwrap_err();
+        assert_eq!(error.code, -32602);
+        assert!(
+            error.message.contains("does not apply"),
+            "got: {}",
+            error.message
+        );
+        let mismatch = error
+            .line_mismatch
+            .as_deref()
+            .expect("a differing line was located");
+        assert_eq!(mismatch.line, 2);
+        assert_eq!(mismatch.expected, "\"bravo\"");
+        assert_eq!(mismatch.found, "\"BRAVO\"");
+        assert!(
+            error
+                .recovery
+                .as_deref()
+                .is_some_and(|text| text.contains("line 2")),
+            "recovery must name the line, got: {:?}",
+            error.recovery
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("a.txt")).unwrap(),
+            "alpha\nBRAVO\ncharlie\n",
+            "the refused edit must not have been applied"
+        );
+    }
+
+    /// The regression test for the observed failure: the file has a tab where
+    /// the patch has spaces. Both sides are escaped, so the two renderings are
+    /// distinguishable rather than visually identical.
+    #[test]
+    fn mismatch_escapes_whitespace_in_both_lines() {
+        let root = temp_dir("mismatch_escapes_whitespace_in_both_lines");
+        // Line 2 begins with a real tab.
+        fs::write(root.join("a.txt"), "fn main() {\n\tcall();\n}\n").unwrap();
+
+        let edits = [Edit {
+            path: "a.txt".to_string(),
+            base_token: BaseVersion::Digest(workspace_fs::sha256_hex(
+                b"fn main() {\n\tcall();\n}\n",
+            )),
+            op: EditOp::Patch {
+                // The patch claims four spaces, not a tab.
+                patch: "@@ -1,3 +1,3 @@\n fn main() {\n-    call();\n+    other();\n }\n"
+                    .to_string(),
+            },
+        }];
+        let error = apply_edits_in(&root, &edits).unwrap_err();
+        let mismatch = error
+            .line_mismatch
+            .as_deref()
+            .expect("a differing line was located");
+        assert_eq!(mismatch.line, 2);
+        let expected = mismatch.expected.as_str();
+        let found = mismatch.found.as_str();
+        assert_ne!(
+            expected, found,
+            "escaped renderings must differ for a tab-versus-spaces difference"
+        );
+        // The file's tab renders as the two-character escape; the patch's four
+        // spaces stay literal spaces. That difference is the whole point.
+        assert!(
+            found.contains("\\t"),
+            "file line must show a tab escape: {found}"
+        );
+        assert!(
+            expected.contains("    "),
+            "patch line must show literal spaces: {expected}"
+        );
+    }
+
+    /// When no line of the file matches, there is nothing to compare against,
+    /// so the per-line fields are absent and the message is unchanged.
+    #[test]
+    fn mismatch_with_no_matching_line_omits_the_line_field() {
+        let root = temp_dir("mismatch_with_no_matching_line_omits_the_line_field");
+        fs::write(root.join("a.txt"), "one\ntwo\nthree\nfour\n").unwrap();
+
+        let edits = [Edit {
+            path: "a.txt".to_string(),
+            base_token: BaseVersion::Digest(workspace_fs::sha256_hex(b"one\ntwo\nthree\nfour\n")),
+            op: EditOp::Patch {
+                // Anchored past the end of the file: no comparable line exists.
+                patch: "@@ -40,2 +40,2 @@\n-alpha\n+ALPHA\n-bravo\n+BRAVO\n".to_string(),
+            },
+        }];
+        let error = apply_edits_in(&root, &edits).unwrap_err();
+        assert!(
+            error.message.contains("does not apply"),
+            "got: {}",
+            error.message
+        );
+        assert!(error.line_mismatch.is_none());
+    }
+
+    /// Item D: a hunk that matches a few lines below its anchor reports the
+    /// drift rather than relocating itself.
+    #[test]
+    fn drifted_hunk_reports_the_candidate_distance() {
+        let root = temp_dir("drifted_hunk_reports_the_candidate_distance");
+        fs::write(
+            root.join("a.txt"),
+            "one\ntwo\nthree\nfour\nfive\nsix\nseven\n",
+        )
+        .unwrap();
+
+        let edits = [Edit {
+            path: "a.txt".to_string(),
+            base_token: BaseVersion::Digest(workspace_fs::sha256_hex(
+                b"one\ntwo\nthree\nfour\nfive\nsix\nseven\n",
+            )),
+            op: EditOp::Patch {
+                // Claims line 1 ("one") but the body actually matches line 4.
+                patch: "@@ -1,1 +1,1 @@\n-four\n+FOUR\n".to_string(),
+            },
+        }];
+        let error = apply_edits_in(&root, &edits).unwrap_err();
+        assert!(
+            error.message.contains("does not apply"),
+            "got: {}",
+            error.message
+        );
+        assert!(
+            error
+                .recovery
+                .as_deref()
+                .is_some_and(|text| text.contains("3 line(s) below the anchor")),
+            "recovery must name the drift, got: {:?}",
+            error.recovery
+        );
+    }
+
+    /// Guards item D against being implemented as an auto-correct: the hunk is
+    /// reported, never applied somewhere other than where the caller anchored
+    /// it.
+    #[test]
+    fn drifted_hunk_is_not_relocated() {
+        let root = temp_dir("drifted_hunk_is_not_relocated");
+        let original = "one\ntwo\nthree\nfour\nfive\nsix\nseven\n";
+        fs::write(root.join("a.txt"), original).unwrap();
+
+        let edits = [Edit {
+            path: "a.txt".to_string(),
+            base_token: BaseVersion::Digest(workspace_fs::sha256_hex(original.as_bytes())),
+            op: EditOp::Patch {
+                patch: "@@ -1,1 +1,1 @@\n-four\n+FOUR\n".to_string(),
+            },
+        }];
+        let error = apply_edits_in(&root, &edits).unwrap_err();
+        assert!(
+            error.recovery.is_some(),
+            "a drifted hunk must carry a recovery"
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("a.txt")).unwrap(),
+            original,
+            "a drifted hunk must be reported, never relocated"
+        );
+    }
+
     #[test]
     fn mismatch_returns_structured_refusal_payload() {
         let root = temp_dir("mismatch_returns_structured_refusal_payload");

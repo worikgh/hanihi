@@ -33,6 +33,26 @@ pub(crate) struct ToolError {
     pub(crate) actual: Option<Box<FileVersion>>,
     /// One imperative sentence stating what would make the call succeed.
     pub(crate) recovery: Option<String>,
+    /// Present on a hunk mismatch that located the first differing line.
+    /// Boxed because it is the rare case and would otherwise double the size
+    /// of every `Result<_, ToolError>` in the crate.
+    pub(crate) line_mismatch: Option<Box<LineMismatch>>,
+}
+
+/// The first file line that disagreed with a patch hunk, and both sides of the
+/// disagreement. Escaping is applied when this is built; see
+/// [`LineMismatch::expected`].
+#[derive(Debug)]
+pub(crate) struct LineMismatch {
+    /// 1-based line of the file at which the two disagree.
+    pub(crate) line: usize,
+    /// The hunk's line at that position, rendered escaped. Escaped so a tab
+    /// and four spaces are distinguishable, and so a caller comparing the two
+    /// sides programmatically compares escaped forms.
+    pub(crate) expected: String,
+    /// The file's line at that position, escaped the same way as
+    /// [`LineMismatch::expected`] so the two are directly comparable.
+    pub(crate) found: String,
 }
 
 impl ToolError {
@@ -50,6 +70,23 @@ impl ToolError {
         self.recovery = Some(recovery.into());
         self
     }
+
+    /// Records the first line where a patch hunk and the file differ. Both
+    /// sides are rendered escaped by the caller so a whitespace-only
+    /// difference stays visible and the two strings are comparable.
+    pub(crate) fn with_line_mismatch(
+        mut self,
+        line: usize,
+        expected: impl Into<String>,
+        found: impl Into<String>,
+    ) -> Self {
+        self.line_mismatch = Some(Box::new(LineMismatch {
+            line,
+            expected: expected.into(),
+            found: found.into(),
+        }));
+        self
+    }
 }
 
 pub(crate) fn invalid(message: impl Into<String>) -> ToolError {
@@ -59,6 +96,7 @@ pub(crate) fn invalid(message: impl Into<String>) -> ToolError {
         file: None,
         actual: None,
         recovery: None,
+        line_mismatch: None,
     }
 }
 
@@ -69,6 +107,7 @@ pub(crate) fn internal(message: impl Into<String>) -> ToolError {
         file: None,
         actual: None,
         recovery: None,
+        line_mismatch: None,
     }
 }
 
@@ -97,6 +136,11 @@ fn tool_error_payload(error: &ToolError) -> Value {
     }
     if let Some(recovery) = &error.recovery {
         payload.insert("recovery".to_string(), json!(recovery));
+    }
+    if let Some(mismatch) = &error.line_mismatch {
+        payload.insert("line".to_string(), json!(mismatch.line));
+        payload.insert("expected".to_string(), json!(mismatch.expected));
+        payload.insert("found".to_string(), json!(mismatch.found));
     }
     Value::Object(payload)
 }
@@ -348,11 +392,6 @@ pub(crate) fn resolve_workspace_path(root: &Path, relative: &str) -> Result<Path
     if !resolved.starts_with(&canonical_root) {
         return Err(format!("path escapes the workspace: {relative}"));
     }
-    eprintln!(
-        "{}:{}: resolve_workspace_path resolved: {resolved:?}",
-        file!(),
-        line!(),
-    );
     Ok(resolved)
 }
 
@@ -392,11 +431,6 @@ pub(crate) fn normalize_relative(
             _ => return Err(format!("unsupported path component in: {relative}")),
         }
     }
-    eprintln!(
-        "{}:{}: normalize_relative root: {root:?} relative: {relative} candidate: {candidate:?} normalised: {normalized:?}",
-        file!(),
-        line!(),
-    );
     Ok((candidate, normalized))
 }
 

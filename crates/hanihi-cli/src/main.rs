@@ -539,7 +539,7 @@ async fn main() -> Result<(), AgentError> {
                     agent.set_summary(summary.final_summary);
                     break;
                 }
-                StreamEvent::Error { message } => {
+                StreamEvent::Error { message, .. } => {
                     eprintln!();
                     eprintln!("{}:{}: error: {message}", file!(), line!());
                     break;
@@ -743,7 +743,7 @@ async fn run_turn<M: CompletionModel + 'static>(
                         agent.set_summary(summary.final_summary.clone());
                         return Some(summary);
                     }
-                    StreamEvent::Error { message } => {
+                    StreamEvent::Error { message, .. } => {
                         eprintln!();
                         eprintln!("{}:{}  error message: {message}", file!(), line!());
                         return None;

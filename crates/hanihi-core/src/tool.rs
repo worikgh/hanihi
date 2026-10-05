@@ -516,7 +516,8 @@ fn check_command_argv_mode(argv: &[String], mode: CommandMode) -> Result<(), Str
                         let has_name = args.iter().any(|a| !a.starts_with('-'));
                         if has_name || args.iter().any(|a| mutating.contains(&a.as_str())) {
                             Err(
-                                "git branch is restricted to listing (no create/delete/move)"
+                                "git branch is restricted to listing (no create/delete/move); \
+                                 use `git log`, `git show`, or `git status` to inspect branches"
                                     .into(),
                             )
                         } else {
@@ -529,7 +530,9 @@ fn check_command_argv_mode(argv: &[String], mode: CommandMode) -> Result<(), Str
                         let args = &argv[2..];
                         let has_name = args.iter().any(|a| !a.starts_with('-'));
                         if has_name || args.iter().any(|a| mutating.contains(&a.as_str())) {
-                            Err("git tag is restricted to listing (no create/delete/sign)".into())
+                            Err("git tag is restricted to listing (no create/delete/sign); \
+                                 use `git tag --list`, `git log`, or `git show` to inspect tags"
+                                .into())
                         } else {
                             Ok(())
                         }
@@ -1319,8 +1322,8 @@ impl Sink for MatchSink {
 ///
 /// Walks the repo honouring ignore rules (via [`SourceTree::walk`]) and
 /// searches each file with ripgrep's searcher. Results are
-/// `path:line: text` entries capped at [`MAX_GREP_MATCHES`] matches /
-/// [`MAX_GREP_BYTES`] bytes. Binary files are skipped.
+/// `path:line: text` entries capped at `MAX_GREP_MATCHES` matches /
+/// `MAX_GREP_BYTES` bytes. Binary files are skipped.
 pub fn builtin_grep(tree: Arc<SourceTree>) -> PortableDynamicTool {
     PortableDynamicTool::new(
         "grep",

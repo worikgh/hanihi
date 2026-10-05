@@ -28,7 +28,7 @@ use self::lock::SessionGuard;
 use self::log::{
     ErrorStage, LlmResponseData, LogEntry, LogWriter, ToolCallData, ToolExecutionData, UsageData,
 };
-use crate::agent::{Agent, StreamEvent, TurnSummary};
+use crate::agent::{Agent, StreamEvent, TurnErrorKind, TurnSummary};
 use crate::error::AgentError;
 
 /// Errors produced by session operations.
@@ -375,10 +375,34 @@ impl Session {
 
     /// Run one user turn with full logging.
     ///
-    /// Wraps the agent loop: for each model call and tool execution, an
-    /// event is written to the session log. Returns the same `TurnSummary`
-    /// as [`Agent::run`].
+    /// Deprecated: it duplicated the agent loop instead of delegating to
+    /// [`Agent::run`], so the two drifted. The CLI has driven only
+    /// [`Session::run_streaming`] since the streaming handler landed; this
+    /// path is unreachable from it. Stubbed rather than repaired so a caller
+    /// cannot silently receive a plausible-looking `TurnSummary` from a path
+    /// nothing exercises — returning an empty summary here would reproduce
+    /// exactly the silent-success defect this plan removes.
+    #[deprecated(
+        note = "the non-streaming session loop is unused; use `run_streaming`. \
+                See plans/029-tool-failure-recovery.md"
+    )]
     pub async fn run<M: CompletionModel>(
+        &mut self,
+        agent: &mut Agent<M>,
+        provider: &str,
+        model_name: &str,
+        user_input: &str,
+    ) -> Result<TurnSummary, AgentError> {
+        let _ = (agent, provider, model_name, user_input);
+        Err(AgentError::Deprecated {
+            message: "Session::run is deprecated; use Session::run_streaming".into(),
+        })
+    }
+
+    /// Unreachable body preserved for reference by the compiler only; the
+    /// deprecated [`Self::run`] above is the live entry point.
+    #[allow(dead_code)]
+    async fn run_non_streaming<M: CompletionModel>(
         &mut self,
         agent: &mut Agent<M>,
         provider: &str,
@@ -589,6 +613,7 @@ impl Session {
     /// and error events are logged from the stream.
     ///
     /// [`StreamEvent`]: crate::agent::StreamEvent
+    /// [`run`]: Self::run
     pub async fn run_streaming<M: CompletionModel + 'static>(
         &mut self,
         agent: &mut Agent<M>,
@@ -631,6 +656,7 @@ impl Session {
                     let _ = tx
                         .send(StreamEvent::Error {
                             message: format!("re-open session log for streaming: {e}"),
+                            kind: TurnErrorKind::LogWrite,
                         })
                         .await;
                     return;
@@ -743,7 +769,7 @@ impl Session {
                             tool_calls_total,
                         ))
                     }
-                    StreamEvent::Error { message } => log_writer.write_entry(&LogEntry::error(
+                    StreamEvent::Error { message, .. } => log_writer.write_entry(&LogEntry::error(
                         Utc::now(),
                         turn,
                         ErrorStage::LlmCall,
@@ -758,6 +784,7 @@ impl Session {
                     let _ = tx
                         .send(StreamEvent::Error {
                             message: format!("writing session log: {e}"),
+                            kind: TurnErrorKind::LogWrite,
                         })
                         .await;
                     let _ = tx.send(event).await;
@@ -1231,12 +1258,17 @@ mod tests {
             .create("compaction-log", "deepseek-chat", "p")
             .expect("create");
 
-        // [summarize, answer]: the first call is the plain summarization
-        // completion, the second is the real answer.
-        let model = MockCompletionModel::from_turns([
-            MockTurn::text("compacted summary"),
-            MockTurn::text("final answer"),
-        ]);
+        // Compaction calls `completion()` while the turn itself is driven by
+        // `stream()`, so the two scripts are independent: a plain
+        // summarization turn and one streamed answer turn. `run_streaming`
+        // closes a turn only on `final_response_with_default_usage`.
+        let model = crate::agent::SplitScriptModel::new(
+            [MockTurn::text("compacted summary")],
+            [vec![
+                MockStreamEvent::text("final answer"),
+                MockStreamEvent::final_response_with_default_usage(),
+            ]],
+        );
         let mut agent = Agent::new(model, "test system");
         agent.set_context_limit_tokens(500);
 
@@ -1250,11 +1282,27 @@ mod tests {
         }
         agent.set_history(history);
 
-        let summary = session
-            .run(&mut agent, "d", "m", "hi")
+        // Drive the streaming path — the one the CLI and eval runner use. The
+        // log is written by the spawned task, so the ordering assertion below
+        // holds only if entries reach the writer in emission order.
+        let mut rx = session
+            .run_streaming(&mut agent, "d", "m", "hi")
             .await
-            .expect("run succeeds");
-        assert_eq!(summary.text, "final answer");
+            .expect("run streaming");
+        let mut final_text: Option<String> = None;
+        while let Some(event) = rx.recv().await {
+            match event {
+                StreamEvent::TurnComplete { summary } => {
+                    final_text = Some(summary.text);
+                    break;
+                }
+                StreamEvent::Error { message, kind } => {
+                    panic!("turn aborted ({kind:?}): {message}")
+                }
+                _ => {}
+            }
+        }
+        assert_eq!(final_text.expect("turn completes"), "final answer");
 
         let events = session.events().expect("events");
 

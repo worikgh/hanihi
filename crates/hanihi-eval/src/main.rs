@@ -12,14 +12,16 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use clap::Parser;
-use hanihi_core::agent::DEFAULT_SYSTEM_PROMPT;
+use hanihi_core::agent::{Agent, DEFAULT_SYSTEM_PROMPT, StreamEvent, TurnSummary};
 use hanihi_core::connect_chat_model;
-use hanihi_core::session::SessionManager;
+use hanihi_core::error::AgentError;
 use hanihi_core::session::log::LogEntry;
+use hanihi_core::session::{Session, SessionManager};
 use hanihi_core::{
     SourceTree, builtin_get_time, builtin_grep, builtin_list_dir, builtin_read_session_log,
     builtin_run_command, builtin_run_command_write, builtin_write_file,
 };
+use rig::completion::CompletionModel;
 use serde::Deserialize;
 use tracing_subscriber::EnvFilter;
 
@@ -672,6 +674,46 @@ fn truncate(s: &str, max: usize) -> String {
     }
 }
 
+/// Drive one turn on the streaming path and return its [`TurnSummary`].
+///
+/// The eval runner has no interest in incremental output — it wants the same
+/// summary `Session::run` used to return so the assertions below are unchanged.
+/// Draining the channel here keeps the non-streaming path retired: the runner
+/// now exercises exactly the code the CLI exercises.
+async fn run_turn_streaming<M: CompletionModel + 'static>(
+    session: &mut Session,
+    agent: &mut Agent<M>,
+    provider: &str,
+    model: &str,
+    user_input: &str,
+) -> Result<TurnSummary, AgentError>
+where
+    M::StreamingResponse: Send,
+{
+    let mut rx = session
+        .run_streaming(agent, provider, model, user_input)
+        .await?;
+
+    while let Some(event) = rx.recv().await {
+        match event {
+            StreamEvent::TurnComplete { summary } => {
+                agent.set_history(summary.final_history.clone());
+                agent.set_summary(summary.final_summary.clone());
+                return Ok(summary);
+            }
+            // A turn-ending abort. The channel closes next; report it as the
+            // error it is rather than falling through to the closed-channel
+            // case below, which would misreport an abort as a completed turn.
+            StreamEvent::Error { message, .. } => return Err(AgentError::Rig(message)),
+            _ => {}
+        }
+    }
+
+    Err(AgentError::Rig(
+        "streaming turn ended without a TurnComplete event".into(),
+    ))
+}
+
 // ── Runner ────────────────────────────────────────────────────────
 
 /// Run a single case and return the result.
@@ -778,7 +820,7 @@ async fn run_case(
     // Run with timeout.
     let result = tokio::time::timeout(
         Duration::from_secs(timeout_secs),
-        session.run(&mut agent, provider, model, &case.user_input),
+        run_turn_streaming(session, &mut agent, provider, model, &case.user_input),
     )
     .await;
 

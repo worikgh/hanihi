@@ -115,21 +115,72 @@ enum ToolCallCacheLookup {
     Miss,
 }
 
+/// Consecutive identical tool failures tolerated before the turn ends.
+///
+/// Counted per (name, args) pair. A failure with a different name or
+/// arguments is evidence the model adapted and does not accumulate, so this
+/// measures the specific pathology of repeating a call that already failed,
+/// rather than raw tool-call volume (which [`MAX_TOOL_CALLS_PER_TURN`] bounds).
+const REPEATED_FAILURE_LIMIT: usize = 3;
+
+/// Prefix on a tool result that reports a failed execution. The model reads
+/// this as data it must act on, not as a harness shutdown.
+const TOOL_FAILURE_PREFIX: &str = "tool call failed";
+
+/// Result of checking whether a repeated failure has exhausted its budget.
+enum FailureLookup {
+    /// Below the limit; continue with the failure fed back.
+    Continue,
+    /// The identical call has now failed `REPEATED_FAILURE_LIMIT` times.
+    GiveUp { count: usize },
+}
+
 /// Per-turn cache of read-only tool results keyed by `name + '\u{1}' + args`.
 #[derive(Debug, Default)]
 struct ToolCallCache {
     results: HashMap<String, String>,
     counts: HashMap<String, usize>,
+    /// `(name, args)` -> consecutive failure count. Deliberately *not* cleared
+    /// by [`Self::invalidate_on_write`]: a successful write does not make a
+    /// refused command legal, so the asymmetry with the read cache is
+    /// intentional.
+    failures: HashMap<String, usize>,
 }
 
 impl ToolCallCache {
     fn reset(&mut self) {
         self.results.clear();
         self.counts.clear();
+        self.failures.clear();
     }
 
     fn key(name: &str, args: &serde_json::Value) -> String {
         format!("{name}\u{1}{args}")
+    }
+
+    /// Record one failed execution of `name` with `args`.
+    fn record_failure(&mut self, name: &str, args: &serde_json::Value) {
+        *self.failures.entry(Self::key(name, args)).or_insert(0) += 1;
+    }
+
+    /// Decide whether the failure just recorded exhausts the guard.
+    fn notable_for_failure(&self, name: &str, args: &serde_json::Value) -> FailureLookup {
+        let count = self
+            .failures
+            .get(&Self::key(name, args))
+            .copied()
+            .unwrap_or(0);
+        if count >= REPEATED_FAILURE_LIMIT {
+            FailureLookup::GiveUp { count }
+        } else {
+            FailureLookup::Continue
+        }
+    }
+
+    /// Clear the failure count for `name`/`args` after a successful call, so
+    /// fail-then-fix-then-fail does not accumulate across unrelated attempts.
+    fn clear_failure(&mut self, name: &str, args: &serde_json::Value) {
+        self.failures.remove(&Self::key(name, args));
     }
 
     fn lookup(&mut self, name: &str, args: &serde_json::Value) -> ToolCallCacheLookup {
@@ -240,7 +291,35 @@ pub enum StreamEvent {
     /// Turn completed successfully.
     TurnComplete { summary: TurnSummary },
     /// An error occurred during the turn.
-    Error { message: String },
+    ///
+    /// `kind` names the failure class so a caller can react to it without
+    /// re-parsing `message`; the message stays the human-facing rendering.
+    Error {
+        message: String,
+        kind: TurnErrorKind,
+    },
+}
+
+/// Why a streaming turn aborted.
+///
+/// Carried alongside [`StreamEvent::Error::message`] because the loop already
+/// knows the concrete [`AgentError`] it is about to return — rendering it to a
+/// string and dropping the structure loses information the caller needs (for
+/// example, whether a tool-call limit or an unknown tool caused the abort).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TurnErrorKind {
+    /// A tool name with no registered tool — a harness/dispatch error.
+    UnknownTool,
+    /// A tool call was executed after the per-turn bound was already spent.
+    ToolCallLimit { calls: usize },
+    /// The same `(name, args)` tool call failed `count` times in a row.
+    RepeatedToolFailure { name: String, count: usize },
+    /// No terminal event before the per-turn model-turn bound.
+    MaxTurns { turns: usize },
+    /// The model provider or stream failed.
+    Provider,
+    /// Writing or re-opening the session log failed.
+    LogWrite,
 }
 impl StreamEvent {
     pub fn type_name(&self) -> &'static str {
@@ -418,13 +497,8 @@ impl<M: CompletionModel> Agent<M> {
         self.history.clear();
     }
 
-    /// Clear the per-turn read-only tool cache (start of a new turn).
-    pub(crate) fn clear_tool_cache(&self) {
-        self.tool_cache
-            .lock()
-            .expect("tool call cache lock")
-            .reset();
-    }
+    // The per-turn read-only tool cache is reset by `run_streaming_loop` at
+    // the start of every turn; there is no separate public entry point.
 
     /// Replace the persistent message history (e.g. from session replay).
     pub fn set_history(&mut self, history: Vec<Message>) {
@@ -494,77 +568,19 @@ impl<M: CompletionModel> Agent<M> {
 
     /// Run one user request to completion: model calls, tool execution, and
     /// follow-up model calls until the model answers without tool calls.
+    ///
+    /// Deprecated: the CLI has used [`Agent::run_streaming`] exclusively since
+    /// the streaming handler landed, so this loop was unexercised production
+    /// code that had already drifted. It is stubbed rather than repaired so a
+    /// caller cannot silently get a plausible-looking result from a path no
+    /// one drives. Returning an empty `TurnSummary` here would be exactly the
+    /// silent-success defect that motivated the stub.
+    #[deprecated(note = "the non-streaming agent loop is unused; use `run_streaming`. \
+                See plans/029-tool-failure-recovery.md")]
     pub async fn run(&mut self, user_input: &str) -> Result<TurnSummary, AgentError> {
-        self.clear_tool_cache();
-        let mut turn_messages: Vec<Message> = Vec::new();
-        let mut tool_calls_total = 0usize;
-        let mut usage_total = Usage::new();
-
-        for _ in 0..self.max_turns {
-            let prepared = self.prepare_context(user_input, &turn_messages).await?;
-            let response = self.single_completion_with(&prepared).await?;
-            usage_total += response.usage;
-
-            let mut text_parts = Vec::new();
-            let mut tool_calls: Vec<ToolCall> = Vec::new();
-            for content in response.choice.iter() {
-                match content {
-                    AssistantContent::Text(t) => text_parts.push(t.clone()),
-                    AssistantContent::ToolCall(call) => tool_calls.push(call.clone()),
-                    AssistantContent::Reasoning(_) | AssistantContent::Image(_) => {}
-                }
-            }
-
-            if tool_calls.is_empty() {
-                let text = text_parts
-                    .iter()
-                    .map(|t| t.text())
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                turn_messages.push(Message::assistant(text.clone()));
-                self.commit_turn(user_input, turn_messages);
-                return Ok(TurnSummary {
-                    text,
-                    tool_calls: tool_calls_total,
-                    usage: usage_total,
-                    final_history: self.history.clone(),
-                    final_summary: self.summary.clone(),
-                });
-            }
-
-            let mut contents: Vec<AssistantContent> =
-                text_parts.into_iter().map(AssistantContent::Text).collect();
-            contents.extend(tool_calls.iter().cloned().map(AssistantContent::ToolCall));
-            turn_messages.push(Message::Assistant {
-                id: response.message_id,
-                content: rig::OneOrMany::from_iter_optional(contents)
-                    .expect("assistant message has at least one tool call"),
-            });
-
-            for call in &tool_calls {
-                if tool_calls_total >= MAX_TOOL_CALLS_PER_TURN {
-                    tracing::error!(
-                        calls = tool_calls_total,
-                        "tool call limit exceeded in one turn"
-                    );
-                    self.commit_turn(user_input, turn_messages);
-                    return Err(AgentError::ToolCallLimit {
-                        calls: tool_calls_total,
-                    });
-                }
-                let output = self.execute_tool(call).await?;
-                tool_calls_total += 1;
-                turn_messages.push(Message::tool_result_with_call_id(
-                    call.id.clone(),
-                    call.call_id.clone(),
-                    output,
-                ));
-            }
-        }
-
-        self.commit_turn(user_input, turn_messages);
-        Err(AgentError::MaxTurns {
-            turns: self.max_turns,
+        let _ = user_input;
+        Err(AgentError::Deprecated {
+            message: "Agent::run is deprecated; use Agent::run_streaming".into(),
         })
     }
 
@@ -992,6 +1008,9 @@ where
                                 message: format!(
                                     "tool call limit exceeded: {tool_calls_total} calls in one turn"
                                 ),
+                                kind: TurnErrorKind::ToolCallLimit {
+                                    calls: tool_calls_total,
+                                },
                             })
                             .await;
                         return Err(AgentError::ToolCallLimit {
@@ -1025,6 +1044,12 @@ where
                                 })
                                 .await;
                             tool_calls_total += 1;
+                            // A success clears the failure count for this exact
+                            // call, so fail-fix-fail does not accumulate.
+                            tool_cache
+                                .lock()
+                                .expect("tool call cache lock")
+                                .clear_failure(&name, &tool_call.function.arguments);
                             pending_results.push((tool_call.clone(), rendered));
                         }
                         Err(e) => {
@@ -1033,12 +1058,60 @@ where
                                 file!(),
                                 line!(),
                             );
+
+                            // An unknown tool name is a harness/dispatch error,
+                            // not an execution failure the model can adapt to,
+                            // so it stays fatal.
+                            if matches!(&e, AgentError::Tool { message, .. } if message == "unknown tool")
+                            {
+                                let _ = tx
+                                    .send(StreamEvent::Error {
+                                        message: e.to_string(),
+                                        kind: TurnErrorKind::UnknownTool,
+                                    })
+                                    .await;
+                                return Err(e);
+                            }
+
+                            // Surface the failure as information: render it as
+                            // a tool result, feed it back, and let the model
+                            // try the next viable means.
+                            let rendered = format!("{TOOL_FAILURE_PREFIX}: {name}\n  error: {e}");
                             let _ = tx
-                                .send(StreamEvent::Error {
-                                    message: e.to_string(),
+                                .send(StreamEvent::ToolResult {
+                                    id: tool_call.id.clone(),
+                                    name: name.clone(),
+                                    result_preview: rendered.clone(),
+                                    result: rendered.clone(),
                                 })
                                 .await;
-                            return Err(e);
+
+                            // A failed execution is still an execution, so it
+                            // counts against the per-turn bound.
+                            tool_calls_total += 1;
+                            pending_results.push((tool_call.clone(), rendered));
+
+                            let give_up = {
+                                let mut cache = tool_cache.lock().expect("tool call cache lock");
+                                cache.record_failure(&name, &tool_call.function.arguments);
+                                cache.notable_for_failure(&name, &tool_call.function.arguments)
+                            };
+                            if let FailureLookup::GiveUp { count } = give_up {
+                                let _ = tx
+                                    .send(StreamEvent::Error {
+                                        message: AgentError::RepeatedToolFailure {
+                                            name: name.clone(),
+                                            count,
+                                        }
+                                        .to_string(),
+                                        kind: TurnErrorKind::RepeatedToolFailure {
+                                            name: name.clone(),
+                                            count,
+                                        },
+                                    })
+                                    .await;
+                                return Err(AgentError::RepeatedToolFailure { name, count });
+                            }
                         }
                     }
                     pending_tool_calls.push(tool_call);
@@ -1067,6 +1140,7 @@ where
                     let _ = tx
                         .send(StreamEvent::Error {
                             message: e.to_string(),
+                            kind: TurnErrorKind::Provider,
                         })
                         .await;
                     return Err(AgentError::Rig(e.to_string()));
@@ -1155,18 +1229,178 @@ where
     let _ = tx
         .send(StreamEvent::Error {
             message: format!("exceeded maximum of {max_turns} model turns"),
+            kind: TurnErrorKind::MaxTurns { turns: max_turns },
         })
         .await;
     Err(AgentError::MaxTurns { turns: max_turns })
 }
 
+/// A mock model whose streaming script and plain-completion script are
+/// independent.
+///
+/// `MockCompletionModel` keeps two separate script cursors — one for
+/// `stream()` and one for `completion()` — and each constructor (`from_turns`,
+/// `from_stream_turns`) fills in exactly one of them. A turn that compacts
+/// needs both: `compact_if_needed` calls `completion()` for the summarization
+/// while the turn itself is driven by `stream()`. This wrapper delegates each
+/// entry point to its own mock so a test can script both at once.
+#[cfg(test)]
+pub(crate) struct SplitScriptModel {
+    completion: rig::test_utils::MockCompletionModel,
+    streaming: rig::test_utils::MockCompletionModel,
+}
+
+#[cfg(test)]
+impl SplitScriptModel {
+    /// Script `completion_turns` for plain completions (summarization) and
+    /// `streaming_turns` for streamed turns (the agent loop).
+    pub(crate) fn new(
+        completion_turns: impl IntoIterator<Item = rig::test_utils::MockTurn>,
+        streaming_turns: impl IntoIterator<
+            Item = impl IntoIterator<Item = rig::test_utils::MockStreamEvent>,
+        >,
+    ) -> Self {
+        Self {
+            completion: rig::test_utils::MockCompletionModel::from_turns(completion_turns),
+            streaming: rig::test_utils::MockCompletionModel::from_stream_turns(streaming_turns),
+        }
+    }
+}
+
+#[cfg(test)]
+impl Clone for SplitScriptModel {
+    fn clone(&self) -> Self {
+        Self {
+            completion: self.completion.clone(),
+            streaming: self.streaming.clone(),
+        }
+    }
+}
+
+#[cfg(test)]
+impl rig::completion::CompletionModel for SplitScriptModel {
+    type Response =
+        <rig::test_utils::MockCompletionModel as rig::completion::CompletionModel>::Response;
+    type StreamingResponse =
+        <rig::test_utils::MockCompletionModel as rig::completion::CompletionModel>::StreamingResponse;
+    type Client =
+        <rig::test_utils::MockCompletionModel as rig::completion::CompletionModel>::Client;
+
+    fn make(_client: &Self::Client, _model: impl Into<String>) -> Self {
+        Self::new(
+            [rig::test_utils::MockTurn::text("unused")],
+            [vec![
+                rig::test_utils::MockStreamEvent::final_response_with_default_usage(),
+            ]],
+        )
+    }
+
+    async fn completion(
+        &self,
+        request: rig::completion::CompletionRequest,
+    ) -> Result<rig::completion::CompletionResponse<Self::Response>, rig::completion::CompletionError>
+    {
+        self.completion.completion(request).await
+    }
+
+    async fn stream(
+        &self,
+        request: rig::completion::CompletionRequest,
+    ) -> Result<
+        rig::streaming::StreamingCompletionResponse<Self::StreamingResponse>,
+        rig::completion::CompletionError,
+    > {
+        self.streaming.stream(request).await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rig::test_utils::{MockCompletionModel, MockTurn};
+    use rig::test_utils::{MockCompletionModel, MockStreamEvent, MockTurn};
+
+    /// Build a mock model from streaming turns, one inner slice per model call.
+    ///
+    /// Every call must end with `final_response_with_default_usage`: the
+    /// streaming driver only closes a turn on that chunk, so a slice without it
+    /// leaves the turn hanging and the caller panics.
+    fn stream_model(turns: impl IntoIterator<Item = Vec<MockStreamEvent>>) -> MockCompletionModel {
+        MockCompletionModel::from_stream_turns(turns)
+    }
+
+    /// A single model call that answers with `text` and nothing else.
+    fn text_turn(text: &str) -> Vec<MockStreamEvent> {
+        vec![
+            MockStreamEvent::text(text),
+            MockStreamEvent::final_response_with_default_usage(),
+        ]
+    }
+
+    /// A single model call that requests one tool with the given arguments.
+    fn tool_turn(id: &str, name: &str, arguments: serde_json::Value) -> Vec<MockStreamEvent> {
+        vec![
+            MockStreamEvent::tool_call(id, name, arguments),
+            MockStreamEvent::final_response_with_default_usage(),
+        ]
+    }
+
+    /// Outcome of draining one streaming turn, mirroring what a real caller
+    /// sees: either the turn completed (with its summary) or it aborted.
+    #[derive(Debug)]
+    enum TurnOutcome {
+        Complete(TurnSummary),
+        Aborted(AgentError),
+    }
+
+    /// Drive one turn on the streaming path and drain it to completion.
+    ///
+    /// The non-streaming entry point is deprecated, so every test that used it
+    /// goes through here instead. The agent's history and summary are seeded
+    /// back on `TurnComplete`, matching what the CLI and eval runner do.
+    async fn run_turn<M>(agent: &mut Agent<M>, input: &str) -> TurnOutcome
+    where
+        M: rig::completion::CompletionModel + 'static,
+        M::StreamingResponse: Send,
+    {
+        let mut rx = agent
+            .run_streaming(input)
+            .await
+            .expect("streaming turn starts");
+
+        while let Some(event) = rx.recv().await {
+            match event {
+                StreamEvent::TurnComplete { summary } => {
+                    agent.set_history(summary.final_history.clone());
+                    agent.set_summary(summary.final_summary.clone());
+                    return TurnOutcome::Complete(summary);
+                }
+                StreamEvent::Error { message, kind } => {
+                    return TurnOutcome::Aborted(match kind {
+                        TurnErrorKind::UnknownTool => AgentError::Tool {
+                            name: String::from("unknown"),
+                            message,
+                        },
+                        TurnErrorKind::ToolCallLimit { calls } => {
+                            AgentError::ToolCallLimit { calls }
+                        }
+                        TurnErrorKind::RepeatedToolFailure { name, count } => {
+                            AgentError::RepeatedToolFailure { name, count }
+                        }
+                        TurnErrorKind::MaxTurns { turns } => AgentError::MaxTurns { turns },
+                        TurnErrorKind::Provider | TurnErrorKind::LogWrite => {
+                            AgentError::Rig(message)
+                        }
+                    });
+                }
+                _ => {}
+            }
+        }
+
+        panic!("streaming turn ended without TurnComplete or Error");
+    }
 
     fn get_time_agent() -> Agent<MockCompletionModel> {
-        let mut agent = Agent::new(MockCompletionModel::text("unused"), "test system");
+        let mut agent = Agent::new(stream_model([text_turn("unused")]), "test system");
         agent.add_tool(crate::tool::builtin_get_time());
         agent
     }
@@ -1174,7 +1408,9 @@ mod tests {
     #[tokio::test]
     async fn test_simple_text_reply() {
         let mut agent = get_time_agent();
-        let summary = agent.run("hi").await.expect("run succeeds");
+        let TurnOutcome::Complete(summary) = run_turn(&mut agent, "hi").await else {
+            panic!("turn must complete");
+        };
         assert_eq!(summary.text, "unused");
         assert_eq!(summary.tool_calls, 0);
         assert_eq!(agent.history().len(), 2);
@@ -1182,14 +1418,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_tool_call_round_trip() {
-        let model = MockCompletionModel::from_turns([
-            MockTurn::tool_call("call_1", "get_time", serde_json::json!({})),
-            MockTurn::text("got the time"),
+        let model = stream_model([
+            tool_turn("call_1", "get_time", serde_json::json!({})),
+            text_turn("got the time"),
         ]);
         let mut agent = Agent::new(model, "test system");
         agent.add_tool(crate::tool::builtin_get_time());
 
-        let summary = agent.run("what time is it").await.expect("run succeeds");
+        let TurnOutcome::Complete(summary) = run_turn(&mut agent, "what time is it").await else {
+            panic!("turn must complete");
+        };
         assert_eq!(summary.text, "got the time");
         assert_eq!(summary.tool_calls, 1);
 
@@ -1199,21 +1437,26 @@ mod tests {
 
     #[tokio::test]
     async fn test_unknown_tool_fails() {
-        let model = MockCompletionModel::from_turns([MockTurn::tool_call(
-            "call_1",
-            "nonexistent",
-            serde_json::json!({}),
-        )]);
+        let model = stream_model([
+            tool_turn("call_1", "nonexistent", serde_json::json!({})),
+            text_turn("unused"),
+        ]);
         let mut agent = Agent::new(model, "test system");
-        let err = agent.run("do it").await.expect_err("run must fail");
+        // An unknown tool name is a harness/dispatch error, not an execution
+        // failure the model can adapt to, so it stays fatal.
+        let TurnOutcome::Aborted(err) = run_turn(&mut agent, "do it").await else {
+            panic!("unknown tool must abort the turn");
+        };
         assert!(matches!(err, AgentError::Tool { .. }));
     }
 
     #[tokio::test]
     async fn test_under_budget_does_not_compact() {
-        let model = MockCompletionModel::from_turns([MockTurn::text("answer")]);
+        let model = stream_model([text_turn("answer")]);
         let mut agent = Agent::new(model, "test system");
-        let summary = agent.run("hi").await.expect("run succeeds");
+        let TurnOutcome::Complete(summary) = run_turn(&mut agent, "hi").await else {
+            panic!("turn must complete");
+        };
         assert_eq!(summary.text, "answer");
         assert!(agent.summary().is_none());
         assert_eq!(agent.history().len(), 2);
@@ -1221,12 +1464,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_over_budget_compacts_history() {
-        // Scripted turns: [summarize, answer]. The first call is the plain
-        // summarization completion; the second is the real answer.
-        let model = MockCompletionModel::from_turns([
-            MockTurn::text("compacted summary"),
-            MockTurn::text("final answer"),
-        ]);
+        // Compaction calls `completion()` while the turn itself is driven by
+        // `stream()`, so the two scripts are independent: a plain
+        // summarization turn and one streamed answer turn.
+        let model = SplitScriptModel::new(
+            [MockTurn::text("compacted summary")],
+            [text_turn("final answer")],
+        );
         let mut agent = Agent::new(model, "test system");
         agent.set_context_limit_tokens(500);
 
@@ -1241,7 +1485,9 @@ mod tests {
         agent.set_history(history);
         let original_len = agent.history().len();
 
-        let summary = agent.run("hi").await.expect("run succeeds");
+        let TurnOutcome::Complete(summary) = run_turn(&mut agent, "hi").await else {
+            panic!("turn must complete");
+        };
         assert_eq!(summary.text, "final answer");
         assert!(agent.summary().is_some());
         assert!(agent.history().len() < original_len);
@@ -1360,16 +1606,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_tool_call_limit_enforced() {
-        let mut turns: Vec<MockTurn> = (0..=MAX_TOOL_CALLS_PER_TURN)
-            .map(|i| MockTurn::tool_call(format!("call_{i}"), "get_time", serde_json::json!({})))
+        let mut turns: Vec<Vec<MockStreamEvent>> = (0..=MAX_TOOL_CALLS_PER_TURN)
+            .map(|i| tool_turn(&format!("call_{i}"), "get_time", serde_json::json!({})))
             .collect();
-        turns.push(MockTurn::text("done"));
-        let model = MockCompletionModel::from_turns(turns);
+        turns.push(text_turn("done"));
+        let model = stream_model(turns);
         let mut agent = Agent::new(model, "test system");
         agent.set_max_turns(200);
         agent.add_tool(crate::tool::builtin_get_time());
 
-        let err = agent.run("go").await.expect_err("must hit the limit");
+        let TurnOutcome::Aborted(err) = run_turn(&mut agent, "go").await else {
+            panic!("tool call limit must abort the turn");
+        };
         assert!(
             matches!(err, AgentError::ToolCallLimit { calls } if calls == MAX_TOOL_CALLS_PER_TURN)
         );
@@ -1411,22 +1659,100 @@ mod tests {
             },
         );
 
-        let model = MockCompletionModel::from_turns([
-            MockTurn::tool_call("call_1", "read_file", serde_json::json!({"path": "a"})),
-            MockTurn::tool_call("call_2", "read_file", serde_json::json!({"path": "a"})),
-            MockTurn::text("done"),
+        let model = stream_model([
+            tool_turn("call_1", "read_file", serde_json::json!({"path": "a"})),
+            tool_turn("call_2", "read_file", serde_json::json!({"path": "a"})),
+            text_turn("done"),
         ]);
         let mut agent = Agent::new(model, "test system");
         agent.add_tool(counting_tool);
 
-        let summary = agent
-            .run("read the same file twice")
-            .await
-            .expect("run succeeds");
+        let TurnOutcome::Complete(summary) = run_turn(&mut agent, "read the same file twice").await
+        else {
+            panic!("turn must complete");
+        };
         // The two identical calls are deduplicated but still counted once.
         assert_eq!(summary.tool_calls, 2);
         use std::sync::atomic::Ordering;
         assert_eq!(executions.load(Ordering::SeqCst), 1);
+    }
+
+    /// A tool that always fails, so the failure feed-back path is exercised
+    /// without touching the filesystem.
+    fn failing_tool() -> PortableDynamicTool {
+        PortableDynamicTool::new(
+            "always_fails",
+            "A tool whose execution always errors.",
+            serde_json::json!({
+                "type": "object",
+                "properties": {},
+            }),
+            move |_args: serde_json::Value| {
+                Box::pin(async move {
+                    Err(rig::tool::ToolExecutionError::provider(
+                        "deliberate failure",
+                    ))
+                })
+            },
+        )
+    }
+
+    /// One failing call followed by a text turn must not end the turn: the
+    /// failure is reported back to the model as an ordinary tool result, so it
+    /// can try the next viable means.
+    #[tokio::test]
+    async fn tool_failure_is_fed_back_and_the_turn_continues() {
+        let model = stream_model([
+            tool_turn("call_1", "always_fails", serde_json::json!({})),
+            text_turn("recovered"),
+        ]);
+        let mut agent = Agent::new(model, "test system");
+        agent.add_tool(failing_tool());
+
+        let TurnOutcome::Complete(summary) = run_turn(&mut agent, "do it").await else {
+            panic!("a single tool failure must not abort the turn");
+        };
+        assert_eq!(summary.text, "recovered");
+        // The failed execution still counts as an execution.
+        assert_eq!(summary.tool_calls, 1);
+
+        let failed = agent
+            .history()
+            .iter()
+            .filter_map(|m| match m {
+                Message::User { content, .. } => Some(format!("{content:?}")),
+                _ => None,
+            })
+            .find(|text| text.contains(TOOL_FAILURE_PREFIX))
+            .expect("the failure must appear in the transcript as a tool result");
+        assert!(
+            failed.contains("deliberate failure"),
+            "the model must see why it failed, got: {failed}"
+        );
+    }
+
+    /// Repeating the identical failing call is a pathology, not adaptation: the
+    /// turn ends after `REPEATED_FAILURE_LIMIT` attempts.
+    #[tokio::test]
+    async fn repeating_an_identical_failure_ends_the_turn() {
+        let mut turns: Vec<Vec<MockStreamEvent>> = (0..REPEATED_FAILURE_LIMIT)
+            .map(|i| tool_turn(&format!("call_{i}"), "always_fails", serde_json::json!({})))
+            .collect();
+        turns.push(text_turn("done"));
+        let mut agent = Agent::new(stream_model(turns), "test system");
+        agent.add_tool(failing_tool());
+
+        let TurnOutcome::Aborted(err) = run_turn(&mut agent, "retry forever").await else {
+            panic!("repeating an identical failure must abort the turn");
+        };
+        assert!(
+            matches!(
+                err,
+                AgentError::RepeatedToolFailure { ref name, count }
+                    if name == "always_fails" && count == REPEATED_FAILURE_LIMIT
+            ),
+            "got {err:?}"
+        );
     }
 
     #[test]

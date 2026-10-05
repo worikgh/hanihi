@@ -36,6 +36,18 @@ pub enum AgentError {
         /// Number of tool calls executed before the guard tripped.
         calls: usize,
     },
+    /// A tool call failed repeatedly with identical arguments.
+    RepeatedToolFailure {
+        /// Tool name.
+        name: String,
+        /// Number of consecutive identical failures.
+        count: usize,
+    },
+    /// A deprecated code path was called.
+    Deprecated {
+        /// What was called and what to use instead.
+        message: String,
+    },
 }
 
 impl fmt::Display for AgentError {
@@ -55,6 +67,13 @@ impl fmt::Display for AgentError {
             AgentError::ToolCallLimit { calls } => {
                 write!(f, "tool call limit exceeded: {calls} calls in one turn")
             }
+            AgentError::RepeatedToolFailure { name, count } => {
+                write!(
+                    f,
+                    "tool '{name}' failed {count} times with identical arguments"
+                )
+            }
+            AgentError::Deprecated { message } => write!(f, "deprecated: {message}"),
         }
     }
 }

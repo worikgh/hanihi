@@ -17,10 +17,10 @@ use serde::{Deserialize, Serialize};
 ///
 /// Policy: additive changes (a new optional field with `#[serde(default)]`)
 /// do not bump this. Breaking changes (rename, remove, restructure) bump it
-/// and add a migration in [`migrate`].
+/// and add a migration in `migrate`.
 ///
 /// v2 adds the `compaction` kind. v1 lines still parse unchanged, so
-/// [`migrate`] remains a no-op for the v1 → v2 transition.
+/// `migrate` remains a no-op for the v1 → v2 transition.
 pub const SCHEMA_VERSION: u32 = 2;
 
 /// One message in a logged completion request.
@@ -454,7 +454,7 @@ impl LogEntry {
 
     /// The eight-argument form mirrors the other variant constructors; the
     /// task-mandated signature needs the same lint allowance as
-    /// [`crate::agent::compact_if_needed`].
+    /// `crate::agent::compact_if_needed`.
     #[allow(clippy::too_many_arguments)]
     pub fn compaction(
         ts: DateTime<Utc>,
