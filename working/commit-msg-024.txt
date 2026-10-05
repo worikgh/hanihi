@@ -1,0 +1,28 @@
+Fix the C/C++ ignore template for an in-source CMake configure
+
+An in-source `cmake .` drops `CMakeCache.txt` and `Testing/` beside the
+sources, where the old template let them leak into every listing and
+search. Add those two plus `CMakeUserPresets.json`, and leave
+`compile_commands.json` visible: it is sometimes committed and is useful
+to read, and the template's own trailing comment records that decision
+rather than being stale prose.
+
+The template is emitted once, at first open, and is not retroactive, so a
+repository whose `.ignore` already carries the header keeps the patterns
+it was first given. That inertness is now stated in
+`Language::template`'s doc comment rather than left implicit; making the
+template retroactive is a separate design question.
+
+Also admit a sole `--version` argument for cmake, ctest, and the C/C++
+compilers. A version probe is the first thing a caller wants when it
+meets an unfamiliar toolchain, and refusing it forced a detour through
+`--help` or a throwaway compile. The rule admits the flag only as the
+sole argument, so it can never ride along with a flag that writes.
+`-v` is accepted for the compilers, which report search paths with it,
+but not for cmake, where it is not the version flag.
+
+Adds nine tests covering the template contract, the in-source configure
+regression, the deliberate `compile_commands.json` decision, and the
+version-probe bounds.
+
+Hānihi

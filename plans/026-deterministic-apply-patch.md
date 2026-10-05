@@ -238,7 +238,9 @@ the arguments (for example request a different offset/limit range)
 
 The previous session declined to commit because it could not pass a
 multi-line message through argv. That is a real gap, but the fix is out of
-scope here; plan 027 owns a staged-text channel. This plan only requires
+scope here; plan 028 owns a staged-text channel (the harness performs no
+quote processing, so an `-m` value is one whitespace-delimited token and a
+multi-line message needs `git commit -F <path>`). This plan only requires
 that the gap be documented in the report it updates, not solved.
 
 ## Constraints
