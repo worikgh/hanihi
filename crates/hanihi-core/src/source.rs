@@ -60,11 +60,17 @@ pub enum Language {
 
 impl Language {
     /// `.ignore`-syntax patterns for generated artifacts of this language.
+    ///
+    /// Emitted once, by [`ensure_ignore_file`] at first open, and not
+    /// retroactive: a repository whose `.ignore` already carries
+    /// [`HANIHI_HEADER`] keeps the patterns it was first given, so later
+    /// revisions of this template do not reach it.
     pub fn template(self) -> &'static str {
         match self {
             Language::Rust => "target/\n**/*.rs.bk\n",
             Language::C => {
                 "build/\ncmake-build-*/\nCMakeFiles/\n\
+                 CMakeCache.txt\nCMakeUserPresets.json\nTesting/\n\
 		 *.o\n*.obj\n*.a\n*.so\n*.dylib\n*.exe\n\
 		 *.gcda\n*.gcno\n\
 		 a.out\n.cache/\n\
@@ -611,6 +617,131 @@ mod tests {
         fx.tree();
         let content2 = fs::read_to_string(fx.dir.join(".ignore")).unwrap();
         assert_eq!(content, content2);
+    }
+
+    /// A git repo whose contents select the C/C++ ignore template.
+    /// `testutil::Fixture` always writes a `Cargo.toml`, which would
+    /// select `Language::Rust` instead.
+    fn cpp_repo() -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("hanihi-cpp-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(dir.join(".git")).unwrap();
+        fs::write(dir.join("CMakeLists.txt"), "project(fixture)\n").unwrap();
+        fs::write(dir.join("main.cpp"), "int main() { return 0; }\n").unwrap();
+        dir
+    }
+
+    fn ignore_contents(dir: &Path) -> String {
+        fs::read_to_string(dir.join(".ignore")).unwrap()
+    }
+
+    #[test]
+    fn cpp_template_covers_the_cmake_build_tree() {
+        let dir = cpp_repo();
+        SourceTree::open_at(&dir).expect("repo opens");
+        let content = ignore_contents(&dir);
+        for pattern in ["CMakeFiles/", "build/", "cmake-build-*/"] {
+            assert!(content.contains(pattern), "missing {pattern}");
+        }
+        fs::remove_dir_all(&dir).unwrap_or(());
+    }
+
+    /// Regression test for the reported gap: an in-source configure drops
+    /// `CMakeCache.txt` and `Testing/` beside the sources, where the old
+    /// template let them leak into listings and searches.
+    #[test]
+    fn cpp_template_covers_an_in_source_configure() {
+        let dir = cpp_repo();
+        SourceTree::open_at(&dir).expect("repo opens");
+        let content = ignore_contents(&dir);
+        for pattern in ["CMakeCache.txt", "Testing/"] {
+            assert!(content.contains(pattern), "missing {pattern}");
+        }
+        fs::remove_dir_all(&dir).unwrap_or(());
+    }
+
+    /// `compile_commands.json` is deliberately visible, and the template's
+    /// trailing comment is the decision record. Pinned so a later cleanup
+    /// cannot silently reverse it.
+    #[test]
+    fn cpp_template_keeps_compile_commands_visible() {
+        let dir = cpp_repo();
+        SourceTree::open_at(&dir).expect("repo opens");
+        let content = ignore_contents(&dir);
+        assert!(
+            !content.lines().any(|l| l.trim() == "compile_commands.json"),
+            "compile_commands.json became an ignore pattern"
+        );
+        assert!(content.contains("# compile_commands.json — sometimes committed"));
+        fs::remove_dir_all(&dir).unwrap_or(());
+    }
+
+    /// Ignoring source files would hide the agent's actual work, silently.
+    #[test]
+    fn cpp_template_has_no_source_patterns() {
+        let dir = cpp_repo();
+        SourceTree::open_at(&dir).expect("repo opens");
+        let content = ignore_contents(&dir);
+        for ext in ["*.cpp", "*.h", "*.hpp", "*.cc", "*.cxx"] {
+            assert!(!content.contains(ext), "source pattern {ext} is ignored");
+        }
+        fs::remove_dir_all(&dir).unwrap_or(());
+    }
+
+    /// A pattern missing its terminating `\n` would concatenate with the
+    /// next one and grow the file on each open.
+    #[test]
+    fn cpp_template_is_stable_across_opens() {
+        let dir = cpp_repo();
+        SourceTree::open_at(&dir).expect("repo opens");
+        let first = ignore_contents(&dir);
+        SourceTree::open_at(&dir).expect("repo reopens");
+        assert_eq!(first, ignore_contents(&dir));
+        fs::remove_dir_all(&dir).unwrap_or(());
+    }
+
+    #[test]
+    fn cpp_template_preserves_user_patterns() {
+        let dir = cpp_repo();
+        fs::write(dir.join(".ignore"), "vendor/\n").unwrap();
+        SourceTree::open_at(&dir).expect("repo opens");
+        let content = ignore_contents(&dir);
+        assert!(content.contains("vendor/"));
+        assert!(content.contains(HANIHI_HEADER));
+        assert!(content.contains("CMakeCache.txt"));
+        fs::remove_dir_all(&dir).unwrap_or(());
+    }
+
+    /// The template is applied once, at first open, and is not retroactive:
+    /// a repo already carrying the header keeps the patterns it first got.
+    /// Documents that inertness as intentional.
+    #[test]
+    fn template_is_not_retroactive_for_an_existing_ignore() {
+        let dir = cpp_repo();
+        let existing = format!("{HANIHI_HEADER}build/\n");
+        fs::write(dir.join(".ignore"), &existing).unwrap();
+        SourceTree::open_at(&dir).expect("repo opens");
+        let content = ignore_contents(&dir);
+        assert_eq!(content, existing);
+        assert!(!content.contains("CMakeCache.txt"));
+        fs::remove_dir_all(&dir).unwrap_or(());
+    }
+
+    /// Guards against a copy-paste edit landing in the wrong arm.
+    #[test]
+    fn rust_template_is_unchanged() {
+        let fx = testutil::Fixture::new();
+        fx.tree();
+        let content = ignore_contents(&fx.dir);
+        assert!(content.contains("target/"));
+        assert!(content.contains("**/*.rs.bk"));
+        for pattern in [
+            "CMakeFiles/",
+            "CMakeCache.txt",
+            "Testing/",
+            "cmake-build-*/",
+        ] {
+            assert!(!content.contains(pattern), "Rust template gained {pattern}");
+        }
     }
 
     // ── toolchain detection ──

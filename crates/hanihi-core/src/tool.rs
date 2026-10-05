@@ -648,6 +648,18 @@ fn check_cmake_define(value: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// A read-only version probe: `--version` and nothing else.
+///
+/// `cmake --version` is how a caller asks which CMake it is talking to. It is
+/// admitted only as the sole argument, so it can never be combined with a flag
+/// that writes, and it does not have to be threaded through the configure loop
+/// below (which would otherwise have to special-case a non-configuring flag).
+/// `-v` is deliberately not accepted: for CMake it is `--version`, and for the
+/// compilers `-v` is handled by their own checker.
+fn is_sole_version_probe(args: &[String]) -> bool {
+    args.len() == 1 && args[0] == "--version"
+}
+
 /// Validate a `cmake` argv: configure into `build/`, or build `build/`.
 ///
 /// Only the out-of-source `build/` convention is supported, driven from the
@@ -658,6 +670,11 @@ fn check_cmake_define(value: &str) -> Result<(), String> {
 /// with a message naming the reason.
 fn check_cmake_argv(argv: &[String]) -> Result<(), String> {
     let args = &argv[1..];
+
+    if is_sole_version_probe(args) {
+        return Ok(());
+    }
+
     let Some(first) = args.first().map(String::as_str) else {
         return Err(
 	    "cmake requires arguments (configure with `cmake -B build`, build with `cmake --build build`)"
@@ -787,6 +804,11 @@ fn check_cmake_build_args(args: &[String]) -> Result<(), String> {
 /// Validate a `ctest` argv: run the tests in `build/`.
 fn check_ctest_argv(argv: &[String]) -> Result<(), String> {
     let args = &argv[1..];
+
+    if is_sole_version_probe(args) {
+        return Ok(());
+    }
+
     if args.is_empty() {
         return Err(format!(
             "ctest requires arguments (`ctest --test-dir {BUILD_DIR}`)"
@@ -866,6 +888,13 @@ fn compiler_argv_is_forbidden(arg: &str) -> bool {
 /// writing its object next to it is a wider capability than that.
 fn check_compiler_argv(argv: &[String]) -> Result<(), String> {
     let args = &argv[1..];
+
+    // A bare version probe compiles nothing, so it is admitted before the
+    // `-c` requirement below. Both spellings are accepted: `--version` prints
+    // the version, `-v` additionally prints the configured search paths.
+    if args.len() == 1 && matches!(args[0].as_str(), "--version" | "-v") {
+        return Ok(());
+    }
 
     if !args.iter().any(|a| a == "-c") {
         return Err(
@@ -1133,7 +1162,8 @@ No shell: the command is split on whitespace into argv. cargo subcommands: check
 clippy, fmt, doc, run -p hanihi-eval. git subcommands: status, diff, log, show, apply --check; \
 write mode also allows git add, git restore --staged, git rm --cached, git commit, and git \
 commit --amend. cmake: `cmake -B build` to configure and `cmake --build build` to build; ctest: \
-`ctest --test-dir build`. Compilers (g++/gcc/clang++/clang) with `-c <file>` compile one \
+`ctest --test-dir build`. `cmake --version`, `ctest --version`, and `<compiler> --version` probe \
+the toolchain. Compilers (g++/gcc/clang++/clang) with `-c <file>` compile one \
 translation unit; add `-fsyntax-only` for a fast parse check. cwd is pinned to the repo root; \
 the environment is scrubbed (PATH, HOME, CARGO_* only); output is capped at 64 KiB; the full \
 output is written to a trace file. Returns exit code, duration, stdout/stderr (truncated), and \
@@ -1173,7 +1203,8 @@ fn builtin_run_command_for(
 	     split on whitespace into argv. cargo subcommands: check, build, test, clippy, fmt, \
 	     doc, run -p hanihi-eval. git subcommands: status, diff, log, show, apply --check. \
 	     cmake: `cmake -B build` to configure and `cmake --build build` to build; ctest: \
-	     `ctest --test-dir build`. Compilers (g++/gcc/clang++/clang) with `-c <file>` \
+	     `ctest --test-dir build`. `cmake --version`, `ctest --version`, and `<compiler> \
+	     --version` probe the toolchain. Compilers (g++/gcc/clang++/clang) with `-c <file>` \
 	     compile one translation unit; add `-fsyntax-only` for a fast parse check. cwd is \
 	     pinned to the repo root; the environment is scrubbed (PATH, HOME, CARGO_* only); \
 	     output is capped at 64 KiB; the full output is written to a trace file. Returns \
@@ -1854,6 +1885,60 @@ mod tests {
         for cmd in cases {
             assert_allowed_both_modes(&cmd);
         }
+    }
+
+    /// A bare version probe answers "which toolchain is this?" without
+    /// building anything. It is the first thing a caller wants when it meets
+    /// an unfamiliar C++ project, and refusing it forced a detour through
+    /// `--help` or a throwaway compile.
+    #[test]
+    fn command_allowlist_accepts_sole_version_probe() {
+        let cases = [
+            argv(&["cmake", "--version"]),
+            argv(&["ctest", "--version"]),
+            argv(&["g++", "--version"]),
+            argv(&["gcc", "--version"]),
+            argv(&["clang++", "--version"]),
+            argv(&["clang", "--version"]),
+            // GCC/Clang answer `-v` with the version and their configured
+            // search paths; CMake does not, so `cmake -v` is not included.
+            argv(&["g++", "-v"]),
+            argv(&["clang++", "-v"]),
+        ];
+        for cmd in cases {
+            assert_allowed_both_modes(&cmd);
+        }
+    }
+
+    /// The version probe is admitted only when it is the *sole* argument, so
+    /// it can never smuggle a write alongside it. These cases are what keep
+    /// the rule narrow: a looser "contains --version" check would admit them.
+    #[test]
+    fn command_allowlist_bounds_the_version_probe() {
+        // `cmake` refuses anything it does not recognise, so a probe combined
+        // with another argument must be refused with the specific rule.
+        assert_denied_both_modes(
+            &argv(&["cmake", "--version", "-B", "build"]),
+            "is not allowed",
+        );
+        assert_denied_both_modes(
+            &argv(&["cmake", "-B", "build", "--version"]),
+            "is not allowed",
+        );
+        // `-v` is not CMake's version flag.
+        assert_denied_both_modes(&argv(&["cmake", "-v"]), "is not allowed");
+        // A compiler probe may not carry an input operand: `-c` is still
+        // required for anything that compiles.
+        assert_denied_both_modes(
+            &argv(&["g++", "--version", "src/foo.cpp"]),
+            "-c is required",
+        );
+        // `ctest --version` is admitted, but a probe with a test directory is
+        // not a probe.
+        assert_denied_both_modes(
+            &argv(&["ctest", "--version", "--test-dir", "build"]),
+            "is not allowed",
+        );
     }
 
     #[test]
