@@ -135,9 +135,9 @@ fn render_user_content(out: &mut String, content: &serde_json::Value) {
             .is_some_and(|t| t == "toolresult");
         if is_tool_result {
             let mut text = extract_text(block).unwrap_or_default();
-            let original_len = text.len();
+            let original_len = text.chars().count();
             if original_len > TOOL_RESULT_SUMMARY_CHARS {
-                text.truncate(TOOL_RESULT_SUMMARY_CHARS);
+                text = text.chars().take(TOOL_RESULT_SUMMARY_CHARS).collect();
                 text.push_str(&format!(
                     "…[truncated for summary, {} chars total]",
                     original_len
