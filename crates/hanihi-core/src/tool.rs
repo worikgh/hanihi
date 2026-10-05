@@ -271,6 +271,7 @@ const NON_MUTATING: &[&str] = &[
     "paste",
     "ping",
     "pr",
+    "pgrep",
     "printenv",
     "printf",
     "ps",
@@ -372,8 +373,9 @@ fn check_command_argv_mode(argv: &[String], mode: CommandMode) -> Result<(), Str
                     );
                 }
                 // TODO Make this a constant and review to ensure none of these can mutate files
-                let allowed_non_mutating =
-                    ["check", "build", "test", "clippy", "fmt", "doc", "metadata"];
+                let allowed_non_mutating = [
+                    "check", "build", "test", "clippy", "fmt", "doc", "metadata", "tree",
+                ];
 
                 match sub.as_str() {
                     val if allowed_non_mutating.contains(&sub.as_str()) && val == sub.as_str() => {
@@ -1653,6 +1655,7 @@ mod tests {
             argv(&["cargo", "clippy", "--", "-D", "warnings"]),
             argv(&["cargo", "fmt"]),
             argv(&["cargo", "doc"]),
+            argv(&["cargo", "tree"]),
             argv(&["cargo", "run", "-p", "hanihi-eval"]),
             argv(&["git", "status", "--short"]),
             argv(&["git", "diff"]),
@@ -1660,6 +1663,20 @@ mod tests {
             argv(&["git", "show", "HEAD"]),
             argv(&["git", "grep", "fn main"]),
             argv(&["git", "apply", "--check"]),
+        ] {
+            check_command_argv(&cmd).expect("must be allowed");
+        }
+    }
+
+    /// `pgrep` is a read-only process query in the same family as the
+    /// already-allowed `ps`/`top`. It is admitted in both modes, so it is
+    /// asserted as an accepted command, not a denied one.
+    #[test]
+    fn command_allowlist_accepts_pgrep() {
+        for cmd in [
+            argv(&["pgrep", "cargo"]),
+            argv(&["pgrep", "-f", "cargo"]),
+            argv(&["pgrep", "-a", "cargo"]),
         ] {
             check_command_argv(&cmd).expect("must be allowed");
         }
