@@ -4,6 +4,8 @@
 //! `evals/cases/`, runs them against a live LLM, and checks assertions
 //! against the session event log.
 
+mod gate;
+
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
@@ -113,6 +115,28 @@ struct Case {
     #[serde(default)]
     fixture: bool,
 
+    /// Optional. Overrides the build command for this case. Defaults to
+    /// `cargo check`. An argv vector: no shell is involved, so no
+    /// metacharacters are interpreted. Paths should be relative to `repo`.
+    #[serde(default)]
+    build_command: Option<Vec<String>>,
+
+    /// Optional. Overrides the test command for this case. Defaults to
+    /// `cargo test`.
+    #[serde(default)]
+    test_command: Option<Vec<String>>,
+
+    /// Optional. Overrides the lint command for this case. There is no
+    /// default for a non-Rust case: `lint_clean` without this field is a
+    /// configuration error, not a silent pass.
+    #[serde(default)]
+    lint_command: Option<Vec<String>>,
+
+    /// Optional. Run before the build step to configure the project
+    /// (e.g. `cmake -B build`). Absent means a single-step build.
+    #[serde(default)]
+    configure_command: Option<Vec<String>>,
+
     /// Assertions that must all pass.
     assertions: Vec<Assertion>,
 }
@@ -156,15 +180,21 @@ enum Assertion {
         max_input: Option<u32>,
         max_output: Option<u32>,
     },
-    /// `cargo check` exits 0 in the case's repo.
+    /// The case's build command exits 0 in the case's repo. Defaults to
+    /// `cargo check`; overridden by `build_command`, preceded by
+    /// `configure_command` when present.
     #[serde(rename = "build_succeeds")]
     BuildSucceeds,
-    /// `cargo test` exits 0 in the case's repo.
+    /// The case's test command exits 0 in the case's repo. Defaults to
+    /// `cargo test`; overridden by `test_command`.
     #[serde(rename = "tests_pass")]
     TestsPass,
-    /// `cargo clippy -- -D warnings` exits 0 in the case's repo.
-    #[serde(rename = "clippy_clean")]
-    ClippyClean,
+    /// The case's lint command exits 0 in the case's repo. Driven by
+    /// `lint_command`; absent for a case that is not Rust, which is a
+    /// configuration error. `clippy_clean` is accepted as a deprecated
+    /// alias that implies the cargo clippy default.
+    #[serde(rename = "lint_clean", alias = "clippy_clean")]
+    LintClean,
     /// Working tree matches HEAD in the case's repo (no uncommitted junk).
     #[serde(rename = "no_diff")]
     NoDiff,
@@ -258,10 +288,11 @@ async fn evaluate(
     log: &[LogEntry],
     repo_dir: Option<&Path>,
     start: std::time::Instant,
+    timeout: Duration,
 ) -> Vec<AssertionResult> {
     let mut results = Vec::with_capacity(case.assertions.len() + 1);
     for assertion in &case.assertions {
-        results.push(evaluate_one(assertion, log, repo_dir).await);
+        results.push(evaluate_one(assertion, case, log, repo_dir, timeout).await);
     }
     results.push(duration_result(start));
     results
@@ -279,8 +310,10 @@ fn duration_result(start: std::time::Instant) -> AssertionResult {
 
 async fn evaluate_one(
     assertion: &Assertion,
+    case: &Case,
     log: &[LogEntry],
     repo_dir: Option<&Path>,
+    timeout: Duration,
 ) -> AssertionResult {
     match assertion {
         Assertion::ToolCalled { name, min, max } => {
@@ -464,17 +497,71 @@ async fn evaluate_one(
             }
         }
         Assertion::BuildSucceeds => {
-            cargo_gate(repo_dir, "build_succeeds", &["check"], "cargo check").await
-        }
-        Assertion::TestsPass => cargo_gate(repo_dir, "tests_pass", &["test"], "cargo test").await,
-        Assertion::ClippyClean => {
-            cargo_gate(
-                repo_dir,
-                "clippy_clean",
-                &["clippy", "--", "-D", "warnings"],
-                "cargo clippy -- -D warnings",
+            let Some(dir) = repo_dir else {
+                return no_repo("build_succeeds");
+            };
+            let build = case
+                .build_command
+                .clone()
+                .unwrap_or_else(|| default_argv(gate::DEFAULT_BUILD_COMMAND));
+            let outcome = gate::run_configure_and_build(
+                dir,
+                case.configure_command.as_deref(),
+                &build,
+                timeout,
             )
-            .await
+            .await;
+            AssertionResult {
+                label: "build_succeeds".into(),
+                passed: outcome.passed,
+                detail: outcome.detail,
+            }
+        }
+        Assertion::TestsPass => {
+            let Some(dir) = repo_dir else {
+                return no_repo("tests_pass");
+            };
+            let test = case
+                .test_command
+                .clone()
+                .unwrap_or_else(|| default_argv(gate::DEFAULT_TEST_COMMAND));
+            let desc = gate::describe(&test);
+            let outcome = gate::run_gate(dir, &test, &desc, timeout).await;
+            AssertionResult {
+                label: "tests_pass".into(),
+                passed: outcome.passed,
+                detail: outcome.detail,
+            }
+        }
+        Assertion::LintClean => {
+            let Some(dir) = repo_dir else {
+                return no_repo("lint_clean");
+            };
+            // An explicit lint_command always wins. Otherwise the cargo
+            // clippy default applies only when the case really builds with
+            // cargo; there is no defensible default for CMake, and a gate
+            // that quietly succeeds when unconfigured would let a C++ case
+            // claim lint coverage it never had.
+            let lint = match case.lint_command.clone() {
+                Some(lint) => lint,
+                None if case.is_cargo() => default_argv(gate::DEFAULT_LINT_COMMAND),
+                None => {
+                    return AssertionResult {
+                        label: "lint_clean".into(),
+                        passed: false,
+                        detail: "configuration error: lint_clean needs a lint_command \
+                                 (no default exists for a non-Cargo case)"
+                            .into(),
+                    };
+                }
+            };
+            let desc = gate::describe(&lint);
+            let outcome = gate::run_gate(dir, &lint, &desc, timeout).await;
+            AssertionResult {
+                label: "lint_clean".into(),
+                passed: outcome.passed,
+                detail: outcome.detail,
+            }
         }
         Assertion::NoDiff => {
             let label = "no_diff".into();
@@ -519,53 +606,34 @@ async fn evaluate_one(
     }
 }
 
-/// Run a cargo subcommand in the case's repo and report pass/fail.
-async fn cargo_gate(
-    repo_dir: Option<&Path>,
-    label: &str,
-    args: &[&str],
-    command_desc: &str,
-) -> AssertionResult {
-    let Some(dir) = repo_dir else {
-        return AssertionResult {
-            label: label.into(),
-            passed: false,
-            detail: "no repo configured for this case".into(),
+/// A gate assertion with no `repo` (or `fixture`) configured cannot run.
+fn no_repo(label: &str) -> AssertionResult {
+    AssertionResult {
+        label: label.into(),
+        passed: false,
+        detail: "no repo configured for this case".into(),
+    }
+}
+
+/// Materialise a `&[&str]` default command as an owned argv vector.
+fn default_argv(command: &[&str]) -> Vec<String> {
+    command.iter().map(|s| (*s).to_string()).collect()
+}
+
+impl Case {
+    /// Whether this case builds with Cargo.
+    ///
+    /// Inferred from the build command's program rather than from a declared
+    /// toolchain, because the eval runner deliberately does not model
+    /// toolchains (see the plan's "four fields, not one enum" decision). This
+    /// is used only to decide whether the Cargo lint default is defensible —
+    /// never to pick a different command than the case asked for.
+    fn is_cargo(&self) -> bool {
+        let program = match self.build_command.as_deref() {
+            Some([program, ..]) => program.as_str(),
+            _ => gate::DEFAULT_BUILD_COMMAND[0],
         };
-    };
-    let output = tokio::process::Command::new("cargo")
-        .args(args)
-        .current_dir(dir)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .await;
-    match output {
-        Ok(o) if o.status.success() => AssertionResult {
-            label: label.into(),
-            passed: true,
-            detail: format!("{command_desc} exited 0"),
-        },
-        Ok(o) => {
-            let stderr = String::from_utf8_lossy(&o.stderr);
-            let stdout = String::from_utf8_lossy(&o.stdout);
-            let msg = if stderr.trim().is_empty() {
-                stdout.trim()
-            } else {
-                stderr.trim()
-            };
-            AssertionResult {
-                label: label.into(),
-                passed: false,
-                detail: format!("{command_desc} failed: {}", truncate(msg, 300)),
-            }
-        }
-        Err(e) => AssertionResult {
-            label: label.into(),
-            passed: false,
-            detail: format!("spawn {command_desc}: {e}"),
-        },
+        program == "cargo"
     }
 }
 
@@ -722,7 +790,16 @@ async fn run_case(
             let log_path = session.root().join("events.jsonl");
             let log = parse_event_log(&log_path)?;
 
-            let assertions = evaluate(case, &log, repo_dir.as_deref(), start).await;
+            // Gates share the per-case timeout: a build that hangs must not
+            // outlive the case that owns it.
+            let assertions = evaluate(
+                case,
+                &log,
+                repo_dir.as_deref(),
+                start,
+                Duration::from_secs(timeout_secs),
+            )
+            .await;
 
             // Clean up.
             let _ = mgr.close(&session_name);
@@ -948,5 +1025,376 @@ async fn main() {
     println!("results: {total} total, {passed} passed, {failed} failed");
     if failed > 0 {
         std::process::exit(1);
+    }
+}
+
+// ── Tests ─────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Holds a temp fixture directory and removes it on drop.
+    struct TempRepo {
+        path: PathBuf,
+    }
+
+    impl TempRepo {
+        fn new(prefix: &str) -> Self {
+            let path = std::env::temp_dir().join(format!("{prefix}-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir_all(&path).expect("create temp fixture");
+            Self { path }
+        }
+
+        fn write(&self, rel: &str, contents: &str) {
+            let full = self.path.join(rel);
+            if let Some(parent) = full.parent() {
+                std::fs::create_dir_all(parent).expect("create parent dir");
+            }
+            std::fs::write(full, contents).expect("write fixture file");
+        }
+
+        fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    impl Drop for TempRepo {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.path);
+        }
+    }
+
+    /// A minimal Cargo project that builds and tests cleanly.
+    fn rust_repo() -> TempRepo {
+        let repo = TempRepo::new("eval-rust");
+        repo.write(
+            "Cargo.toml",
+            "[package]\nname = \"fixture\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+        );
+        repo.write("src/main.rs", "fn main() {}\n");
+        repo
+    }
+
+    /// A minimal CMake project with one test registered via `add_test`.
+    fn cmake_repo() -> TempRepo {
+        let repo = TempRepo::new("eval-cmake");
+        repo.write(
+            "CMakeLists.txt",
+            "cmake_minimum_required(VERSION 3.16)\n\
+             project(fixture CXX)\n\
+             enable_testing()\n\
+             add_executable(fixture src/foo.cpp)\n\
+             add_test(NAME fixture_runs COMMAND fixture)\n",
+        );
+        repo.write(
+            "src/foo.cpp",
+            "#include <cstdio>\n\
+             int add(int a, int b) { return a + b; }\n\
+             int main() {\n\
+                 if (add(1, 2) != 3) { std::fprintf(stderr, \"bad sum\\n\"); return 1; }\n\
+                 std::printf(\"ok\\n\");\n\
+                 return 0;\n\
+             }\n",
+        );
+        repo
+    }
+
+    fn argv(args: &[&str]) -> Vec<String> {
+        args.iter().map(|s| s.to_string()).collect()
+    }
+
+    /// Fail loudly when a required external tool is missing.
+    ///
+    /// A silently-skipped test is indistinguishable from a passing one, so
+    /// this names the missing tool instead of `return`ing early.
+    fn require_tool(tool: &str) {
+        let found = std::env::var_os("PATH")
+            .is_some_and(|paths| std::env::split_paths(&paths).any(|dir| dir.join(tool).is_file()));
+        assert!(
+            found,
+            "{tool} not found on PATH: install a C++ toolchain (cmake + a C++ \
+             compiler) to run the C++ gate tests"
+        );
+    }
+
+    fn cmake_case(repo: &TempRepo) -> Case {
+        let toml = "\
+            user_input = \"probe\"\n\
+            configure_command = [\"cmake\", \"-B\", \"build\"]\n\
+            build_command = [\"cmake\", \"--build\", \"build\"]\n\
+            test_command = [\"ctest\", \"--test-dir\", \"build\", \"--output-on-failure\"]\n\
+            [[assertions]]\n\
+            type = \"build_succeeds\"\n";
+        let mut case: Case = toml::from_str(toml).expect("parse cmake case");
+        case.case_dir = repo.path().to_path_buf();
+        case
+    }
+
+    /// Evaluate a single assertion against an empty log.
+    async fn eval(case: &Case, assertion: &Assertion, repo: Option<&Path>) -> AssertionResult {
+        evaluate_one(assertion, case, &[], repo, Duration::from_secs(120)).await
+    }
+
+    // 1
+    #[tokio::test]
+    async fn build_succeeds_defaults_to_cargo_check() {
+        require_tool("cargo");
+        let repo = rust_repo();
+        let toml = "\
+            user_input = \"probe\"\n\
+            [[assertions]]\n\
+            type = \"build_succeeds\"\n";
+        let case: Case = toml::from_str(toml).expect("parse");
+        let result = eval(&case, &Assertion::BuildSucceeds, Some(repo.path())).await;
+        assert!(result.passed, "detail: {}", result.detail);
+        assert!(
+            result.detail.contains("build exited 0"),
+            "{}",
+            result.detail
+        );
+    }
+
+    // 2
+    #[tokio::test]
+    async fn build_succeeds_uses_the_case_build_command() {
+        require_tool("cmake");
+        let repo = cmake_repo();
+        let case = cmake_case(&repo);
+        let result = eval(&case, &Assertion::BuildSucceeds, Some(repo.path())).await;
+        assert!(result.passed, "detail: {}", result.detail);
+    }
+
+    // 3
+    #[tokio::test]
+    async fn build_succeeds_fails_with_compiler_output() {
+        require_tool("cmake");
+        let repo = cmake_repo();
+        // Deliberate C++ error: a missing semicolon, which clang++/g++ report
+        // with the source text and the expected token.
+        repo.write("src/foo.cpp", "int main() { int x = 1 return 0; }\n");
+        let case = cmake_case(&repo);
+        let result = eval(&case, &Assertion::BuildSucceeds, Some(repo.path())).await;
+        assert!(!result.passed, "expected failure, got {}", result.detail);
+        assert!(
+            result.detail.contains("error"),
+            "failure must carry the compiler diagnostic, got: {}",
+            result.detail
+        );
+        assert!(
+            !result.detail.trim_end().ends_with("exit code 1"),
+            "failure must not be a bare exit code: {}",
+            result.detail
+        );
+    }
+
+    // 4
+    #[tokio::test]
+    async fn configure_failure_skips_the_build_step() {
+        require_tool("cmake");
+        let repo = cmake_repo();
+        let toml = "\
+            user_input = \"probe\"\n\
+            configure_command = [\"cmake\", \"-B\", \"build\", \"-DSOME_UNKNOWN_OPTION=1\", \"--bad-flag\"]\n\
+            build_command = [\"cmake\", \"--build\", \"build\"]\n\
+            [[assertions]]\n\
+            type = \"build_succeeds\"\n";
+        let mut case: Case = toml::from_str(toml).expect("parse");
+        case.case_dir = repo.path().to_path_buf();
+        let result = eval(&case, &Assertion::BuildSucceeds, Some(repo.path())).await;
+        assert!(!result.passed);
+        assert!(
+            result.detail.contains("configure"),
+            "diagnostic must name configure, not build: {}",
+            result.detail
+        );
+        assert!(
+            !result.detail.contains("build failed"),
+            "build step must be skipped after a configure failure: {}",
+            result.detail
+        );
+    }
+
+    // 5
+    #[tokio::test]
+    async fn tests_pass_uses_the_case_test_command() {
+        require_tool("cmake");
+        let repo = cmake_repo();
+        let case = cmake_case(&repo);
+        // The test command needs a configured build tree.
+        let build = eval(&case, &Assertion::BuildSucceeds, Some(repo.path())).await;
+        assert!(build.passed, "setup build failed: {}", build.detail);
+        let result = eval(&case, &Assertion::TestsPass, Some(repo.path())).await;
+        assert!(result.passed, "detail: {}", result.detail);
+    }
+
+    // 6
+    #[tokio::test]
+    async fn tests_pass_fails_when_a_test_fails() {
+        require_tool("cmake");
+        let repo = cmake_repo();
+        // The test binary now exits non-zero, so ctest reports a failure.
+        repo.write(
+            "src/foo.cpp",
+            "#include <cstdio>\n\
+             int main() { std::fprintf(stderr, \"deliberate test failure\\n\"); return 3; }\n",
+        );
+        let case = cmake_case(&repo);
+        let build = eval(&case, &Assertion::BuildSucceeds, Some(repo.path())).await;
+        assert!(build.passed, "setup build failed: {}", build.detail);
+        let result = eval(&case, &Assertion::TestsPass, Some(repo.path())).await;
+        assert!(!result.passed, "expected failure, got {}", result.detail);
+        assert!(
+            result.detail.contains("deliberate test failure") || result.detail.contains("Failed"),
+            "test output must be surfaced, got: {}",
+            result.detail
+        );
+    }
+
+    // 7
+    #[test]
+    fn clippy_clean_still_parses_as_the_cargo_lint_gate() {
+        let toml = "\
+            user_input = \"probe\"\n\
+            [[assertions]]\n\
+            type = \"clippy_clean\"\n";
+        let case: Case = toml::from_str(toml).expect("clippy_clean must still parse");
+        assert_eq!(case.assertions.len(), 1);
+        assert!(
+            matches!(case.assertions[0], Assertion::LintClean),
+            "alias must map to LintClean"
+        );
+    }
+
+    #[test]
+    fn lint_clean_spelling_parses_too() {
+        let toml = "\
+            user_input = \"probe\"\n\
+            [[assertions]]\n\
+            type = \"lint_clean\"\n";
+        let case: Case = toml::from_str(toml).expect("lint_clean must parse");
+        assert!(matches!(case.assertions[0], Assertion::LintClean));
+    }
+
+    // 8
+    #[tokio::test]
+    async fn lint_clean_without_lint_command_is_a_configuration_error() {
+        let repo = cmake_repo();
+        let case = cmake_case(&repo);
+        let result = eval(&case, &Assertion::LintClean, Some(repo.path())).await;
+        assert!(
+            !result.passed,
+            "unconfigured lint gate must fail, not pass silently: {}",
+            result.detail
+        );
+        assert!(
+            result.detail.contains("lint_command"),
+            "message must name the missing field: {}",
+            result.detail
+        );
+    }
+
+    // 9
+    #[tokio::test]
+    async fn lint_clean_uses_the_case_lint_command() {
+        let repo = cmake_repo();
+        let ok = "\
+            user_input = \"probe\"\n\
+            lint_command = [\"true\"]\n\
+            [[assertions]]\n\
+            type = \"lint_clean\"\n";
+        let mut case: Case = toml::from_str(ok).expect("parse");
+        case.case_dir = repo.path().to_path_buf();
+        let result = eval(&case, &Assertion::LintClean, Some(repo.path())).await;
+        assert!(
+            result.passed,
+            "lint_command that exits 0 must pass: {}",
+            result.detail
+        );
+
+        let bad = "\
+            user_input = \"probe\"\n\
+            lint_command = [\"false\"]\n\
+            [[assertions]]\n\
+            type = \"lint_clean\"\n";
+        let mut case: Case = toml::from_str(bad).expect("parse");
+        case.case_dir = repo.path().to_path_buf();
+        let result = eval(&case, &Assertion::LintClean, Some(repo.path())).await;
+        assert!(!result.passed, "lint_command that exits 1 must fail");
+    }
+
+    // 10
+    #[tokio::test]
+    async fn gate_commands_run_in_the_case_repo() {
+        let repo = cmake_repo();
+        // Write a marker into the repo; the gate must observe it relative to
+        // the repo, proving cwd is the case repo and not the runner's cwd.
+        repo.write("marker.txt", "present\n");
+        let test = "\
+            user_input = \"probe\"\n\
+            test_command = [\"test\", \"-f\", \"marker.txt\"]\n\
+            [[assertions]]\n\
+            type = \"tests_pass\"\n";
+        let mut case: Case = toml::from_str(test).expect("parse");
+        case.case_dir = repo.path().to_path_buf();
+        let result = eval(&case, &Assertion::TestsPass, Some(repo.path())).await;
+        assert!(
+            result.passed,
+            "gate must run with cwd = case repo: {}",
+            result.detail
+        );
+
+        // The same command from the wrong cwd would not find the marker.
+        let elsewhere = TempRepo::new("eval-elsewhere");
+        let result = eval(&case, &Assertion::TestsPass, Some(elsewhere.path())).await;
+        assert!(
+            !result.passed,
+            "sanity: the marker is absent from an unrelated directory"
+        );
+    }
+
+    // 11
+    #[test]
+    fn case_toml_parses_the_new_optional_fields() {
+        let full = "\
+            user_input = \"probe\"\n\
+            configure_command = [\"cmake\", \"-B\", \"build\"]\n\
+            build_command = [\"cmake\", \"--build\", \"build\"]\n\
+            test_command = [\"ctest\", \"--test-dir\", \"build\", \"--output-on-failure\"]\n\
+            lint_command = [\"clang-tidy\", \"-p\", \"build\", \"src/foo.cpp\"]\n\
+            [[assertions]]\n\
+            type = \"build_succeeds\"\n";
+        let case: Case = toml::from_str(full).expect("parse full case");
+        assert_eq!(
+            case.build_command,
+            Some(argv(&["cmake", "--build", "build"]))
+        );
+        assert_eq!(
+            case.test_command,
+            Some(argv(&[
+                "ctest",
+                "--test-dir",
+                "build",
+                "--output-on-failure"
+            ]))
+        );
+        assert_eq!(
+            case.lint_command,
+            Some(argv(&["clang-tidy", "-p", "build", "src/foo.cpp"]))
+        );
+        assert_eq!(
+            case.configure_command,
+            Some(argv(&["cmake", "-B", "build"]))
+        );
+
+        let bare = "\
+            user_input = \"probe\"\n\
+            [[assertions]]\n\
+            type = \"no_error\"\n";
+        let case: Case = toml::from_str(bare).expect("parse bare case");
+        assert!(case.build_command.is_none());
+        assert!(case.test_command.is_none());
+        assert!(case.lint_command.is_none());
+        assert!(case.configure_command.is_none());
     }
 }

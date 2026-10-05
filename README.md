@@ -94,6 +94,9 @@ scripts/                # self-improve.sh — minimal external self-improvement 
   live LLM, assert tool calls / text content / error-free completion /
   latency / token budgets against the session log. Separate from
   `cargo test` because it needs API keys.
+  * Toolchain gates (`build_succeeds`, `tests_pass`, `lint_clean`) run
+    per-case commands, so a C++ (CMake) project is verified as readily as a
+    Cargo one. See "Eval runner" below.
   * Also `--list`, `--case NAME`, `--keep-sessions`, and `--timeout SECS`.
   * MCP servers are **not** yet supported here: passing `--mcp-command`
     fails with "MCP support in eval runner not yet implemented".
@@ -254,9 +257,22 @@ The runner creates a temp session, runs the prompt against a live LLM, then
 checks each assertion against the `events.jsonl` log. Assertion types:
 `tool_called`, `tool_not_called`, `text_contains`, `text_not_contains`,
 `text_regex`, `no_error`, `max_turns`, `latency_ms`, `token_budget`,
-`build_succeeds`, `tests_pass`, `clippy_clean`, `no_diff`.
-The last four run `cargo`/`git` gates in the case's repo and need a `repo`
-(or `fixture`) field in `case.toml`.
+`build_succeeds`, `tests_pass`, `lint_clean`, `no_diff`.
+
+The last four run commands in the case's repo and need a `repo` (or
+`fixture`) field in `case.toml`. `build_succeeds`, `tests_pass`, and
+`lint_clean` are toolchain-neutral names whose implementations come from
+per-case command fields; `no_diff` is always `git status --porcelain`.
+
+| assertion | default command | notes |
+|---|---|---|
+| `build_succeeds` | `cargo check` | Override with `build_command`. Runs `configure_command` first when present. |
+| `tests_pass` | `cargo test` | Override with `test_command`. |
+| `lint_clean` | `cargo clippy -- -D warnings` | Override with `lint_command`. **For a non-Cargo case there is no default**: `lint_clean` without a `lint_command` fails as a configuration error rather than passing silently. There is no canonical C++ equivalent of `clippy` (`clang-tidy` needs a `compile_commands.json`), so most C++ cases omit this assertion rather than fake it. |
+| `no_diff` | `git status --porcelain` | Working tree must match HEAD. |
+
+`clippy_clean` is still accepted as a deprecated alias for `lint_clean`
+(implying the `cargo clippy` default), so existing cases keep working.
 
 Tools are rig `PortableDynamicTool`s: name + description + JSON schema + an
 async callback over raw `serde_json::Value`. MCP tools get wrapped into this
@@ -265,6 +281,23 @@ shape, dispatching over `tools/call` on the connected service.
 Case fields: `user_input` (required), `assertions` (required), plus the
 optional `model`, `system_prompt`, `source_tree`, `write_tools`, `repo`, and
 `fixture`. `repo` is resolved relative to the case directory.
+
+Four optional command fields parameterise the toolchain gates. Each is an
+argv vector, not a shell string — no shell is involved, so no metacharacters
+are interpreted — and paths must be relative to the resolved `repo`:
+
+```toml
+configure_command = ["cmake", "-B", "build"]
+build_command = ["cmake", "--build", "build"]
+test_command = ["ctest", "--test-dir", "build", "--output-on-failure"]
+lint_command = ["clang-tidy", "-p", "build", "src/foo.cpp"]
+```
+
+Cases that name none of them behave exactly as before (cargo defaults).
+`evals/cases/006-cpp-build/` is a worked C++ example. Gate commands bypass the
+agent's command allowlist: they are authored by the case author, not chosen
+by the model, so the eval verifies the artifact rather than the agent's
+process.
 
 The library is model-agnostic: `Agent<M: CompletionModel>` works with rig's
 `MockCompletionModel` in tests and any OpenAI-compatible chat-completions
@@ -279,6 +312,12 @@ endpoint in production (see `connect_chat_model`).
   MCP `mcp_echo` round trip ✔, streaming output ✔, session replay across
   restarts ✔, eval runner against live model ✔
 - Workspace version 0.3.0
+
+The eval runner's toolchain gates are covered by `cargo test -p hanihi-eval`
+with no model in the loop: the assertion engine is exercised directly against
+temp fixtures (Cargo and CMake). The C++ path needs `cmake` and a C++
+compiler on `PATH`; those tests fail loudly, naming the missing tool, rather
+than skipping silently.
 
 ## Testing
 

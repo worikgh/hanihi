@@ -1,0 +1,40 @@
+# Agent edits a C++ (CMake) project and the gates verify the artifact.
+#
+# This case is the C++ counterpart of `004-self-patch`: the agent modifies a
+# real CMake project and the eval proves the result still compiles and still
+# passes its tests. The fixture is a working CMake project with a library
+# (`foo`), a test executable (`foo_test`), and one registered ctest test.
+#
+# Unlike a Rust case, the build and test commands are supplied per case:
+# `build_succeeds` runs `configure_command` then `build_command`, and
+# `tests_pass` runs `test_command`. There is deliberately no `lint_command`:
+# `clang-tidy` needs a `compile_commands.json` from a successful configure and
+# there is no canonical C++ equivalent of `clippy`, so `lint_clean` is left
+# out of this case rather than faked.
+#
+# Requires `cmake` and a C++ compiler on PATH. The commands run with cwd set
+# to the resolved `repo`, so they must be relative.
+#
+# The `fixture/` subdirectory is a self-contained CMake project, so this case
+# uses `repo` rather than `fixture = true` (which synthesises a *Rust* crate).
+repo = "fixture"
+write_tools = true
+source_tree = true
+configure_command = ["cmake", "-B", "build"]
+build_command = ["cmake", "--build", "build"]
+test_command = ["ctest", "--test-dir", "build", "--output-on-failure"]
+
+user_input = "Add a function `int sub(int, int)` to the C++ library in this repository (declare it in include/foo.hpp and define it in src/foo.cpp), then make sure the project still builds and its tests still pass."
+
+[[assertions]]
+type = "tool_called"
+name = "apply_patch"
+
+[[assertions]]
+type = "build_succeeds"
+
+[[assertions]]
+type = "tests_pass"
+
+[[assertions]]
+type = "no_error"
