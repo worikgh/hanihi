@@ -576,7 +576,7 @@ impl<M: CompletionModel> Agent<M> {
     /// one drives. Returning an empty `TurnSummary` here would be exactly the
     /// silent-success defect that motivated the stub.
     #[deprecated(note = "the non-streaming agent loop is unused; use `run_streaming`. \
-                See plans/029-tool-failure-recovery.md")]
+		See plans/029-tool-failure-recovery.md")]
     pub async fn run(&mut self, user_input: &str) -> Result<TurnSummary, AgentError> {
         let _ = user_input;
         Err(AgentError::Deprecated {
@@ -1282,7 +1282,7 @@ impl rig::completion::CompletionModel for SplitScriptModel {
     type Response =
         <rig::test_utils::MockCompletionModel as rig::completion::CompletionModel>::Response;
     type StreamingResponse =
-        <rig::test_utils::MockCompletionModel as rig::completion::CompletionModel>::StreamingResponse;
+	<rig::test_utils::MockCompletionModel as rig::completion::CompletionModel>::StreamingResponse;
     type Client =
         <rig::test_utils::MockCompletionModel as rig::completion::CompletionModel>::Client;
 
@@ -1684,8 +1684,8 @@ mod tests {
             "always_fails",
             "A tool whose execution always errors.",
             serde_json::json!({
-                "type": "object",
-                "properties": {},
+            "type": "object",
+            "properties": {},
             }),
             move |_args: serde_json::Value| {
                 Box::pin(async move {
@@ -1747,9 +1747,9 @@ mod tests {
         };
         assert!(
             matches!(
-                err,
-                AgentError::RepeatedToolFailure { ref name, count }
-                    if name == "always_fails" && count == REPEATED_FAILURE_LIMIT
+            err,
+            AgentError::RepeatedToolFailure { ref name, count }
+                if name == "always_fails" && count == REPEATED_FAILURE_LIMIT
             ),
             "got {err:?}"
         );
