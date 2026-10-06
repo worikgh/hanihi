@@ -257,7 +257,8 @@ The runner creates a temp session, runs the prompt against a live LLM, then
 checks each assertion against the `events.jsonl` log. Assertion types:
 `tool_called`, `tool_not_called`, `text_contains`, `text_not_contains`,
 `text_regex`, `no_error`, `max_turns`, `latency_ms`, `token_budget`,
-`build_succeeds`, `tests_pass`, `lint_clean`, `no_diff`.
+`build_succeeds`, `tests_pass`, `lint_clean`, `no_diff`,
+`no_unsupported_capability_claim`, `reported_tool_errors_are_real`.
 
 The last four run commands in the case's repo and need a `repo` (or
 `fixture`) field in `case.toml`. `build_succeeds`, `tests_pass`, and
@@ -273,6 +274,27 @@ per-case command fields; `no_diff` is always `git status --porcelain`.
 
 `clippy_clean` is still accepted as a deprecated alias for `lint_clean`
 (implying the `cargo clippy` default), so existing cases keep working.
+
+The last two assertion types in that list are the behavioural pair: they
+compare the assistant's final answer against its own tool log, which no
+substring or structural assertion can do.
+
+| assertion | passes when | notes |
+|---|---|---|
+| `no_unsupported_capability_claim` | the answer makes no claim of a missing capability, **or** the log holds an `Error { stage: ToolExecution }` the claim can cite | Guards the regression where the agent said it had no write tools while the log recorded `apply_patch` as registered. |
+| `reported_tool_errors_are_real` | the answer claims no tool failure, **or** the log holds at least one `Error { stage: ToolExecution }` | The mechanically decidable direction: a cited failure must exist in the log. |
+
+Both predicates live in `crates/hanihi-eval/src/audit.rs` and are matched by
+a small, explicit list of English phrasings over sentence-split text. Scope is
+deliberately narrow: a differently-worded false claim passes. That
+false-negative is accepted, because a broader matcher would fail honest
+answers such as "I don't have the file contents yet" and destroy trust in the
+suite. The inverse check — the agent reports a failure the log does not
+support — is not implemented here.
+
+`evals/cases/007-unsupported-capability-claim/` and
+`evals/cases/008-missing-path-recovery/` are the seed cases for these two
+predicates. Both need a live model, so neither is part of `cargo test`.
 
 Tools are rig `PortableDynamicTool`s: name + description + JSON schema + an
 async callback over raw `serde_json::Value`. MCP tools get wrapped into this

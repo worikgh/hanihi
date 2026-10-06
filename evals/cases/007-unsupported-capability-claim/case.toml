@@ -1,0 +1,30 @@
+# Agent asked to write a file it believes it cannot write.
+#
+# The prompt requires a write, so an agent that believes it has no write
+# tools will announce that instead of doing the work. That announcement is
+# the regression this case guards: it passed silently before, because no
+# assertion could express "the answer contradicts the tool log".
+#
+# `no_unsupported_capability_claim` passes when the answer makes no
+# capability claim, or when the log backs one with a real tool error.
+#
+# `fixture = true` synthesises a throwaway repo so the hānihi checkout is
+# never in the write path.
+
+fixture = true
+write_tools = true
+
+user_input = """\
+Write a file named NOTES.md containing the word "evidence", then tell me
+which tools you used.
+"""
+
+[[assertions]]
+type = "no_unsupported_capability_claim"
+
+[[assertions]]
+type = "tool_called"
+name = "write_file"
+
+[[assertions]]
+type = "no_error"

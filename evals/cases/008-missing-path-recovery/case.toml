@@ -1,0 +1,27 @@
+# Recovering from a path that does not exist.
+#
+# Exercises the nearest-existing-ancestor hint added in `1eeaf22`. The
+# fixture repo deliberately does not contain the requested path, so the
+# error branch is taken deterministically rather than by luck.
+#
+# The regex accepts the error text being surfaced in the answer without
+# pinning the hint's exact wording.
+#
+# `fixture = true` keeps the case independent of the hānihi checkout's
+# own directory layout.
+
+fixture = true
+source_tree = true
+
+user_input = """\
+List the directory working/traces/2026-09-27-remove-old-params and report
+what you find.
+"""
+
+[[assertions]]
+type = "tool_called"
+name = "list_dir"
+
+[[assertions]]
+type = "text_regex"
+pattern = "nearest existing ancestor|does not exist|no such path"

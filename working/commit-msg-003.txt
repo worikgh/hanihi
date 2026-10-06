@@ -1,0 +1,46 @@
+Assert the answer against the agent's own tool log
+
+Every assertion the eval runner had was a substring or regex test on the
+final answer, or a structural count over the log. None could express the
+property that matters most in a tool-calling harness: the agent said
+something its own tool log contradicts.
+
+The motivating session had the agent assert it had no write tools while
+the log recorded sixteen registered tools including `apply_patch`. It
+then spent several turns arguing instead of writing the file it had been
+asked for. The session ran to completion and the whole suite passed.
+Nothing in the harness could have caught it.
+
+Two predicate assertions close that gap. `no_unsupported_capability_claim`
+fails when the answer claims a missing capability and the log holds no tool
+error to ground it. `reported_tool_errors_are_real` is the mechanically
+decidable direction: a failure named in the answer must correspond to an
+`Error { stage: ToolExecution }` entry. Both are pure functions over the
+parsed log, so both are covered by `cargo test` with hand-built inputs and
+no model in the loop.
+
+The predicates live in a new `audit` module rather than `main.rs`, which is
+no longer small and where the part most needing isolated tests would be
+buried. Matching is deliberately narrow: sentence-split text, an explicit
+list of English phrasings, and case folding. A differently-worded false
+claim passes. That false negative is the accepted cost, because a broader
+matcher would fail honest answers such as "I don't have the file contents
+yet" and a suite that cries wolf is worse than one with a known blind spot.
+A unit test pins all three phrase lists non-empty, since an empty list
+would make the matcher return `[]` and the assertion pass unconditionally.
+
+An unrecognised assertion tag must keep failing at case-load time, so the
+enum gains no catch-all variant and a test holds that line: a typo has to
+be an error, never a silently disabled assertion.
+
+`008-missing-path-recovery` was red-checked before being accepted. Reverting
+the `list_dir` nearest-ancestor hint made the pinned core test fail with
+`no such path: working/traces/2026-09-27-remove-old-params`, which is the
+un-hinted text the case's regex rejects. The hint was restored and the test
+went green again. The live-model run of both seed cases is unverified: no
+API key is present in this environment, so neither case was executed and
+neither is claimed to pass.
+
+`README.md` documents both assertion types and both cases.
+
+Hānihi
