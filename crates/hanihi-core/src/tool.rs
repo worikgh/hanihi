@@ -604,6 +604,40 @@ fn check_command_argv_mode(argv: &[String], mode: CommandMode) -> Result<(), Str
 const GIT_COMMIT_AMEND_OK: &[&str] = &["--amend", "--no-edit"];
 /// `git commit` message flags; each consumes the following argv element.
 const GIT_COMMIT_MESSAGE_FLAGS: &[&str] = &["-m", "--message"];
+/// `git commit` message-from-file flags; each consumes the following element.
+const GIT_COMMIT_FILE_FLAGS: &[&str] = &["-F", "--file"];
+
+/// The directory the harness owns for its own stray writes: traces, session
+/// logs, and hand-written commit-message files.
+///
+/// A message file must live here. `git commit -F` reads the path from inside
+/// the repository, so bounding it is what stops `-F /etc/passwd` (arbitrary
+/// read) and `-F ../secrets` (escape from the tree).
+const WORKING_DIR: &str = "working";
+
+/// Paths the agent may never write, relative to the repo root.
+///
+/// Duplicated from `write.rs`'s `is_protected` rather than shared: that
+/// function is private to the write-tools module and is stated in terms of
+/// what may be *written*, while this one guards a path git will *read*. The
+/// two policies agree today; if they must diverge, they can.
+fn is_protected_repo_path(rel: &str) -> bool {
+    rel == ".ignore" || rel == ".gitignore" || rel.starts_with(".git/") || rel == ".git"
+}
+
+/// True when `arg` is `working` or a relative path whose first component is
+/// `working`.
+///
+/// Mirrors [`is_under_build_dir`]: the path is inspected as components, so
+/// `working/../../etc` is rejected before any filesystem access.
+fn is_under_working_dir(arg: &str) -> bool {
+    let mut components = Path::new(arg).components();
+    match components.next() {
+        Some(Component::Normal(first)) if first == WORKING_DIR => {}
+        _ => return false,
+    }
+    components.all(|component| matches!(component, Component::Normal(_)))
+}
 
 // ── cmake / ctest / compilers ────────────────────────────────────
 
@@ -998,9 +1032,127 @@ fn check_git_commit(argv: &[String], mode: CommandMode) -> Result<(), String> {
         return Err("git commit is restricted to write mode".into());
     }
     let args = &argv[2..];
+
+    // `-m` and `-F` are mutually exclusive to git; refuse the combination
+    // here so the caller gets a named rule instead of git's own message.
+    let message_flag = args
+        .iter()
+        .any(|a| GIT_COMMIT_MESSAGE_FLAGS.contains(&a.as_str()) || arg_is_flag(a, "--message"));
+    let file_flag = args
+        .iter()
+        .any(|a| GIT_COMMIT_FILE_FLAGS.contains(&a.as_str()) || arg_is_flag(a, "--file"));
+    if message_flag && file_flag {
+        return Err(
+            "git commit -m/--message and -F/--file are mutually exclusive; use -F for a \
+             multi-line message"
+                .into(),
+        );
+    }
+
+    check_commit_message_args(args)?;
+
     if args.iter().any(|a| a == "--amend") {
         check_commit_amend_args(args)?;
     }
+    Ok(())
+}
+
+/// Validate every `-m`/`--message` and `-F`/`--file` value in a `git commit`
+/// argv.
+///
+/// The harness splits its input on whitespace and does no quote processing,
+/// so a caller who writes `-m "a b"` sends `"a`, `b"` and git reports a
+/// baffling pathspec error. A value that is exactly a quote character (or
+/// empty) is the signature of that mistake, so it is refused with guidance.
+/// The check is deliberately narrow: a legitimate one-token message such as
+/// `it's` is untouched, because a matcher broad enough to catch a typed
+/// sentence would also refuse valid messages.
+fn check_commit_message_args(args: &[String]) -> Result<(), String> {
+    let mut iter = args.iter().peekable();
+    while let Some(a) = iter.next() {
+        let a = a.as_str();
+
+        if GIT_COMMIT_FILE_FLAGS.contains(&a) {
+            let Some(value) = iter.next().map(String::as_str) else {
+                return Err(
+                    "git commit -F/--file requires a file path (e.g. -F working/commit-msg.txt)"
+                        .into(),
+                );
+            };
+            check_commit_message_file(value)?;
+            continue;
+        }
+
+        if let Some(value) = a.strip_prefix("--file=") {
+            check_commit_message_file(value)?;
+            continue;
+        }
+
+        if GIT_COMMIT_MESSAGE_FLAGS.contains(&a) || arg_is_flag(a, "--message") {
+            // A joined `--message=value` carries its own value.
+            let value = match a.strip_prefix("--message=") {
+                Some(value) => Some(value.to_string()),
+                None => iter.next().cloned(),
+            };
+            if let Some(value) = value
+                && (value.is_empty() || value == "\"" || value == "'")
+            {
+                return Err(format!(
+                    "git commit message '{value}' is not usable: the harness does not process \
+                     quotes and splits the command on whitespace, so a multi-line message must \
+                     be passed with -F <path> (write the message with write_file first)"
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Validate the path given to `git commit -F/--file`.
+///
+/// git reads this file from inside the repository, so the content channel is
+/// the path, not argv. An absolute path would read an arbitrary file
+/// (`-F /etc/passwd`), and a `..` component would leave the tree
+/// (`-F ../secrets`); both are refused. The path must lie under `working/`,
+/// the directory the harness already owns for stray writes.
+fn check_commit_message_file(value: &str) -> Result<(), String> {
+    if value == "-" {
+        return Err(
+            "git commit -F - is not allowed: stdin is not a file (the harness sets stdin \
+             to /dev/null); write the message to working/<name>.txt first"
+                .into(),
+        );
+    }
+
+    // Inspect the path as components, so `working/../../etc/motd` cannot slip
+    // through a string-prefix check. Mirrors the input-operand rule in
+    // `check_compiler_argv` and the root-scoping rule in `list_dir`.
+    if Path::new(value).components().any(|component| {
+        matches!(
+            component,
+            Component::ParentDir | Component::RootDir | Component::Prefix(_)
+        )
+    }) {
+        return Err(format!(
+            "git commit message file '{value}' is not allowed (the path must be relative and \
+             must stay inside the repository, under working/)"
+        ));
+    }
+
+    if is_protected_repo_path(value) {
+        return Err(format!(
+            "git commit message file '{value}' is not allowed (the path is protected); \
+             put the message under working/"
+        ));
+    }
+
+    if !is_under_working_dir(value) {
+        return Err(format!(
+            "git commit message file '{value}' is not allowed (the message file must live \
+             under working/, e.g. working/commit-msg.txt)"
+        ));
+    }
+
     Ok(())
 }
 
@@ -1008,14 +1160,26 @@ fn check_git_commit(argv: &[String], mode: CommandMode) -> Result<(), String> {
 fn check_commit_amend_args(args: &[String]) -> Result<(), String> {
     let mut iter = args.iter().peekable();
     while let Some(a) = iter.next() {
-        if GIT_COMMIT_MESSAGE_FLAGS.contains(&a.as_str()) {
+        let a = a.as_str();
+
+        if GIT_COMMIT_MESSAGE_FLAGS.contains(&a) {
             iter.next();
             continue;
         }
         if arg_is_flag(a, "--message") {
             continue;
         }
-        if GIT_COMMIT_AMEND_OK.contains(&a.as_str()) {
+        // `-F`/`--file` is admitted by `check_commit_message_args`, which has
+        // already bounded the path. Consume its value here so it is not read
+        // as a stray argument.
+        if GIT_COMMIT_FILE_FLAGS.contains(&a) {
+            iter.next();
+            continue;
+        }
+        if arg_is_flag(a, "--file") {
+            continue;
+        }
+        if GIT_COMMIT_AMEND_OK.contains(&a) {
             continue;
         }
         return Err(format!("git commit --amend does not allow argument '{a}'"));
@@ -2262,6 +2426,249 @@ mod tests {
             .await
             .expect_err("git push must be denied");
         assert!(err.to_string().contains("not allowed"), "got: {err}");
+        std::fs::remove_dir_all(&repo).unwrap_or(());
+    }
+
+    // ── commit messages from a file ──
+    //
+    // `run_command` splits its input on whitespace and does no quote
+    // processing, so a multi-word `-m` reaches git as several argv elements
+    // and git reads the extras as pathspecs. A path is one token, so `-F`
+    // carries a multi-line message through unharmed.
+
+    #[test]
+    fn command_allowlist_accepts_commit_message_from_file() {
+        let cases = [
+            argv(&["git", "commit", "-F", "working/commit-msg.txt"]),
+            argv(&["git", "commit", "--file", "working/commit-msg.txt"]),
+            argv(&["git", "commit", "-F", "working/msg.txt", "--amend"]),
+            argv(&["git", "commit", "--amend", "-F", "working/msg.txt"]),
+        ];
+        for cmd in cases {
+            check_command_argv_mode(&cmd, CommandMode::Write)
+                .unwrap_or_else(|e| panic!("write mode must allow {cmd:?}: {e}"));
+        }
+    }
+
+    #[test]
+    fn command_allowlist_rejects_absolute_message_file() {
+        let cases = [
+            argv(&["git", "commit", "-F", "/tmp/msg.txt"]),
+            argv(&["git", "commit", "--file", "/etc/passwd"]),
+        ];
+        for cmd in cases {
+            let err = check_command_argv_mode(&cmd, CommandMode::Write)
+                .expect_err(&format!("absolute message file must be refused: {cmd:?}"));
+            assert!(
+                err.contains("working/"),
+                "refusal should name the permitted location, got: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn command_allowlist_rejects_escaping_message_file() {
+        let cases = [
+            argv(&["git", "commit", "-F", "../msg.txt"]),
+            argv(&["git", "commit", "-F", "working/../../msg.txt"]),
+            argv(&["git", "commit", "--file", "../secrets"]),
+        ];
+        for cmd in cases {
+            let err = check_command_argv_mode(&cmd, CommandMode::Write)
+                .expect_err(&format!("escaping message file must be refused: {cmd:?}"));
+            assert!(err.contains("working/"), "got: {err}");
+        }
+    }
+
+    #[test]
+    fn command_allowlist_rejects_protected_message_file() {
+        let cases = [
+            argv(&["git", "commit", "-F", ".ignore"]),
+            argv(&["git", "commit", "-F", ".gitignore"]),
+            argv(&["git", "commit", "-F", ".git/config"]),
+        ];
+        for cmd in cases {
+            let err = check_command_argv_mode(&cmd, CommandMode::Write)
+                .expect_err(&format!("protected message file must be refused: {cmd:?}"));
+            assert!(
+                err.contains("working/") || err.contains("protected"),
+                "got: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn command_allowlist_requires_a_file_after_dash_f() {
+        for cmd in [
+            argv(&["git", "commit", "-F"]),
+            argv(&["git", "commit", "--file"]),
+        ] {
+            let err = check_command_argv_mode(&cmd, CommandMode::Write)
+                .expect_err(&format!("-F with no path must be refused: {cmd:?}"));
+            assert!(
+                err.contains("requires a file path"),
+                "the refusal must name the missing argument, got: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn command_allowlist_rejects_message_flag_and_file_together() {
+        let cases = [
+            argv(&["git", "commit", "-m", "x", "-F", "working/msg.txt"]),
+            argv(&["git", "commit", "-F", "working/msg.txt", "-m", "x"]),
+            argv(&[
+                "git",
+                "commit",
+                "--message",
+                "x",
+                "--file",
+                "working/msg.txt",
+            ]),
+        ];
+        for cmd in cases {
+            let err = check_command_argv_mode(&cmd, CommandMode::Write)
+                .expect_err(&format!("-m with -F must be refused: {cmd:?}"));
+            assert!(
+                err.contains("mutually exclusive"),
+                "the refusal must name the conflict, got: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn command_allowlist_rejects_stdin_message_file() {
+        for cmd in [
+            argv(&["git", "commit", "-F", "-"]),
+            argv(&["git", "commit", "--file", "-"]),
+        ] {
+            let err = check_command_argv_mode(&cmd, CommandMode::Write)
+                .expect_err(&format!("-F - must be refused: {cmd:?}"));
+            assert!(
+                err.contains("stdin"),
+                "the refusal must say stdin is not a file, got: {err}"
+            );
+        }
+    }
+
+    /// Every `git commit` shape admitted before `-F` existed must still be
+    /// admitted. The `-F` work extends the gate; it must not narrow it.
+    #[test]
+    fn command_allowlist_keeps_bare_and_message_commits() {
+        let cases = [
+            argv(&["git", "commit"]),
+            argv(&["git", "commit", "-m", "subject"]),
+            argv(&["git", "commit", "--message", "subject"]),
+            argv(&["git", "commit", "--amend"]),
+            argv(&["git", "commit", "--amend", "--no-edit"]),
+            argv(&["git", "commit", "--amend", "-m", "reword"]),
+            argv(&["git", "commit", "--amend", "--message", "reword"]),
+            argv(&["git", "commit", "--no-edit", "--amend"]),
+        ];
+        for cmd in cases {
+            check_command_argv_mode(&cmd, CommandMode::Write)
+                .unwrap_or_else(|e| panic!("must stay admitted {cmd:?}: {e}"));
+        }
+        // Read-only mode still refuses every commit shape.
+        for cmd in [
+            argv(&["git", "commit"]),
+            argv(&["git", "commit", "-F", "working/msg.txt"]),
+        ] {
+            assert!(
+                check_command_argv_mode(&cmd, CommandMode::ReadOnly).is_err(),
+                "read-only mode must deny: {cmd:?}"
+            );
+        }
+    }
+
+    /// A literal quote in an `-m` value is a positive sign that the caller
+    /// expected the harness to strip quotes. Refuse it with guidance toward
+    /// `-F` instead of letting git report a baffling pathspec error.
+    ///
+    /// Deliberately narrow: only a value that *is* a quote character is
+    /// refused, so a legitimate one-token message is never blocked.
+    #[test]
+    fn commit_with_a_literal_quote_in_message_is_refused_with_guidance() {
+        let cases = [
+            argv(&["git", "commit", "-m", "\""]),
+            argv(&["git", "commit", "-m", "'"]),
+            argv(&["git", "commit", "--message", "\""]),
+        ];
+        for cmd in cases {
+            let err = check_command_argv_mode(&cmd, CommandMode::Write)
+                .expect_err(&format!("quoted -m value must be refused: {cmd:?}"));
+            assert!(
+                err.contains("does not process quotes") && err.contains("-F"),
+                "the refusal must explain the limitation and name -F, got: {err}"
+            );
+        }
+
+        // An empty value is the same mistake and gets the same guidance.
+        let err = check_command_argv_mode(&argv(&["git", "commit", "-m", ""]), CommandMode::Write)
+            .expect_err("empty -m value must be refused");
+        assert!(err.contains("-F"), "got: {err}");
+
+        // A one-token message is untouched, even one containing a quote.
+        check_command_argv_mode(&argv(&["git", "commit", "-m", "it's"]), CommandMode::Write)
+            .expect("an ordinary one-token message must stay admitted");
+    }
+
+    /// The point of the whole plan: a message with a subject, a blank line, a
+    /// body, and a trailing line survives the round trip through `-F` with its
+    /// newlines intact. Verified by reading the message back from `git log`,
+    /// not by inspecting argv.
+    #[tokio::test]
+    async fn commit_message_from_file_lands_a_multi_line_message() {
+        let repo = git_repo();
+        std::fs::create_dir_all(repo.join("working")).unwrap();
+        let message = "Add a staged-text channel for commit messages\n\
+                       \n\
+                       The harness splits run_command on whitespace and does no quote\n\
+                       processing, so a multi-word -m arrives as several pathspecs.\n\
+                       \n\
+                       Hānihi\n";
+        std::fs::write(repo.join("working/commit-msg.txt"), message).unwrap();
+
+        let tree = Arc::new(SourceTree::open_at(&repo).expect("open repo"));
+        let tool = builtin_run_command_write(tree, repo.join("traces"));
+        std::fs::write(repo.join("src/extra.rs"), "// extra\n").unwrap();
+
+        let out = tool
+            .execute(serde_json::json!({ "command": "git add -A" }))
+            .await
+            .expect("add succeeds");
+        assert!(
+            out.render().contains("exit code: 0"),
+            "got: {}",
+            out.render()
+        );
+
+        let out = tool
+            .execute(serde_json::json!({
+                "command": "git commit -F working/commit-msg.txt"
+            }))
+            .await
+            .expect("commit succeeds");
+        assert!(
+            out.render().contains("exit code: 0"),
+            "got: {}",
+            out.render()
+        );
+
+        let shown = std::process::Command::new("git")
+            .args(["log", "-1", "--format=%B"])
+            .current_dir(&repo)
+            .output()
+            .expect("git log runs");
+        let body = String::from_utf8_lossy(&shown.stdout).into_owned();
+        assert!(
+            body.contains("Add a staged-text channel for commit messages\n\n"),
+            "subject and blank line must survive, got: {body:?}"
+        );
+        assert!(
+            body.contains("arrives as several pathspecs.\n\nHānihi"),
+            "body paragraphs and the closing line must keep their newlines, got: {body:?}"
+        );
         std::fs::remove_dir_all(&repo).unwrap_or(());
     }
 }
