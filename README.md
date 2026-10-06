@@ -208,6 +208,37 @@ refused with a "duplicate call skipped" note. Any successful `apply_patch` or
 `write_file` invalidates the cache, so writes are never presented with stale
 reads. The cache is cleared at the start of each turn.
 
+#### Turn-boundary self-audit
+
+At the end of every turn the harness checks the assistant's final text against
+the turn's own tool activity, and emits a `StreamEvent::SelfAudit` finding for
+each contradiction it can name. The count is carried on
+`TurnSummary::self_audit_findings`, and the CLI prints a warning line for it.
+The check is a **diagnostic**: it never fails or aborts a turn, so a heuristic
+can never kill a run.
+
+Two contradictions are detected, both from the phrase lists in
+`crates/hanihi-core/src/audit.rs`:
+
+| kind | detected when |
+|---|---|
+| `UnsupportedCapabilityClaim` | the turn's text negates a capability term (`write`, `tools`, `apply_patch`, `shell`, …) and the turn made no failing tool call |
+| `UnreportedToolError` | the turn's text claims a tool named in this turn failed, and that name is not among the turn's failures |
+
+The check is deliberately narrow — sentence-split text, an explicit English
+phrase list, case-folded — so it stays silent on honest prose such as "I don't
+have the file contents yet". A differently-worded false claim passes; that
+false negative is the accepted cost of an audit a reader will not learn to
+ignore. The same predicate is available off-line as the
+`no_unsupported_capability_claim` and `reported_tool_errors_are_real` eval
+assertions; the two phrase lists are copies of each other by design, and there
+is no compile-time link between the crates.
+
+Findings are **not** persisted: they are derivative of the `turn_complete`
+text and the `tool_execution` entries already in `events.jsonl`, so an
+off-line reader can re-derive them without a new log kind and without a
+schema bump. `SCHEMA_VERSION` therefore stays `2`.
+
 ### Sessions
 
 `SessionManager` owns a working directory (`./working` by default). Each

@@ -1,0 +1,60 @@
+Audit each turn against its own tool activity
+
+003 made the eval harness able to express "the agent said something its own
+tool log contradicts", but only off-line, on a recorded session. The same
+contradiction is visible live, inside the turn boundary, where the assembled
+text and the turn's own tool calls and failures are all in scope. This adds
+that runtime diagnostic.
+
+Two contradictions are detected, matching 003's two off-line predicates: a
+negated capability with no failing tool call to ground it, and a sentence
+naming a tool failure the turn never recorded. The phrase lists are copies of
+hanihi-eval's audit.rs rather than new ones. There is no compile-time link
+between the crates, so the module documents the duplication and the rule that
+holds it together: change both in the same commit.
+
+The check is a diagnostic and never fails a turn. Findings are emitted as a
+new StreamEvent::SelfAudit immediately before TurnComplete, so a consumer
+that stops reading on completion still sees them, and the count is carried on
+TurnSummary::self_audit_findings. A unit test drives a contradicting turn to
+completion and asserts the turn still returns Ok and reports the finding;
+that test is the one that pins the non-goal.
+
+Three design points are worth recording.
+
+Placement: the audit runs on the terminal path, after the text is final and
+before TurnComplete is built. Auditing partial deltas would misjudge a
+sentence the model had not finished.
+
+Accumulation: the audit needs every tool call made this turn and every one
+that failed, not just the last model call's. The existing pending_tool_calls
+and pending_results are per model call, so a failure from an earlier model
+turn would already be gone by the turn boundary. Two turn-scoped vectors
+accumulate them. Without this the check fires on a turn that did fail a tool,
+which the "silent when the turn has a real failure" rule is specifically
+meant to prevent.
+
+Persistence: findings are not written to the log and SCHEMA_VERSION stays 2.
+The information is already there — the offending text is in turn_complete and
+the tool activity in tool_execution — so an off-line reader can re-derive the
+finding without a new log kind. Persisting it would mean a new LogEntry
+variant and a version bump, which the log module's policy reserves for
+breaking changes and which would make a schema 3 log unreadable by any older
+binary. That is a real cost to take deliberately, not as a side effect of a
+diagnostic.
+
+TurnSummary gains self_audit_findings: a breaking change for any external
+constructor of the struct, all of which are in this workspace. Session::run
+constructs one on the non-streaming path, where no audit runs, and sets the
+count to 0 with a comment saying so rather than pretending an audit happened.
+
+The 029 part A prerequisite was confirmed still in place: a failed tool
+execution is rendered with TOOL_FAILURE_PREFIX, counted, and pushed into
+pending_results rather than aborting the turn, which is what makes
+UnreportedToolError observable at all. The existing test that covers it still
+passes.
+
+README.md documents the diagnostic, its two kinds, and the non-persistence
+decision.
+
+Hānihi

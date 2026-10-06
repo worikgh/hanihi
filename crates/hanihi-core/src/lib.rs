@@ -10,6 +10,7 @@
 //! answers. See [`agent::Agent`] and [`agent::connect_chat_model`].
 
 pub mod agent;
+pub mod audit;
 pub mod context;
 pub mod debug;
 pub mod error;

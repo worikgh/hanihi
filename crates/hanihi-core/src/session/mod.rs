@@ -541,6 +541,8 @@ impl Session {
                     usage: usage_total,
                     final_history: agent.history().to_vec(),
                     final_summary: agent.summary().map(|s| s.to_string()),
+                    // The non-streaming path runs no turn-boundary audit.
+                    self_audit_findings: 0,
                 });
             }
 
@@ -778,6 +780,10 @@ impl Session {
                     StreamEvent::TextDelta { .. }
                     | StreamEvent::ToolCallStart { .. }
                     | StreamEvent::ToolCallArgs { .. } => Ok(()),
+                    // The self-audit is a diagnostic with no log entry of its
+                    // own: the offending text is already in `turn_complete`
+                    // and the tool activity in `tool_execution`.
+                    StreamEvent::SelfAudit { .. } => Ok(()),
                 };
 
                 if let Err(e) = write_result {

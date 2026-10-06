@@ -537,6 +537,10 @@ async fn main() -> Result<(), AgentError> {
                 StreamEvent::Compaction { .. }
                 | StreamEvent::CompletionRequest { .. }
                 | StreamEvent::CompletionResponse { .. } => {}
+                StreamEvent::SelfAudit { finding } => {
+                    eprintln!();
+                    eprintln!("warning: {}\n  {}", finding.kind.as_str(), finding.detail);
+                }
                 StreamEvent::TurnComplete { summary } => {
                     println!();
                     println_coloured!(
@@ -739,6 +743,10 @@ async fn run_turn<M: CompletionModel + 'static>(
                     StreamEvent::Compaction { .. }
                     | StreamEvent::CompletionRequest { .. }
                     | StreamEvent::CompletionResponse { .. } => (),
+                    StreamEvent::SelfAudit { finding } => {
+                        eprintln!();
+                        eprintln!("warning: {}\n  {}", finding.kind.as_str(), finding.detail);
+                    }
                     StreamEvent::TurnComplete { summary } => {
                         println!();
                         println_coloured!(

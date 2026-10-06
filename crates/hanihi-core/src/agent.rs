@@ -14,6 +14,7 @@ use rig::providers::openai;
 use rig::tool::PortableDynamicTool;
 use tokio::sync::mpsc;
 
+use crate::audit;
 use crate::context::{
     COMPACTION_PROMPT, DEFAULT_CONTEXT_LIMIT_TOKENS, MAX_SUMMARY_TOKENS, RESERVE_OUTPUT_TOKENS,
     context_limit_for, estimate_context, serialize_for_summary, split_history,
@@ -228,6 +229,9 @@ pub struct TurnSummary {
     /// Compaction summary produced during the turn (for streaming — the
     /// caller seeds it back so compaction is cumulative across turns).
     pub final_summary: Option<String>,
+    /// Findings from the turn-boundary self-audit (see [`crate::audit`]).
+    /// Diagnostic: a non-zero count never fails the turn.
+    pub self_audit_findings: usize,
 }
 
 /// A tool call carried in a [`StreamEvent::CompletionResponse`].
@@ -290,6 +294,15 @@ pub enum StreamEvent {
     },
     /// Turn completed successfully.
     TurnComplete { summary: TurnSummary },
+    /// The turn's assistant text made a checkable claim that the turn's own
+    /// tool activity does not support. Diagnostic only: the turn still
+    /// completes.
+    ///
+    /// Emitted immediately before [`StreamEvent::TurnComplete`], so a consumer
+    /// that stops reading on completion has still seen the finding.
+    SelfAudit {
+        finding: crate::audit::SelfAuditFinding,
+    },
     /// An error occurred during the turn.
     ///
     /// `kind` names the failure class so a caller can react to it without
@@ -333,6 +346,7 @@ impl StreamEvent {
             Self::CompletionRequest { .. } => "CompletionRequest",
             Self::CompletionResponse { .. } => "CompletionResponse",
             Self::TurnComplete { .. } => "TurnComplete",
+            Self::SelfAudit { .. } => "SelfAudit",
             Self::Error { .. } => "Error",
         }
     }
@@ -887,6 +901,12 @@ where
     let mut turn_messages: Vec<Message> = Vec::new();
     let mut tool_calls_total: usize = 0;
     let mut usage_total = Usage::new();
+    // Every tool call made this turn, and every one that failed, accumulated
+    // across all model turns. `pending_tool_calls` and `pending_results` are
+    // per model call, so a call from an earlier model turn would be gone by
+    // the time the turn boundary audits the text.
+    let mut turn_calls: Vec<ToolCall> = Vec::new();
+    let mut turn_failures: Vec<ToolCall> = Vec::new();
 
     for _turn in 0..max_turns {
         eprintln!("{}:{}: turn:{_turn}", file!(), line!(),);
@@ -1096,6 +1116,7 @@ where
                             // counts against the per-turn bound.
                             tool_calls_total += 1;
                             pending_results.push((tool_call.clone(), rendered));
+                            turn_failures.push(tool_call.clone());
 
                             let give_up = {
                                 let mut cache = tool_cache.lock().expect("tool call cache lock");
@@ -1121,6 +1142,7 @@ where
                         }
                     }
                     pending_tool_calls.push(tool_call);
+                    turn_calls.push(pending_tool_calls.last().expect("just pushed").clone());
                 }
                 Ok(rig::streaming::StreamedAssistantContent::Final(r)) => {
                     let usage = r.token_usage();
@@ -1182,6 +1204,8 @@ where
 
         // If no tool calls were made, the turn is complete.
         if pending_tool_calls.is_empty() {
+            let findings = audit::audit_turn(&text_buf, &turn_calls, &turn_failures);
+
             turn_messages.push(Message::assistant(text_buf.clone()));
             history.push(Message::user(user_input));
             history.extend(turn_messages);
@@ -1191,7 +1215,18 @@ where
                 usage: usage_total,
                 final_history: history.clone(),
                 final_summary: summary.clone(),
+                self_audit_findings: findings.len(),
             };
+            // Emit the audit before TurnComplete. The text is final here (no
+            // partial deltas to misjudge), and a consumer that stops reading
+            // on TurnComplete still receives the finding first.
+            for finding in &findings {
+                let _ = tx
+                    .send(StreamEvent::SelfAudit {
+                        finding: finding.clone(),
+                    })
+                    .await;
+            }
             let _ = tx
                 .send(StreamEvent::TurnComplete {
                     summary: turn_summary.clone(),
@@ -1403,6 +1438,133 @@ mod tests {
         }
 
         panic!("streaming turn ended without TurnComplete or Error");
+    }
+
+    /// Drive one streaming turn, collecting every event until the channel
+    /// closes. Unlike `run_turn` this keeps going past `TurnComplete`, so a
+    /// test can assert on ordering.
+    async fn collect_events<M>(agent: &mut Agent<M>, input: &str) -> Vec<StreamEvent>
+    where
+        M: rig::completion::CompletionModel + 'static,
+        M::StreamingResponse: Send,
+    {
+        let mut rx = agent
+            .run_streaming(input)
+            .await
+            .expect("streaming turn starts");
+        let mut events = Vec::new();
+
+        while let Some(event) = rx.recv().await {
+            events.push(event);
+        }
+
+        events
+    }
+
+    /// An agent with one text-only turn scripted, for the audit tests.
+    fn text_agent(text: &str) -> Agent<MockCompletionModel> {
+        Agent::new(stream_model([text_turn(text)]), "test system")
+    }
+
+    /// The audit is a diagnostic, so a contradicting turn must still complete
+    /// and report the finding. This is the load-bearing test: it pins the
+    /// non-goal that the heuristic never kills a run.
+    #[tokio::test]
+    async fn a_self_audit_finding_does_not_fail_the_turn() {
+        let mut agent = text_agent("I don't have the write tools.");
+
+        let summary = match run_turn(&mut agent, "write a file").await {
+            TurnOutcome::Complete(summary) => summary,
+            TurnOutcome::Aborted(e) => panic!("the audit must not abort the turn: {e}"),
+        };
+
+        assert_eq!(
+            summary.self_audit_findings, 1,
+            "the finding must be counted on the summary"
+        );
+    }
+
+    /// A consumer that reads until the channel closes must see the finding
+    /// before the turn-complete event.
+    #[tokio::test]
+    async fn a_self_audit_event_precedes_turn_complete() {
+        let mut agent = text_agent("I don't have the write tools.");
+        let events = collect_events(&mut agent, "write a file").await;
+        let types: Vec<&str> = events.iter().map(StreamEvent::type_name).collect();
+
+        let audit_at = types
+            .iter()
+            .position(|t| *t == "SelfAudit")
+            .expect("an audit event must be emitted");
+        let complete_at = types
+            .iter()
+            .position(|t| *t == "TurnComplete")
+            .expect("the turn must complete");
+
+        assert!(
+            audit_at < complete_at,
+            "the audit must arrive before completion: {types:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_self_audit_event_carries_the_offending_sentence() {
+        let mut agent = text_agent("I don't have the write tools.");
+        let events = collect_events(&mut agent, "write a file").await;
+
+        let finding = events
+            .iter()
+            .find_map(|event| match event {
+                StreamEvent::SelfAudit { finding } => Some(finding),
+                _ => None,
+            })
+            .expect("an audit event must be emitted");
+
+        assert_eq!(
+            finding.kind,
+            crate::audit::SelfAuditKind::UnsupportedCapabilityClaim
+        );
+        assert_eq!(finding.detail, "I don't have the write tools");
+    }
+
+    /// A clean turn emits no audit event and counts no finding.
+    #[tokio::test]
+    async fn a_clean_turn_reports_no_finding() {
+        let mut agent = text_agent("I read the file and it looks fine.");
+        let events = collect_events(&mut agent, "read the file").await;
+
+        assert!(
+            !events
+                .iter()
+                .any(|event| matches!(event, StreamEvent::SelfAudit { .. })),
+            "a clean turn must not be audited"
+        );
+        let Some(StreamEvent::TurnComplete { summary }) = events.last() else {
+            panic!("the turn must complete");
+        };
+        assert_eq!(summary.self_audit_findings, 0);
+    }
+
+    /// A turn whose tool call genuinely failed is not audited: the claim of
+    /// unavailability has a real failure to cite, so the check stays silent.
+    #[tokio::test]
+    async fn a_turn_with_a_real_tool_failure_is_not_audited() {
+        let model = stream_model([
+            tool_turn("call_1", "always_fails", serde_json::json!({})),
+            text_turn("I don't have the write tools."),
+        ]);
+        let mut agent = Agent::new(model, "test system");
+        agent.add_tool(failing_tool());
+
+        let summary = match run_turn(&mut agent, "do the work").await {
+            TurnOutcome::Complete(summary) => summary,
+            TurnOutcome::Aborted(e) => panic!("the turn must complete: {e}"),
+        };
+
+        assert_eq!(
+            summary.self_audit_findings, 0,
+            "a real failure grounds the claim"
+        );
     }
 
     fn get_time_agent() -> Agent<MockCompletionModel> {
