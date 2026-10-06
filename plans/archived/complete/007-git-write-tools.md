@@ -159,13 +159,24 @@ write verb is deliberately out of scope.**
 
 ## Allowlist note
 
-`run_command`'s allowlist keeps rejecting `git add` / `git commit` — that is
-intentional and unchanged. The dedicated tools do **not** go through
+> **Superseded — read this before acting on the paragraph below.**
+> `plans/010-tool-access.md` (now archived) landed after this plan and
+> *inverted* the decision described here. `check_command_argv_mode` admits
+> `git add`, `git restore --staged`, `git rm --cached`, and `git commit` /
+> `git commit --amend` **in write mode only** — see `check_git_add`,
+> `check_git_restore`, `check_git_rm`, `check_git_commit` in
+> `crates/hanihi-core/src/tool.rs`. Read-only mode still refuses all of them,
+> byte for byte as before. The still-denied set in *both* modes is `push`,
+> `reset`, `rebase`, `merge`, `cherry-pick`, `revert`, and the filter verbs.
+> The original text below is retained for historical context only.
+
+At the time this plan was written, `run_command`'s allowlist kept rejecting
+`git add` / `git commit`. The dedicated tools do **not** go through
 `check_command_argv`; they use `git_run` (write.rs), which is the same
-pinned-cwd + scrubbed-env path the write tools already use. We are **not**
-broadening what `run_command` can do; we are adding better-named, fixed-verb
-tools that shell the same two verbs `write_file`/`apply_patch` already shell
-internally.
+pinned-cwd + scrubbed-env path the write tools already use. Even then we were
+**not** broadening what `run_command` could do; we were adding better-named,
+fixed-verb tools that shell the same two verbs `write_file`/`apply_patch`
+already shell internally.
 
 One consequence: after this change the agent can stage and commit **arbitrary
 already-present working-tree changes** (including files written outside the

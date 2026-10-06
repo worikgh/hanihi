@@ -1,0 +1,33 @@
+Rewrite the active plan set and archive completed work
+
+The plans directory had drifted out of step with the code. Fifteen
+plans marked "draft" or "proposed" were fully implemented, two files
+shared the number 006 with one a strict subset of the other, and three
+plans remained unfinished with no clear reading order.
+
+Archive completed plans under plans/archived/complete/ with a README
+recording what implemented each one and the two caveats that are not
+cleanly finished: 029 part D was never stubbed, and 026 misattributes
+the commit-message fix to a plan that was written for something else.
+Delete the subset 006 draft rather than archiving it, so no future
+reader has to choose between two files with one number.
+
+Rewrite the three outstanding plans as a numbered sequence of prompts,
+starting at 001. The commit-message plan leads because it is the only
+one whose defect reproduces in this repository's own history: the slug
+subjects at 18e2897 and 56410f5 are exactly what whitespace splitting
+produces. The two audit plans follow, ordered so the phrase lists are
+defined once in the eval harness before the agent copies them.
+
+Move wts_compaction.md to plans/reference/ as pi-compaction.md. It
+documents another project's implementation and is cited by the
+archived token-budgeting plan; writing it up as a task would have
+invented work out of reference material. Its deferred material —
+resume-from-compaction and split-turn handling — is still open and is
+recorded in the index.
+
+The index also collects gaps left unaddressed by any plan: the stub of
+the non-streaming path, the missing error event when a model call
+fails, and the stale schema version in report.md.
+
+Hānihi

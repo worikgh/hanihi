@@ -1,6 +1,23 @@
 # Compaction & Branch Summarization
 
-From [here](https://raw.githubusercontent.com/SuperCodeAgents/pi-code/refs/heads/main/packages/coding-agent/docs/compaction.md) at 2026-08-30
+> **Reference material, not a task.** This is a write-up of how
+> [pi](https://github.com/earendil-works/pi-mono) implements context
+> compaction, captured for design reference. It describes *another* project's
+> implementation; none of it is a specification for Hānihi.
+>
+> Cited by `plans/archived/complete/012-token-budgeting.md`, which reused the
+> trigger shape (`context > window - reserve`) and the summary format ideas
+> while adapting them to this codebase. Archived plan 013 added the
+> `compaction` log kind that makes Hānihi's own compaction observable.
+>
+> Kept because the deferred work it informs is still open:
+> resume-from-compaction (persisting the summary and replaying from the last
+> compaction boundary) and split-turn handling. See `plans/001-index.md`
+> §Known gaps.
+
+Source: [pi-coding-agent docs/compaction.md](https://raw.githubusercontent.com/SuperCodeAgents/pi-code/refs/heads/main/packages/coding-agent/docs/compaction.md), retrieved 2026-08-30.
+
+---
 
 LLMs have limited context windows. When conversations grow too long, pi uses compaction to summarize older content while preserving recent work. This page covers both auto-compaction and branch summarization.
 
@@ -52,7 +69,7 @@ Before compaction:
   entry:  0     1     2     3      4     5     6      7      8     9
         ┌─────┬─────┬─────┬─────┬──────┬─────┬─────┬──────┬──────┬─────┐
         │ hdr │ usr │ ass │ tool │ usr │ ass │ tool │ tool │ ass │ tool│
-        └─────┴─────┴─────┴──────┴─────┴─────┴──────┴──────┴─────┴─────┘
+        └─────┴─────┴─────┴──────┴─────┴──────┴─────┴──────┴──────┴─────┘
                 └────────┬───────┘ └──────────────┬──────────────┘
                messagesToSummarize            kept messages
                                    ↑
@@ -63,7 +80,7 @@ After compaction (new entry appended):
   entry:  0     1     2     3      4     5     6      7      8     9     10
         ┌─────┬─────┬─────┬─────┬──────┬─────┬─────┬──────┬──────┬─────┬─────┐
         │ hdr │ usr │ ass │ tool │ usr │ ass │ tool │ tool │ ass │ tool│ cmp │
-        └─────┴─────┴─────┴──────┴─────┴─────┴──────┴──────┴─────┴─────┴─────┘
+        └─────┴─────┴─────┴──────┴─────┴──────┴─────┴──────┴──────┴─────┴─────┘
                └──────────┬──────┘ └──────────────────────┬───────────────────┘
                  not sent to LLM                    sent to LLM
                                                          ↑
@@ -315,7 +332,7 @@ import { convertToLlm, serializeConversation } from "@earendil-works/pi-coding-a
 
 pi.on("session_before_compact", async (event, ctx) => {
   const { preparation } = event;
-  
+
   // Convert AgentMessage[] to Message[], then serialize to text
   const conversationText = serializeConversation(
     convertToLlm(preparation.messagesToSummarize)
@@ -329,7 +346,7 @@ pi.on("session_before_compact", async (event, ctx) => {
 
   // Now send to your model for summarization
   const summary = await myModel.summarize(conversationText);
-  
+
   return {
     compaction: {
       summary,
@@ -350,8 +367,9 @@ Fired before `/tree` navigation. Always fires regardless of whether user chose t
 pi.on("session_before_tree", async (event, ctx) => {
   const { preparation, signal } = event;
 
-  // preparation.targetId - where we're navigating to
+  // preparation.targetId - where you're navigating to
   // preparation.oldLeafId - current position (being abandoned)
+  // preparation.oldLeafId - current position
   // preparation.commonAncestorId - shared ancestor
   // preparation.entriesToSummarize - entries that would be summarized
   // preparation.userWantsSummary - whether user chose to summarize

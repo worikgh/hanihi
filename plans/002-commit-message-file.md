@@ -1,12 +1,11 @@
-# Plan 028 — A staged-text channel for commit messages
+# 002 — A staged-text channel for commit messages
 
-You are Hānihi. This plan is a prompt to a future session. Its job is to let a
-caller set a **multi-line** commit message, which `run_command` cannot express
-today because the harness splits its input on whitespace and does no shell
-quoting.
+You are Hānihi. This is a prompt to a future session. Its job is to let you
+set a **multi-line** commit message, which `run_command` cannot express today
+because the harness splits its input on whitespace and does no shell quoting.
 
-This plan is self-contained. Implement it even if no other numbered plan has
-landed. Do not modify anything in anticipation of other plans.
+This prompt is self-contained. Implement it even if no other numbered plan has
+landed. Do not modify anything in anticipation of `003` or `004`.
 
 ## Objective
 
@@ -33,24 +32,24 @@ quote processing**. `"` and `'` are ordinary characters. An `-m` value is
 whatever single whitespace-delimited token follows it, so `-m "a b c"` becomes
 `-m`, `"a`, `b`, `c"` and git reads `b`, `c"` as pathspecs.
 
-Plan 026 recorded the same limitation as a deferred gap and attributed the fix
-to "plan 027". No such plan exists: 027 was written for tool-error
-diagnosability. This plan is that staged-text channel.
+Archived plan 026 recorded the same limitation as a deferred gap and
+attributed the fix to "plan 027". No such plan existed: 027 was written for
+tool-error diagnosability. This is that staged-text channel.
 
 The consequence of not fixing it is not cosmetic. The repository's convention
 is a capitalized imperative subject plus a wrapped body ending in `Hānihi`
 (see `git log` — every recent commit follows it, and `working/commit-msg-*.txt`
 are hand-written bodies from earlier sessions working around this exact gap).
-A harness that cannot produce a body forces either a slug subject or a bodyless
-commit, and both are visible convention violations.
+A harness that cannot produce a body forces either a slug subject or a
+bodyless commit, and both are visible convention violations.
 
 ## Read first, verbatim
 
 - `crates/hanihi-core/src/tool.rs`
-  - `check_git_commit` (~991) — the gate being extended. Note it currently
+  - `check_git_commit` (~996) — the gate being extended. Note it currently
     inspects `argv[2..]` for `--amend` and passes everything else through.
-  - `check_commit_amend_args` (~1003) and `GIT_COMMIT_AMEND_OK` (~599),
-    `GIT_COMMIT_MESSAGE_FLAGS` (~601) — the whitelist style to match.
+  - `check_commit_amend_args` (~1008), `GIT_COMMIT_AMEND_OK` (~604),
+    `GIT_COMMIT_MESSAGE_FLAGS` (~606) — the whitelist style to match.
   - `run_command`'s `PortableDynamicTool` (`builtin_run_command_for`) — note
     `command.split_whitespace().map(String::from).collect::<Vec<String>>()`,
     which is the mechanism this plan routes around. Do **not** change it.
@@ -58,10 +57,10 @@ commit, and both are visible convention violations.
     writing into a subdirectory of the working tree.
 - `crates/hanihi-core/src/write.rs` — `write_file`'s path policy: protected
   paths, ignored paths, escapes. A message file must satisfy the same rules.
-- `plans/007-git-write-tools.md` (~109-117) — `git_commit` there runs
-  `git commit -m <message>` via `git_run`, a trusted fixed-argv executor. That
-  is a *different* path with no whitespace-splitting problem; do not conflate
-  the two, but note that `-F` would also serve it.
+- `plans/archived/complete/007-git-write-tools.md` (~109-117) — `git_commit`
+  there runs `git commit -m <message>` via `git_run`, a trusted fixed-argv
+  executor. That is a *different* path with no whitespace-splitting problem;
+  do not conflate the two, but note that `-F` would also serve it.
 - `working/commit-msg-023.txt`, `working/commit-msg.txt` — real examples of the
   message shape this plan must be able to emit.
 
@@ -119,8 +118,8 @@ one token.
 
 If a caller passes a multi-word `-m` and the words parse as pathspecs, the
 current outcome is `pathspec '<word>' did not match` — accurate and
-uninformative, the same diagnosability defect plan 027 addresses for other
-tools.
+uninformative, the same diagnosability defect archived plan 027 addressed for
+other tools.
 
 Add a targeted refinement: when `git commit` carries `-m`/`--message` whose
 value is empty or looks like a quote character (`"` or `'`), refuse with a
@@ -135,14 +134,21 @@ existing amend whitelist must all keep working. `check_git_commit` currently
 returns `Ok(())` for anything that is not `--amend`; that permissiveness must
 not become *less* permissive for inputs it already admits.
 
+### F. Refuse `-` explicitly
+
+`-F -` reads the message from stdin, which the harness sets to `Stdio::null()`
+— it would silently commit an empty message. Add a bare `-` to the refused set
+with its own test; a lone `-` must not be treated as a filename.
+
 ## Work order, test-first
 
-Write the failing tests first, then implement A-D.
+Write the failing tests first, then implement A-F.
 
 ### New tests in `crates/hanihi-core/src/tool.rs` `mod tests`
 
-Follow the existing allowlist-test style: `argv(&[...])`, `assert_allowed_both_modes`,
-`assert_denied_both_modes`, with the deny cases naming the specific rule.
+Follow the existing allowlist-test style: `argv(&[...])`,
+`assert_allowed_both_modes`, `assert_denied_both_modes`, with the deny cases
+naming the specific rule.
 
 1. `command_allowlist_accepts_commit_message_from_file` — `git commit -F
    working/commit-msg.txt` and the `--file` spelling are admitted in write mode.
@@ -155,14 +161,16 @@ Follow the existing allowlist-test style: `argv(&[...])`, `assert_allowed_both_m
    refuses, naming the missing argument.
 6. `command_allowlist_rejects_message_flag_and_file_together` — `-m x -F
    working/msg.txt` refuses.
-7. `command_allowlist_keeps_bare_and_message_commits` — regression guard: the
+7. `command_allowlist_rejects_stdin_message_file` — `-F -` refuses, and the
+   refusal says stdin is not a file.
+8. `command_allowlist_keeps_bare_and_message_commits` — regression guard: the
    forms admitted before this change are still admitted.
-8. `commit_message_from_file_lands_a_multi_line_message` — end-to-end on a real
+9. `commit_message_from_file_lands_a_multi_line_message` — end-to-end on a real
    temp repo (mirror the `git_repo()` helper in `tool.rs`): write a message
    file with a subject, a blank line, a body, and a trailing line, run the
    commit, then assert `git log -1 --format=%B` returns the body **with its
    newlines intact**. This is the test that proves the whole point of the plan.
-9. `commit_with_a_literal_quote_in_message_is_refused_with_guidance` — item D.
+10. `commit_with_a_literal_quote_in_message_is_refused_with_guidance` — item D.
 
 ### Gates
 
@@ -181,7 +189,7 @@ cargo clippy --workspace --all-targets -- -D warnings
   the protected set.
 - A commit can carry a multi-line message, verified by reading it back from
   `git log`, not by inspecting argv.
-- Absolute, escaping, and protected message paths are all refused with a
+- Absolute, escaping, protected, and `-` message paths are all refused with a
   message naming the rule.
 - `-F` without a following element, and `-F` combined with `-m`, both refuse.
 - Every form admitted before the change is still admitted.
@@ -189,6 +197,25 @@ cargo clippy --workspace --all-targets -- -D warnings
   still says "No shell".
 - `cargo fmt --check` and both clippy invocations are clean.
 - No new dependencies.
+
+## Risks and assumptions
+
+- **`-F` reads the file as UTF-8 and strips comment lines.** `git commit -F`
+  treats the file like an editor buffer: lines beginning `#` are stripped
+  unless `--cleanup=verbatim` is given. A message whose body legitimately
+  starts a line with `#` will lose that line. **Decide deliberately** whether
+  to document this or to require `--cleanup=verbatim` alongside `-F`; do not
+  let it be discovered by a caller whose message silently lost a heading.
+  State the decision in the commit message.
+- **The message file is a write into the repository.** It shows up in
+  `git status` as an untracked file unless `working/` is ignored. Check whether
+  `working/` is in `.gitignore` / `.ignore`; if it is not, note that a commit
+  made this way leaves a stray file and say what the caller should do.
+- **The narrowness of item D is the design.** Any heuristic broad enough to
+  catch "the caller typed a sentence" is also broad enough to refuse a
+  legitimate one-token message containing a quote character. Prefer a
+  false-negative that keeps working over a false-positive that blocks a valid
+  commit.
 
 ## Out of scope
 
@@ -200,30 +227,23 @@ cargo clippy --workspace --all-targets -- -D warnings
   `write_file`.
 - **Amending published history.** `--amend` remains local-only, and the
   allowlist still refuses every history-rewriting verb it refuses today.
-- **`git_commit` in the write-tool set** (`plans/007-git-write-tools.md`). It
-  has no split problem; leave it alone.
-- Reconciling 026's dangling "plan 027" reference — that is a documentation fix
-  in `plans/026-deterministic-apply-patch.md`, not part of the implementation
-  here.
+- **`git_commit` in the write-tool set**
+  (`plans/archived/complete/007-git-write-tools.md`). It has no split problem;
+  leave it alone.
+- **The non-streaming-path stub** (`029` part D). Separate, unresolved, and
+  not a prerequisite for this.
+- **`report.md`'s stale schema version.** Noted in `001-index.md`; fix it in
+  its own change, not here.
 
-## Assumptions and risks
+## Commit message
 
-- **`-F` reads the file as UTF-8 and strips comment lines.** `git commit -F`
-  treats the file like an editor buffer: lines beginning `#` are stripped
-  unless `--cleanup=verbatim` is given. A message whose body legitimately
-  starts a line with `#` will lose that line. Decide deliberately whether to
-  document this or to require `--cleanup=verbatim` alongside `-F`; do not let
-  it be discovered by a caller whose message silently lost a heading.
-- **The message file is a write into the repository.** It shows up in
-  `git status` as an untracked file unless `working/` is ignored. Check
-  whether `working/` is in `.gitignore` / `.ignore`; if it is not, note that a
-  commit made this way leaves a stray file and say what the caller should do.
-- **The narrowness of item D is the design.** Any heuristic broad enough to
-  catch "the caller typed a sentence" is also broad enough to refuse a
-  legitimate one-token message containing a quote character. Prefer a
-  false-negative that keeps working over a false-positive that blocks a valid
-  commit.
-- **`-F` is not the only reading channel git offers** (`--file`, `-F`, and
-  stdin via `-`). `-F -` reads stdin, which the harness sets to `Stdio::null()`
-  — it would silently commit an empty message. Add it to the refused set
-  explicitly, with a test; a bare `-` must not be treated as a filename.
+Subject, imperative, capitalized, no final period, ≤72 characters, then a
+blank line, then a body wrapped at 72 explaining context and reasoning rather
+than implementation. End with:
+
+```
+Hānihi
+```
+
+Use this plan's own file as the message file. If the change works, the commit
+proves it.
