@@ -96,7 +96,7 @@ small, and commit your work as small git commits with descriptive messages. Neve
 /// Hard cap on tool executions within a single turn. Additional to
 /// [`Agent::max_turns`]: a turn may legally make many tool calls across
 /// model turns, and this guard bounds that runaway loop.
-const MAX_TOOL_CALLS_PER_TURN: usize = 100;
+const MAX_TOOL_CALLS_PER_TURN: usize = 1000;
 
 /// Read-only, deterministic tools whose results may be reused within a turn.
 const CACHEABLE_TOOLS: &[&str] = &["read_file", "list_dir", "grep", "read_session_log", "echo"];
