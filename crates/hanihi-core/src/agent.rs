@@ -1035,6 +1035,12 @@ where
                             } else {
                                 rendered.clone()
                             };
+                            // eprintln!(
+                            //	"{}:{}: tool '{name}' returned {} chars",
+                            //	file!(),
+                            //	line!(),
+                            //	rendered.len()
+                            // );
                             let _ = tx
                                 .send(StreamEvent::ToolResult {
                                     id: tool_call.id.clone(),

@@ -791,21 +791,30 @@ impl Session {
                     break;
                 }
 
+                // if let  StreamEvent::ToolCallStart { id:_, ref name } = event {
+                //     eprintln!("{}:{}: ToolCallStart {name} ",file!(),line!(),);
+                // }
+                // if let  StreamEvent::ToolCallReady { id:_, ref name , arguments:_} = event {
+                //     eprintln!("{}:{}: ToolCallReady {name} ",file!(),line!(),);
+                // }
+                // if let  StreamEvent::ToolResult {  ref name ,..} = event {
+                //     eprintln!("{}:{}: ToolResult {name} ",file!(),line!(),);
+                // }
                 let _ = tx.send(event).await;
             }
-            let mut counts: HashMap<String, usize> = HashMap::new();
-            for e in events_record {
-                *counts.entry(e).or_insert(0) += 1;
-            }
+            // let mut counts: HashMap<String, usize> = HashMap::new();
+            // for e in events_record {
+            //	*counts.entry(e).or_insert(0) += 1;
+            // }
 
-            eprintln!(
-                "{}:{}: event names: {}",
-                file!(),
-                line!(),
-                counts
-                    .iter()
-                    .fold("".to_string(), |a, b| format!("{a}, {} => {}, ", b.0, b.1))
-            );
+            // eprintln!(
+            //	"{}:{}: event names: {}",
+            //	file!(),
+            //	line!(),
+            //	counts
+            //	    .iter()
+            //	    .fold("".to_string(), |a, b| format!("{a}, {} => {}, ", b.0, b.1))
+            // );
         });
 
         Ok(rx)

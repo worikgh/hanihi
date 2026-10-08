@@ -82,9 +82,10 @@ pub fn builtin_write_file(tree: Arc<SourceTree>) -> PortableDynamicTool {
             "required": ["path", "content"]
         }),
         move |args: serde_json::Value| {
+            eprintln!("{}:{}: write_file closure", file!(), line!(),);
             let tree = tree.clone();
             Box::pin(async move {
-                eprintln!("{}:{}: builin_write_file", file!(), line!(),);
+                eprintln!("{}:{}: builtin_write_file", file!(), line!(),);
                 let rel = args
                     .get("path")
                     .and_then(|v| v.as_str())

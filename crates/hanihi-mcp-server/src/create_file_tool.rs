@@ -35,6 +35,7 @@ pub(crate) fn json() -> Value {
 /// Implements the tool. `params` carries the MCP tool call; its `arguments`
 /// object holds the request.
 pub(crate) fn exec(params: &Value, id: Value) -> Value {
+    eprintln!("{}:{}: exec", file!(), line!(),);
     let result = workspace_fs::arguments(params).and_then(run);
     match result {
         Ok(text) => workspace_fs::success(id, text),
@@ -43,6 +44,7 @@ pub(crate) fn exec(params: &Value, id: Value) -> Value {
 }
 
 fn run(arguments: &Value) -> Result<String, ToolError> {
+    eprintln!("{}:{}: run", file!(), line!(),);
     let path = workspace_fs::required_non_empty_string(arguments, "path")?;
     let content = workspace_fs::required_string(arguments, "content")?;
     let overwrite = match arguments.get("overwrite") {
@@ -51,6 +53,12 @@ fn run(arguments: &Value) -> Result<String, ToolError> {
             .ok_or_else(|| workspace_fs::invalid("argument `overwrite` must be a boolean"))?,
         None => false,
     };
+    eprintln!(
+        "{}:{}: run  path: {path} content: {} chars overwrite {overwrite}",
+        file!(),
+        line!(),
+        content.len()
+    );
 
     let root = workspace_fs::workspace_root()?;
     let resolved =
@@ -65,6 +73,7 @@ fn create_file(
     content: &str,
     overwrite: bool,
 ) -> Result<String, ToolError> {
+    eprintln!("{}:{}: create_file {path:?} ", file!(), line!(),);
     if path.is_dir() {
         return Err(workspace_fs::invalid(format!(
             "cannot create file: {display_path} is a directory"

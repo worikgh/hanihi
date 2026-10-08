@@ -66,7 +66,6 @@ pub(crate) fn json() -> Value {
 /// Implements the tool. `params` carries the MCP tool call; its `arguments`
 /// object holds the request.
 pub(crate) fn exec(params: &Value, id: Value) -> Value {
-    eprintln!("{}:{}: exec", file!(), line!());
     let result = workspace_fs::arguments(params).and_then(run);
     match result {
         Ok(text) => workspace_fs::success(id, text),
@@ -103,6 +102,11 @@ fn run(arguments: &Value) -> Result<String, ToolError> {
     } else {
         Selection::Bytes(offset)
     };
+    eprintln!(
+        "{}:{}: Read file: {path} selection: {selection:?} limit: {limit}",
+        file!(),
+        line!()
+    );
     read_file_selected(&resolved, path, Some(&ledger), selection, limit)
 }
 
