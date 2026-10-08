@@ -384,7 +384,7 @@ impl Session {
     /// exactly the silent-success defect this plan removes.
     #[deprecated(
         note = "the non-streaming session loop is unused; use `run_streaming`. \
-                See plans/029-tool-failure-recovery.md"
+		See plans/029-tool-failure-recovery.md"
     )]
     pub async fn run<M: CompletionModel>(
         &mut self,

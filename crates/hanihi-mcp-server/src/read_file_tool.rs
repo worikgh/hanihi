@@ -41,20 +41,20 @@ pub(crate) fn json() -> Value {
     "type": "object",
     "properties": {
     "path": {
-        "type": "string",
-        "description": "Path of the file to read, relative to the workspace root."
+    "type": "string",
+    "description": "Path of the file to read, relative to the workspace root."
     },
     "offset": {
-        "type": "integer",
-        "description": "Byte offset (not a line number) at which to start the returned content. Defaults to 0. Mutually exclusive with `line`."
+    "type": "integer",
+    "description": "Byte offset (not a line number) at which to start the returned content. Defaults to 0. Mutually exclusive with `line`."
     },
     "line": {
-        "type": "integer",
-        "description": "1-based line number at which to start the returned content. Mutually exclusive with `offset`; the first line of a file is line 1."
+    "type": "integer",
+    "description": "1-based line number at which to start the returned content. Mutually exclusive with `offset`; the first line of a file is line 1."
     },
     "limit": {
-        "type": "integer",
-        "description": "Maximum number of bytes to return (not lines). Defaults to the per-file read cap."
+    "type": "integer",
+    "description": "Maximum number of bytes to return (not lines). Defaults to the per-file read cap."
     }
     },
     "required": ["path"],

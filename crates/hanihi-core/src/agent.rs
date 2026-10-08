@@ -1755,7 +1755,7 @@ mod tests {
             matches!(
             err,
             AgentError::RepeatedToolFailure { ref name, count }
-                if name == "always_fails" && count == REPEATED_FAILURE_LIMIT
+            if name == "always_fails" && count == REPEATED_FAILURE_LIMIT
             ),
             "got {err:?}"
         );

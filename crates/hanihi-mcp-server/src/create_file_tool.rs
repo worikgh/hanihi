@@ -8,27 +8,27 @@ use std::path::Path;
 /// `tools/list` entry for this tool.
 pub(crate) fn json() -> Value {
     json!({
-        "name": "create_file",
-        "description": "Creates a new file at the given workspace-relative path with the supplied UTF-8 content, or replaces it when overwrite is true. Parent directories are created as needed. Refuses paths that escape the workspace or target protected files.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "Path of the file to create, relative to the workspace root."
-                },
-                "content": {
-                    "type": "string",
-                    "description": "UTF-8 text content to write to the file."
-                },
-                "overwrite": {
-                    "type": "boolean",
-                    "description": "Replace the file if it already exists. Defaults to false."
-                }
-            },
-            "required": ["path", "content"],
-            "additionalProperties": false
+    "name": "create_file",
+    "description": "Creates a new file at the given workspace-relative path with the supplied UTF-8 content, or replaces it when overwrite is true. Parent directories are created as needed. Refuses paths that escape the workspace or target protected files.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+        "path": {
+            "type": "string",
+            "description": "Path of the file to create, relative to the workspace root."
+        },
+        "content": {
+            "type": "string",
+            "description": "UTF-8 text content to write to the file."
+        },
+        "overwrite": {
+            "type": "boolean",
+            "description": "Replace the file if it already exists. Defaults to false."
         }
+        },
+        "required": ["path", "content"],
+        "additionalProperties": false
+    }
     })
 }
 
@@ -100,9 +100,9 @@ fn create_file(
         .map_err(|error| workspace_fs::internal(format!("cannot write {display_path}: {error}")))?;
 
     let report = json!({
-        "path": display_path,
-        "created": !existed,
-        "bytes_written": bytes.len(),
+    "path": display_path,
+    "created": !existed,
+    "bytes_written": bytes.len(),
     });
     serde_json::to_string_pretty(&report)
         .map_err(|error| workspace_fs::internal(format!("failed to serialize result: {error}")))
