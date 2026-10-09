@@ -991,6 +991,10 @@ async fn main() {
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn")),
         )
+        .with_writer(std::io::stderr)
+        .with_file(true)
+        .with_line_number(true)
+        .with_ansi(false)
         .init();
 
     let args = Args::parse();

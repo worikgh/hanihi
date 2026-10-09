@@ -41,7 +41,7 @@ pub(crate) fn json() -> Value {
 /// Implements the tool. The workspace is discovered from the process working
 /// directory, so `params` carries no arguments.
 pub(crate) fn exec(_params: &Value, id: Value) -> Value {
-    eprintln!("{}:{}: exec", file!(), line!());
+    tracing::debug!("workspace_info: exec");
     match build_workspace_info() {
         Ok(info) => {
             let text = serde_json::to_string_pretty(&info).unwrap_or_else(|_| info.to_string());

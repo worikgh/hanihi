@@ -13,6 +13,7 @@ use serde_json::{Value, json};
 use std::fs::OpenOptions;
 use std::io::{self, BufRead, Write};
 use std::time::{SystemTime, UNIX_EPOCH};
+use tracing_subscriber::EnvFilter;
 
 mod apply_patch_tool;
 mod create_file_tool;
@@ -50,6 +51,22 @@ pub fn run_read_only_server() -> io::Result<()> {
 /// Runs the MCP server that exposes tools which may modify files.
 pub fn run_write_server() -> io::Result<()> {
     run_server(&write_tools(), "minimal-mcp-rw.log")
+}
+
+/// Installs the stderr subscriber that renders tool `tracing` events.
+///
+/// Tools emit at `debug` and the default filter is `warn`, so the markers stay
+/// silent unless `RUST_LOG` opts in. Diagnostics go to stderr because stdout is
+/// owned exclusively by the JSON-RPC conversation.
+fn init_tracing() {
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn"));
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_writer(io::stderr)
+        .with_file(true)
+        .with_line_number(true)
+        .with_ansi(false)
+        .init();
 }
 
 /// Tools that never modify the repository.
@@ -154,6 +171,8 @@ fn error_response(e: &serde_json::Error, logger: &mut Logger) -> serde_json::Val
 
 fn run_server(tools: &[Tool], log_path: &str) -> io::Result<()> {
     let mut logger = Logger::new(log_path)?;
+
+    init_tracing();
 
     logger.log("server started");
 

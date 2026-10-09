@@ -226,11 +226,11 @@ impl SourceTree {
         if let Ok(md) = std::fs::metadata(&canon)
             && md.len() as usize > MAX_READ_BYTES
         {
-            eprintln!(
-                "{}:{}: {canon:?} has {} bytes and will be truncated to {MAX_READ_BYTES}",
-                file!(),
-                line!(),
-                md.len()
+            tracing::debug!(
+                path = ?canon,
+                bytes = md.len(),
+                limit = MAX_READ_BYTES,
+                "file will be truncated"
             );
         }
 

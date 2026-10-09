@@ -407,7 +407,7 @@ pub fn connect_chat_model_with_prompt(
         .map_err(|e| AgentError::Rig(e.to_string()))?;
     let context_limit = context_limit_for(&model);
     let model = client.completion_model(&model);
-    eprintln!("{}:{}: Created model", file!(), line!(),);
+    tracing::debug!("created model");
     let mut agent = Agent::new(model, system_prompt);
     agent.context_limit_tokens = context_limit;
     Ok(agent)
@@ -727,12 +727,8 @@ async fn compact_if_needed<M: CompletionModel>(
         user_input,
         tool_defs_json,
     );
-    eprintln!(
-        "{}:{}: context before: {before} {:0.0}%",
-        file!(),
-        line!(),
-        100_f32 * before as f32 / limit as f32
-    );
+    let used_percent = 100_f32 * before as f32 / limit as f32;
+    tracing::debug!(before, limit, used_percent, "context before");
     if before <= limit {
         return Ok(None);
     }
@@ -782,7 +778,6 @@ async fn compact_if_needed<M: CompletionModel>(
         user_input,
         tool_defs_json,
     );
-    eprintln!("{}:{}: context after: {after}", file!(), line!(),);
     tracing::info!(
         before_tokens = before,
         after_tokens = after,
@@ -909,7 +904,7 @@ where
     let mut turn_failures: Vec<ToolCall> = Vec::new();
 
     for _turn in 0..max_turns {
-        eprintln!("{}:{}: turn:{_turn}", file!(), line!(),);
+        tracing::debug!(turn = _turn, "turn");
         // Build the request and report it before sending.
         let tool_definitions = tools.iter().map(|t| t.definition()).collect::<Vec<_>>();
         let tool_definitions_json = serde_json::to_value(&tool_definitions)?;
@@ -928,12 +923,10 @@ where
         )
         .await?
         {
-            eprintln!(
-                "{}:{}: Compaction {} -> {}",
-                file!(),
-                line!(),
-                record.before_tokens,
-                record.after_tokens
+            tracing::debug!(
+                before = record.before_tokens,
+                after = record.after_tokens,
+                "compaction"
             );
             let _ = tx
                 .send(StreamEvent::Compaction {
@@ -1079,10 +1072,10 @@ where
                             pending_results.push((tool_call.clone(), rendered));
                         }
                         Err(e) => {
-                            eprintln!(
-                                "{}:{}:execute_tool_with_cache error. name: {name} Error: {e}",
-                                file!(),
-                                line!(),
+                            tracing::error!(
+                                tool = %name,
+                                error = %e,
+                                "tool execution failed"
                             );
 
                             // An unknown tool name is a harness/dispatch error,
@@ -1164,7 +1157,7 @@ where
                 }
                 Ok(rig::streaming::StreamedAssistantContent::Unknown(_)) => {}
                 Err(e) => {
-                    eprintln!("{}:{}:execute_tool_with_cache error.", file!(), line!(),);
+                    tracing::error!(error = %e, "stream failed");
                     let _ = tx
                         .send(StreamEvent::Error {
                             message: e.to_string(),

@@ -52,11 +52,10 @@ pub(crate) fn truncate_tool_output(s: &str) -> String {
     if s.len() <= MAX_TOOL_RESULT_BYTES {
         s.to_string()
     } else {
-        eprintln!(
-            "{}:{}: Truncated tool output {} -> {MAX_TOOL_RESULT_BYTES}",
-            file!(),
-            line!(),
-            s.len()
+        tracing::debug!(
+            bytes = s.len(),
+            limit = MAX_TOOL_RESULT_BYTES,
+            "truncated tool output"
         );
         let cut = s.floor_char_boundary(MAX_TOOL_RESULT_BYTES);
         let mut out = String::with_capacity(cut + 64);
@@ -1421,12 +1420,7 @@ fn builtin_run_command_for(
                 }
                 check_command_argv_mode(&argv, mode)
                     .map_err(ToolExecutionError::permission_denied)?;
-                eprintln!(
-                    "{}:{}: run_command: argv: {}",
-                    file!(),
-                    line!(),
-                    argv.iter().fold(String::new(), |a, b| format!("{a} {b}"))
-                );
+                tracing::debug!(argv = %argv.join(" "), "run_command");
                 let outcome =
                     execute_captured(&argv, tree.root(), Duration::from_secs(timeout_secs))
                         .await

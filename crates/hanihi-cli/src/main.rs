@@ -256,6 +256,10 @@ async fn main() -> Result<(), AgentError> {
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
         )
+        .with_writer(std::io::stderr)
+        .with_file(true)
+        .with_line_number(true)
+        .with_ansi(false)
         .init();
 
     let args = Args::parse();
@@ -434,15 +438,13 @@ async fn main() -> Result<(), AgentError> {
         if args.write {
             agent.add_tool(builtin_write_file(tree));
         }
-        eprintln!(
-            "{}:{}: Tools: {}",
-            file!(),
-            line!(),
-            agent
-                .tool_definitions()
-                .iter()
-                .fold(String::new(), |a, b| format!("{a}, {}", b.name))
-        );
+        let tools = agent
+            .tool_definitions()
+            .iter()
+            .map(|definition| definition.name.clone())
+            .collect::<Vec<String>>()
+            .join(", ");
+        tracing::debug!(tools, "registered tools");
     }
 
     for command in &args.mcp_commands {
@@ -455,7 +457,7 @@ async fn main() -> Result<(), AgentError> {
         let tools = client.tool_defs().await?;
         let count = tools.len();
         for tool in tools {
-            eprintln!("{}:{}: Adding tool: {}", file!(), line!(), tool.name());
+            tracing::debug!(tool = tool.name(), "adding MCP tool");
             agent.add_tool(tool);
         }
         println!("attached MCP server '{program}': {count} tool(s)");
@@ -499,15 +501,13 @@ async fn main() -> Result<(), AgentError> {
             ""
         },
     );
-    eprintln!(
-        "{}:{}: Tools: {}",
-        file!(),
-        line!(),
-        agent
-            .tool_definitions()
-            .iter()
-            .fold(String::new(), |a, b| format!("{a}, {}", b.name))
-    );
+    let tools = agent
+        .tool_definitions()
+        .iter()
+        .map(|definition| definition.name.clone())
+        .collect::<Vec<String>>()
+        .join(", ");
+    tracing::debug!(tools, "registered tools");
     if let Some(t) = prior_turns {
         println!(
             "session '{}' renewed: total turns so far = {t}",
@@ -518,14 +518,14 @@ async fn main() -> Result<(), AgentError> {
 
     let prompt = args.task.clone().or_else(|| args.once.clone());
     if let Some(prompt) = prompt {
-        eprintln!("{}:{}: Got prompt", file!(), line!(),);
+        tracing::debug!("prompt received");
         let mut rx = session
             .run_streaming(&mut agent, provider, &args.model, &prompt)
             .await
             .map_err(|e| AgentError::Rig(e.to_string()))?;
 
         while let Some(event) = rx.recv().await {
-            eprintln!("{}:{}: Got event", file!(), line!(),);
+            tracing::trace!("stream event");
             match event {
                 StreamEvent::TextDelta { text } => print_coloured!("{text}"),
                 StreamEvent::ToolCallStart { name, .. } => print_coloured!("\n[🔧 {name}"),
@@ -557,7 +557,7 @@ async fn main() -> Result<(), AgentError> {
                 }
                 StreamEvent::Error { message, .. } => {
                     eprintln!();
-                    eprintln!("{}:{}: error: {message}", file!(), line!());
+                    tracing::error!(error = %message, "turn failed");
                     break;
                 }
             }
@@ -765,7 +765,7 @@ async fn run_turn<M: CompletionModel + 'static>(
                     }
                     StreamEvent::Error { message, .. } => {
                         eprintln!();
-                        eprintln!("{}:{}  error message: {message}", file!(), line!());
+                        tracing::error!(error = %message, "turn failed");
                         return None;
                     }
                 }
@@ -773,7 +773,7 @@ async fn run_turn<M: CompletionModel + 'static>(
             None
         }
         Err(e) => {
-            eprintln!("{}:{}: error: {e}", file!(), line!());
+            tracing::error!(error = %e, "turn failed");
             None
         }
     }

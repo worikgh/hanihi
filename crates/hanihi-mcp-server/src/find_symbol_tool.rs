@@ -62,7 +62,7 @@ pub(crate) fn json() -> Value {
 /// Implements the tool. `params` carries the MCP tool call; its `arguments`
 /// object holds the search options.
 pub(crate) fn exec(params: &Value, id: Value) -> Value {
-    eprintln!("{}:{}: exec", file!(), line!());
+    tracing::debug!("find_symbol: exec");
     let arguments = params.get("arguments").unwrap_or(params);
     match run(arguments) {
         Ok(text) => success(id, text),

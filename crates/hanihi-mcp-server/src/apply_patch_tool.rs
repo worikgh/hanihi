@@ -113,7 +113,7 @@ pub(crate) fn json() -> Value {
 /// Implements the tool. `params` carries the MCP tool call; its `arguments`
 /// object holds the edit request.
 pub(crate) fn exec(params: &Value, id: Value) -> Value {
-    eprintln!("{}:{}: exec", file!(), line!());
+    tracing::debug!("apply_patch: exec");
     let arguments = params.get("arguments").unwrap_or(params);
     match run(arguments) {
         Ok(text) => success(id, text),

@@ -3,7 +3,7 @@
 use serde_json::{Value, json};
 
 pub(crate) fn exec(params: &Value, id: Value) -> Value {
-    eprintln!("{}:{}: exec", file!(), line!());
+    tracing::debug!("echo: exec");
     let content = params
         .get("arguments")
         .and_then(|arguments| arguments.get("message"))
