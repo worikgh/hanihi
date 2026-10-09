@@ -808,10 +808,10 @@ impl Session {
 		// }
 		let _ = tx.send(event).await;
 	    }
-	    // let mut counts: HashMap<String, usize> = HashMap::new();
-	    // for e in events_record {
-	    //	*counts.entry(e).or_insert(0) += 1;
-	    // }
+	    let mut counts: HashMap<String, usize> = HashMap::new();
+	    for e in events_record {
+		*counts.entry(e).or_insert(0) += 1;
+	    }
 
 	    tracing::debug!(counts = ?counts, "event names");
 	});
