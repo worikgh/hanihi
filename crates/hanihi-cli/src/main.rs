@@ -618,12 +618,13 @@ async fn repl<M: CompletionModel + 'static>(
         match editor.read_line(&prompt) {
             Ok(Signal::Success(line) | Signal::HostCommand(line)) => {
                 let line = line.trim().to_string();
-                match line.as_str() {
+                let word = line.split_whitespace().next().unwrap_or("");
+                match word {
                     "" => continue,
                     "/quit" | "/exit" => break,
                     "/help" => {
                         println!(
-                            "commands: /help /tools /clear /session /file /quit — anything else is sent to the model"
+                            "commands: /help /tools /clear /model /session /file /quit — anything else is sent to the model"
                         );
                         continue;
                     }
@@ -638,13 +639,21 @@ async fn repl<M: CompletionModel + 'static>(
                         println!("history cleared");
                         continue;
                     }
+                    "/model" => {
+                        println!("Model: {}", session.model);
+                        if let Some(model) = line.split_whitespace().nth(1) {
+                            session.model = model.to_string();
+                        }
+                        continue;
+                    }
                     "/session" => {
                         println!(
-                            "session: '{}' (id={}) turn={} max_turns={}",
+                            "session: '{}' (id={}) turn={} max_turns={} model={}",
                             session.name,
                             session.id,
                             session.turn,
-                            agent.max_turns()
+                            agent.max_turns(),
+                            session.model,
                         );
                         if let Some(s) = &last_summary {
                             println!(
