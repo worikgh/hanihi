@@ -1,7 +1,6 @@
 # Hānihi plan sequence
 
-The active plan set. Four files, in order. Each of the three prompts is
-self-contained: implement it even if the others have not landed.
+The active plan set. Read it before starting work.
 
 Completed work lives in `plans/archived/complete/` and is **not** part of this
 sequence — see its `README.md`. Reference material (not tasks) is in
@@ -12,42 +11,40 @@ sequence — see its `README.md`. Reference material (not tasks) is in
 | # | File | Scope | Depends on |
 |---|---|---|---|
 | 001 | this file | — | — |
-| 002 | `002-commit-message-file.md` | `hanihi-core` (`tool.rs`) | nothing |
-| 003 | `003-eval-behavioural-assertions.md` | `hanihi-eval` | nothing |
-| 004 | `004-harness-self-audit.md` | `hanihi-core` (`agent.rs`) + CLI | 003 (phrase lists) |
+| 005 | `005-outstanding-gaps.md` | `hanihi-core`, `hanihi-cli`, docs | nothing |
 
-Run them in number order. The dependency in 004 is a *code* dependency —
-004 reuses 003's phrase-list module — so landing 004 first would duplicate
-the matcher definition, which is the specific drift 004 §2 exists to
-prevent.
+## What the previous sequence did
 
-## What each one is for
+The `002`/`003`/`004` sequence is **complete** and archived:
 
-**002 — a staged-text channel for commit messages.**
-`run_command` splits its input on whitespace and does no quote processing, so
-`git commit -m "a b c"` reaches git as four argv elements and git reads three
-of them as pathspecs. The repository's own convention is a capitalized
-imperative subject plus a wrapped body ending in `Hānihi`; the harness cannot
-produce one. The workaround is visible in `git log` as slug subjects
-(`18e2897`, `56410f5`) and in `working/commit-msg-*.txt` as hand-written
-bodies from earlier sessions. Fix: admit `git commit -F <path>`, so the
-message lives in a file — one argv token — instead of being flattened.
+- **002 — `git commit -F`** (commit `04b5e93`). A multi-line commit message can
+  now be written from a file instead of being flattened into a slug by
+  whitespace splitting. Archived as
+  `archived/complete/002-commit-message-file.md`.
+- **003 — behavioural eval assertions** (commit `fe1182c`). The eval harness
+  can now express "the agent said something its own tool log contradicts", as
+  `no_unsupported_capability_claim` and `reported_tool_errors_are_real`.
+  Archived as `archived/complete/003-eval-behavioural-assertions.md`.
+- **004 — harness self-audit** (commit `4495bd5`). The same contradiction is
+  detected at runtime, at the turn boundary, as a diagnostic that never fails
+  a turn. Archived as `archived/complete/004-harness-self-audit.md`.
 
-**003 — behavioural assertions in the eval harness.**
-Every existing eval assertion is a substring test on the final answer or a
-structural count over the log. None can express "the agent claimed something
-its own tool log contradicts". The motivating regression is a session where
-the agent asserted it had no write tools while the log recorded 16 registered
-tools including `apply_patch`, then spent several turns arguing instead of
-working. 003 adds two model-free predicates and the seed cases that exercise
-them.
+Their verified state is recorded in the archive `README.md`. Do not re-open
+them; they are background, not tasks.
 
-**004 — harness self-audit.**
-The same property, detected at runtime instead of off-line: a diagnostic at
-the turn boundary that emits a stream event and a count on `TurnSummary`. It
-never fails a turn. 004 is deliberately second because a heuristic that can
-kill a run should not be the first place a property is expressed — 003 gives
-it a signal that costs nothing to run first.
+## What `005` is for
+
+The previous sequence carried a list of known gaps and, deliberately, did not
+schedule them: each was recorded so it would not be rediscovered as a
+surprise. `005` is that list, promoted to a task now that the sequence it was
+attached to has landed.
+
+`005` is also where the two seed eval cases are actually run. `003` added
+`007-unsupported-capability-claim` and `008-missing-path-recovery` but could
+not execute them — no `LLM_API_KEY` was present — so both ship **unverified**.
+An assertion never seen to pass is not evidence that anything works, and one
+never seen to fail is not evidence that it can detect anything. Closing that
+loop is the first item in `005`.
 
 ## Conventions every prompt in this sequence follows
 
@@ -64,26 +61,3 @@ it a signal that costs nothing to run first.
 - **Do not modify anything in anticipation of a later plan.** Each prompt
   states its own out-of-scope set; respect it rather than pre-building for
   the next file.
-
-## Known gaps not covered by this sequence
-
-Recorded so they are not rediscovered as surprises:
-
-- **`029` part D, unresolved.** `Agent::run` (`agent.rs:580`) and
-  `Session::run` are still fully implemented rather than stubbed, and
-  `AgentError::Deprecated` does not exist. `run_turn`'s `Option<TurnSummary>`
-  conflates "channel closed" with "error event" and must distinguish them
-  first. This is a design decision, not an execution task, so it is not a
-  file in this sequence. See
-  `plans/archived/complete/README.md` §Caveats.
-- **`Session::run` logs no `error` event** when the model call itself fails.
-  Out of scope in archived `008`; still unfixed.
-- **Resume-from-compaction.** `Agent.summary` is not persisted, so a resumed
-  session replays full history and re-compacts on its first oversized call.
-  Deferred by archived `013`/`014`.
-- **`--baseline` / `--compare`** in the eval runner. Stretch goal from
-  archived `005`.
-- **`report.md` is stale.** It documents `schema` as `1` and lists nine event
-  kinds. `SCHEMA_VERSION` is `2` and there are ten (`compaction` was added).
-  Either refresh it or retire it in favour of
-  `plans/archived/complete/008-log-integrity.md` and `013`.
