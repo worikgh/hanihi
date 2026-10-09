@@ -659,10 +659,10 @@ async fn repl<M: CompletionModel + 'static>(
                         continue;
                     }
                     "/model" => {
-                        println!("Model: {}", session.model);
                         if let Some(model) = line.split_whitespace().nth(1) {
                             session.model = model.to_string();
                         }
+                        println!("Model: {}", session.model);
                         continue;
                     }
                     "/session" => {
