@@ -21,7 +21,7 @@ use crate::context::{
     truncate_to_token_budget,
 };
 use crate::error::AgentError;
-use crate::session::log::{ContextMessage, UsageData};
+use crate::session::log::{ContextMessage, UsageData, cache_hits};
 use crate::source::Toolchain;
 use crate::tool::truncate_tool_output;
 
@@ -291,6 +291,7 @@ pub enum StreamEvent {
         tool_calls: Option<Vec<StreamToolCall>>,
         input_tokens: u64,
         output_tokens: u64,
+        cached_input_tokens: Option<u32>,
     },
     /// Turn completed successfully.
     TurnComplete { summary: TurnSummary },
@@ -763,6 +764,7 @@ async fn compact_if_needed<M: CompletionModel>(
     let summarization_usage = UsageData {
         input_tokens: response.usage.input_tokens as u32,
         output_tokens: response.usage.output_tokens as u32,
+        cached_input_tokens: cache_hits(response.usage.cached_input_tokens),
     };
     let dropped_messages = old.len();
     let kept_messages = kept.len();
@@ -1190,6 +1192,7 @@ where
                 text: response_text,
                 reasoning: response_reasoning,
                 tool_calls: response_tool_calls,
+                cached_input_tokens: cache_hits(call_usage.cached_input_tokens),
                 input_tokens: call_usage.input_tokens,
                 output_tokens: call_usage.output_tokens,
             })
@@ -1773,7 +1776,12 @@ mod tests {
         turns.push(text_turn("done"));
         let model = stream_model(turns);
         let mut agent = Agent::new(model, "test system");
-        agent.set_max_turns(200);
+        // The guard is on *tool calls*, not model turns, so the loop bound must
+        // not be the binding constraint: this test scripts one tool call per
+        // model turn and needs `MAX_TOOL_CALLS_PER_TURN` of them to execute.
+        // Leaving `max_turns` at its lower default made the loop exit via
+        // `AgentError::MaxTurns` before the guard could fire.
+        agent.set_max_turns(MAX_TOOL_CALLS_PER_TURN + 10);
         agent.add_tool(crate::tool::builtin_get_time());
 
         let TurnOutcome::Aborted(err) = run_turn(&mut agent, "go").await else {

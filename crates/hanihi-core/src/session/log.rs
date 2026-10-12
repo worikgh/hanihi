@@ -267,6 +267,28 @@ pub struct ToolCallData {
 pub struct UsageData {
     pub input_tokens: u32,
     pub output_tokens: u32,
+    /// Input tokens served from a provider-managed prompt cache.
+    ///
+    /// `None` means the provider reported no cache metrics at all. `rig` uses
+    /// `0` as its sentinel for "no metrics supplied", so a reported `0` is
+    /// normalised to `None` where this is built from `rig::completion::Usage`.
+    /// The key is omitted from the JSON when absent, so pre-existing log lines
+    /// (which lack it) still parse.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cached_input_tokens: Option<u32>,
+}
+
+/// Translate a provider-reported cache-hit count into the log's representation.
+///
+/// `rig::completion::Usage` documents `0` as its sentinel for "the provider
+/// supplied no usage metrics", so a reported `0` cannot be distinguished from
+/// a genuine full cache miss. Both collapse to `None` here rather than logging
+/// a `0` that reads as a real measurement; see D1 in the write-up.
+pub fn cache_hits(rig_cached_input_tokens: u64) -> Option<u32> {
+    if rig_cached_input_tokens == 0 {
+        return None;
+    }
+    u32::try_from(rig_cached_input_tokens).ok()
 }
 
 impl fmt::Display for UsageData {
@@ -279,7 +301,11 @@ impl fmt::Display for UsageData {
             f,
             "{} input tokens, {} output tokens",
             self.input_tokens, self.output_tokens
-        )
+        )?;
+        if let Some(cached) = self.cached_input_tokens {
+            write!(f, ", {cached} cached")?;
+        }
+        Ok(())
     }
 }
 
@@ -1029,8 +1055,85 @@ mod tests {
         let usage = UsageData {
             input_tokens: 12,
             output_tokens: 34,
+            cached_input_tokens: None,
         };
         assert_eq!(usage.to_string(), "12 input tokens, 34 output tokens");
+    }
+
+    #[test]
+    fn usage_display_omits_cache_when_absent() {
+        let usage = UsageData {
+            input_tokens: 5,
+            output_tokens: 7,
+            cached_input_tokens: None,
+        };
+
+        // D1: no cache text at all, rather than a misleading "0 cached".
+        assert_eq!(usage.to_string(), "5 input tokens, 7 output tokens");
+    }
+
+    #[test]
+    fn usage_display_reports_cache_when_present() {
+        let usage = UsageData {
+            input_tokens: 5,
+            output_tokens: 7,
+            cached_input_tokens: Some(1024),
+        };
+
+        let rendered = usage.to_string();
+        assert!(rendered.contains("1024 cached"), "unexpected: {rendered}");
+        assert!(
+            rendered.contains("5 input tokens"),
+            "unexpected: {rendered}"
+        );
+    }
+
+    #[test]
+    fn usage_data_roundtrips_cache_hits() {
+        let usage = UsageData {
+            input_tokens: 1213,
+            output_tokens: 1,
+            cached_input_tokens: Some(1024),
+        };
+
+        let json = serde_json::to_string(&usage).expect("serialize");
+        let back: UsageData = serde_json::from_str(&json).expect("deserialize");
+
+        assert_eq!(back, usage);
+        assert_eq!(back.cached_input_tokens, Some(1024));
+    }
+
+    #[test]
+    fn usage_data_omits_absent_cache_from_json() {
+        let usage = UsageData {
+            input_tokens: 5,
+            output_tokens: 7,
+            cached_input_tokens: None,
+        };
+
+        let json = serde_json::to_string(&usage).expect("serialize");
+        assert!(
+            !json.contains("cached_input_tokens"),
+            "absent cache must not be serialized: {json}"
+        );
+    }
+
+    /// Regression guard for D2. This literal is a real pre-change log line
+    /// captured from `example_session_01/events.jsonl` (line 11) before the
+    /// cache field existed. It has no `cached_input_tokens` key and must keep
+    /// deserializing, so existing logs stay readable.
+    #[test]
+    fn old_format_log_line_still_parses() {
+        let legacy = r#"{"data":{"message_id":null,"text":"Let me analyze this code carefully to diagnose the ECONNRESET issue.","tool_calls":[{"arguments":{},"id":"call_00_K3S6YYqicqXxQ8bqJVao2961","name":"get_time"}],"usage":{"input_tokens":4766,"output_tokens":42}},"kind":"llm_response","schema":1,"ts":"2026-09-04T23:54:33.605775386Z","turn":1}"#;
+
+        let entries = parse_log_strict(legacy).expect("pre-change line must still parse");
+
+        let LogEntry::LlmResponse { data, .. } = &entries[0] else {
+            panic!("expected LlmResponse, got {:?}", entries[0]);
+        };
+        assert_eq!(data.usage.input_tokens, 4766);
+        assert_eq!(data.usage.output_tokens, 42);
+        assert_eq!(data.usage.cached_input_tokens, None);
     }
 
     #[test]
@@ -1038,6 +1141,7 @@ mod tests {
         let usage = UsageData {
             input_tokens: 0,
             output_tokens: 0,
+            cached_input_tokens: None,
         };
         assert_eq!(usage.to_string(), "0 input tokens, 0 output tokens");
     }
@@ -1052,6 +1156,7 @@ mod tests {
             usage: UsageData {
                 input_tokens: 12,
                 output_tokens: 34,
+                cached_input_tokens: None,
             },
         };
         let entry = LogEntry::LlmResponse {
@@ -1236,6 +1341,7 @@ mod tests {
             Some(UsageData {
                 input_tokens: 20_000,
                 output_tokens: 800,
+                cached_input_tokens: None,
             }),
         );
 

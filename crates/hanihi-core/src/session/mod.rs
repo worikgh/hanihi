@@ -27,6 +27,7 @@ use uuid::Uuid;
 use self::lock::SessionGuard;
 use self::log::{
     ErrorStage, LlmResponseData, LogEntry, LogWriter, ToolCallData, ToolExecutionData, UsageData,
+    cache_hits,
 };
 use crate::agent::{Agent, StreamEvent, TurnErrorKind, TurnSummary};
 use crate::error::AgentError;
@@ -517,6 +518,7 @@ impl Session {
                 UsageData {
                     input_tokens: response.usage.input_tokens as u32,
                     output_tokens: response.usage.output_tokens as u32,
+                    cached_input_tokens: cache_hits(response.usage.cached_input_tokens),
                 },
             ))
             .map_err(|e| AgentError::Rig(e.to_string()))?;
@@ -721,6 +723,7 @@ impl Session {
                         text,
                         reasoning,
                         tool_calls,
+                        cached_input_tokens,
                         input_tokens,
                         output_tokens,
                     } => log_writer.write_entry(&LogEntry::llm_response(
@@ -742,6 +745,7 @@ impl Session {
                         UsageData {
                             input_tokens: *input_tokens as u32,
                             output_tokens: *output_tokens as u32,
+                            cached_input_tokens: *cached_input_tokens,
                         },
                     )),
                     StreamEvent::ToolResult {
@@ -1401,6 +1405,7 @@ mod tests {
                     UsageData {
                         input_tokens: 10,
                         output_tokens: 5,
+                        cached_input_tokens: None,
                     },
                 ),
                 LogEntry::turn_complete(now, 1, "hi there".into(), 0),
@@ -1448,6 +1453,7 @@ mod tests {
                     UsageData {
                         input_tokens: 10,
                         output_tokens: 5,
+                        cached_input_tokens: None,
                     },
                 ),
                 LogEntry::turn_complete(now, 1, "hi there".into(), 0),
@@ -1496,6 +1502,7 @@ mod tests {
                     UsageData {
                         input_tokens: 5,
                         output_tokens: 3,
+                        cached_input_tokens: None,
                     },
                 ),
                 LogEntry::turn_complete(now, 1, "hello".into(), 0),
@@ -1519,6 +1526,7 @@ mod tests {
                     UsageData {
                         input_tokens: 8,
                         output_tokens: 4,
+                        cached_input_tokens: None,
                     },
                 ),
                 LogEntry::turn_complete(now, 2, "I'm fine".into(), 0),
@@ -1568,6 +1576,7 @@ mod tests {
                     UsageData {
                         input_tokens: 10,
                         output_tokens: 5,
+                        cached_input_tokens: None,
                     },
                 ),
                 LogEntry::tool_execution(
@@ -1597,6 +1606,7 @@ mod tests {
                     UsageData {
                         input_tokens: 10,
                         output_tokens: 5,
+                        cached_input_tokens: None,
                     },
                 ),
                 LogEntry::turn_complete(now, 1, "echoed: hello".into(), 1),
@@ -1651,6 +1661,7 @@ mod tests {
                     UsageData {
                         input_tokens: 5,
                         output_tokens: 3,
+                        cached_input_tokens: None,
                     },
                 ),
                 LogEntry::turn_complete(now, 1, "hello".into(), 0),
@@ -1674,6 +1685,7 @@ mod tests {
                     UsageData {
                         input_tokens: 3,
                         output_tokens: 1,
+                        cached_input_tokens: None,
                     },
                 ),
                 // No turn_complete — simulates crash
@@ -1715,6 +1727,7 @@ mod tests {
                     UsageData {
                         input_tokens: 10,
                         output_tokens: 5,
+                        cached_input_tokens: None,
                     },
                 ),
             ],
@@ -1757,6 +1770,7 @@ mod tests {
                     UsageData {
                         input_tokens: 5,
                         output_tokens: 3,
+                        cached_input_tokens: None,
                     },
                 ),
                 LogEntry::turn_complete(now, 1, "echoed: test".into(), 1),

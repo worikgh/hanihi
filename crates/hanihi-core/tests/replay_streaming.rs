@@ -16,6 +16,16 @@ fn write_log(root: &Path, entries: &[LogEntry]) {
     }
 }
 
+/// A `UsageData` with the cache field absent, matching a log written before
+/// the cache-telemetry change.
+fn usage(input_tokens: u32, output_tokens: u32) -> UsageData {
+    UsageData {
+        input_tokens,
+        output_tokens,
+        cached_input_tokens: None,
+    }
+}
+
 #[test]
 fn replay_streaming_order_reconstructs_canonical_history() {
     let dir = std::env::temp_dir().join(format!("hanihi-replay-{}", uuid::Uuid::new_v4()));
@@ -75,10 +85,7 @@ fn replay_streaming_order_reconstructs_canonical_history() {
                             arguments: serde_json::json!({"pattern": "x"}),
                         },
                     ]),
-                    UsageData {
-                        input_tokens: 10,
-                        output_tokens: 5,
-                    },
+                    usage(10, 5),
                 ),
                 LogEntry::llm_prompt(
                     now,
@@ -108,10 +115,7 @@ fn replay_streaming_order_reconstructs_canonical_history() {
                         name: "read_file".into(),
                         arguments: serde_json::json!({"path": "f"}),
                     }]),
-                    UsageData {
-                        input_tokens: 10,
-                        output_tokens: 5,
-                    },
+                    usage(10, 5),
                 ),
                 LogEntry::llm_prompt(
                     now,
@@ -128,10 +132,7 @@ fn replay_streaming_order_reconstructs_canonical_history() {
                     Some("done".into()),
                     None,
                     None,
-                    UsageData {
-                        input_tokens: 10,
-                        output_tokens: 5,
-                    },
+                    usage(10, 5),
                 ),
                 LogEntry::turn_complete(now, 1, "done".into(), 3),
             ],

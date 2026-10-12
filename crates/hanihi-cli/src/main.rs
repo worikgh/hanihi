@@ -27,6 +27,7 @@ use rig::completion::CompletionModel;
 use tracing_subscriber::EnvFilter;
 
 pub use hanihi_core::agent::{TurnSummary, connect_chat_model};
+use hanihi_core::session::log::cache_hits;
 
 use crate::ui::{print_coloured, println_coloured};
 
@@ -544,12 +545,19 @@ async fn main() -> Result<(), AgentError> {
                 StreamEvent::TurnComplete { summary } => {
                     println!();
                     println_coloured!(
-                        "[turn {} | tool calls: {} | tokens: {} in / {} out | max_turns: {}]",
-                        session.turn,
-                        summary.tool_calls,
-                        summary.usage.input_tokens,
-                        summary.usage.output_tokens,
-                        agent.max_turns()
+                        "{}",
+                        turn_footer(
+                            &args.model,
+                            session.turn,
+                            summary.tool_calls,
+                            summary.usage.input_tokens,
+                            summary.usage.output_tokens,
+                            // `rig` reports `0` both for a full miss and for
+                            // "no metrics supplied"; `cache_hits` owns that
+                            // distinction (see D1).
+                            cache_hits(summary.usage.cached_input_tokens),
+                            agent.max_turns(),
+                        )
                     );
                     agent.set_history(summary.final_history);
                     agent.set_summary(summary.final_summary);
@@ -576,16 +584,27 @@ async fn main() -> Result<(), AgentError> {
 }
 
 /// Render the per-turn completion footer shown after (and by /session for) a turn.
+///
+/// Cache reporting is conditional: `cached_input_tokens` is `None` when the
+/// provider supplied no cache metrics, and a footer that printed `cache: 0`
+/// in that case would report a measurement that was never taken. See D1 in
+/// `plans/026-cache-and-model-telemetry.md`.
 fn turn_footer(
     model: &str,
     turn: u64,
     tool_calls: usize,
     tokens_in: u64,
     tokens_out: u64,
+    cached_input_tokens: Option<u32>,
     max_turns: usize,
 ) -> String {
+    let cache = match cached_input_tokens {
+        Some(tokens) => format!(" | cache: {tokens} hit"),
+        None => String::new(),
+    };
+
     format!(
-        "[model: {model} turn {turn} | tool calls: {tool_calls} | tokens: {tokens_in} in / {tokens_out} out | max_turns: {max_turns}]"
+        "[model: {model} turn {turn} | tool calls: {tool_calls} | tokens: {tokens_in} in / {tokens_out} out{cache} | max_turns: {max_turns}]"
     )
 }
 
@@ -664,6 +683,7 @@ async fn repl<M: CompletionModel + 'static>(
                                     s.tool_calls,
                                     s.usage.input_tokens,
                                     s.usage.output_tokens,
+                                    cache_hits(s.usage.cached_input_tokens),
                                     agent.max_turns(),
                                 )
                             );
@@ -759,13 +779,16 @@ async fn run_turn<M: CompletionModel + 'static>(
                     StreamEvent::TurnComplete { summary } => {
                         println!();
                         println_coloured!(
-                            "[model: {} turn {} | tool calls: {} | tokens: {} in / {} out | max_turns: {}]",
-                            session.model,
-                            session.turn,
-                            summary.tool_calls,
-                            summary.usage.input_tokens,
-                            summary.usage.output_tokens,
-                            agent.max_turns()
+                            "{}",
+                            turn_footer(
+                                session.model.as_str(),
+                                session.turn,
+                                summary.tool_calls,
+                                summary.usage.input_tokens,
+                                summary.usage.output_tokens,
+                                cache_hits(summary.usage.cached_input_tokens),
+                                agent.max_turns(),
+                            )
                         );
                         // TODO: Do I need this `clone`?
                         agent.set_history(summary.final_history.clone());
@@ -785,5 +808,60 @@ async fn run_turn<M: CompletionModel + 'static>(
             tracing::error!(error = %e, "turn failed");
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A footer with a reported cache count must show that count, labelled as
+    /// cache, so it cannot be confused with the input/output totals.
+    ///
+    /// Positive half of the D1 guard in
+    /// `plans/026-cache-and-model-telemetry.md`.
+    #[test]
+    fn footer_reports_cache_hits_when_present() {
+        let footer = turn_footer("deepseek-chat", 1, 0, 1213, 1, Some(1024), 10);
+
+        assert!(
+            footer.contains("1024"),
+            "the reported cache-hit count must appear: {footer}"
+        );
+        assert!(
+            footer.to_lowercase().contains("cache"),
+            "the count must be labelled as cache hits: {footer}"
+        );
+    }
+
+    /// When the provider reports no cache metrics the footer says nothing
+    /// about cache, rather than printing a `0` that reads as a measurement.
+    #[test]
+    fn footer_omits_cache_when_provider_reports_nothing() {
+        let footer = turn_footer("deepseek-chat", 1, 0, 1213, 1, None, 10);
+
+        assert!(
+            !footer.to_lowercase().contains("cache"),
+            "an absent cache count must not be rendered: {footer}"
+        );
+    }
+
+    /// `rig` uses `0` as its sentinel for "no usage metrics supplied", so a
+    /// reported zero normalises to the absent case rather than to a real
+    /// measurement. This pins the boundary the footer relies on.
+    #[test]
+    fn rig_zero_cache_count_normalises_to_absent() {
+        assert_eq!(cache_hits(0), None);
+        assert_eq!(cache_hits(1024), Some(1024));
+    }
+
+    /// The footer always names the model and the turn, so a cache count can be
+    /// attributed to the call that produced it.
+    #[test]
+    fn footer_names_the_model_and_turn() {
+        let footer = turn_footer("deepseek-chat", 3, 2, 100, 20, Some(64), 10);
+
+        assert!(footer.contains("deepseek-chat"), "got: {footer}");
+        assert!(footer.contains('3'), "got: {footer}");
     }
 }
